@@ -75,7 +75,12 @@ export function buildPlayerAggregates(
   teamId: string,
   filters?: StatsFilters,
 ) {
-  const players = snapshot.players.filter((player) => player.teamId === teamId);
+  const players = snapshot.players.filter(
+    (player) =>
+      player.teamId === teamId &&
+      player.status !== 'inactive' &&
+      !player.deletedAt,
+  );
   const matches = matchesForStats(snapshot, teamId, filters);
   const matchIds = new Set(matches.map((match) => match.id));
   const mvpWinsByPlayerId = matches.reduce<Record<string, number>>((acc, match) => {

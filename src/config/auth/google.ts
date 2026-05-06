@@ -1,3 +1,4 @@
+import { makeRedirectUri } from 'expo-auth-session';
 import { Platform } from 'react-native';
 
 const GOOGLE_PLACEHOLDER_CLIENT_ID = 'google-client-id-not-configured';
@@ -21,6 +22,13 @@ export function isGoogleSignInConfigured() {
   return Boolean(googleAuthEnv.webClientId || googleAuthEnv.clientId);
 }
 
+export function getGoogleRedirectUri() {
+  return makeRedirectUri({
+    scheme: 'appboca',
+    path: 'auth',
+  });
+}
+
 export function getGoogleAuthRequestConfig(loginHint?: string) {
   const fallbackClientId =
     googleAuthEnv.clientId ||
@@ -34,7 +42,9 @@ export function getGoogleAuthRequestConfig(loginHint?: string) {
     androidClientId: googleAuthEnv.androidClientId || undefined,
     iosClientId: googleAuthEnv.iosClientId || undefined,
     webClientId: googleAuthEnv.webClientId || undefined,
+    redirectUri: getGoogleRedirectUri(),
     loginHint,
     selectAccount: true,
+    scopes: ['profile', 'email'],
   };
 }

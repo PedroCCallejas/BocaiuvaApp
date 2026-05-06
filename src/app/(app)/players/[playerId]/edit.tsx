@@ -24,6 +24,7 @@ export default function EditPlayerScreen() {
   const currentPlayer = useAppStore(selectCurrentPlayer);
   const player = useAppStore((state) => findPlayerById(state, String(playerId)));
   const updatePlayer = useAppStore((state) => state.updatePlayer);
+  const removePlayer = useAppStore((state) => state.removePlayer);
 
   if (!team || !player) {
     return (
@@ -69,6 +70,33 @@ export default function EditPlayerScreen() {
     }
   }
 
+  function handleRemovePlayer() {
+    Alert.alert(
+      'Remover jogador',
+      'Esse cadastro vai sair do elenco ativo e nao aparecera mais nas proximas partidas.',
+      [
+        { text: 'Voltar', style: 'cancel' },
+        {
+          text: 'Remover jogador',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await removePlayer(editablePlayer.id);
+                router.replace('/players');
+              } catch (error) {
+                Alert.alert(
+                  'Nao foi possivel remover',
+                  error instanceof Error ? error.message : 'Tente novamente.',
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }
+
   return (
     <Screen>
       <View style={styles.hero}>
@@ -94,6 +122,14 @@ export default function EditPlayerScreen() {
           label="Desvincular conta deste jogador"
           variant="ghost"
           onPress={() => void handleUnlinkAccount()}
+        />
+      ) : null}
+
+      {variant === 'admin' ? (
+        <AppButton
+          label="Remover jogador"
+          variant="danger"
+          onPress={handleRemovePlayer}
         />
       ) : null}
 

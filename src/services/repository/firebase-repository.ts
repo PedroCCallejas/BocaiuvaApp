@@ -248,6 +248,7 @@ function normalizePlayerDocument(
     introVideoUrl: player.introVideoUrl ?? null,
     celebrationVideoUrl: player.celebrationVideoUrl ?? null,
     manualStats: normalizeManualStats(player.manualStats),
+    deletedAt: player.deletedAt ?? null,
   };
 }
 
@@ -257,6 +258,7 @@ function normalizeMatchDocument(
   return {
     ...match,
     seasonId: match.seasonId ?? null,
+    locationUrl: match.locationUrl ?? null,
     opponentLogoUrl: match.opponentLogoUrl ?? null,
     notes: match.notes ?? '',
     scoreboard: match.scoreboard ?? null,
@@ -264,6 +266,10 @@ function normalizeMatchDocument(
     mvpWinnerPlayerIds: match.mvpWinnerPlayerIds ?? [],
     mvpTotalVotes: match.mvpTotalVotes ?? 0,
   };
+}
+
+function isActivePlayer(player: Player) {
+  return player.status !== 'inactive' && !player.deletedAt;
 }
 
 function normalizeLineupDocument(
@@ -373,8 +379,13 @@ async function fetchTeamMembersByUserId(userId: string) {
 }
 
 async function fetchTeamMemberByUserAndTeam(userId: string, teamId: string) {
-  const memberships = await fetchTeamMembersByUserId(userId);
-  return memberships.find((membership) => membership.teamId === teamId) ?? null;
+  const memberships = sortMembershipsByPriority(
+    (await fetchTeamMembersByUserId(userId)).filter(
+      (membership) => membership.teamId === teamId,
+    ),
+  );
+
+  return memberships.find((membership) => membership.status === 'active') ?? memberships[0] ?? null;
 }
 
 async function fetchTeamsByIds(teamIds: string[]) {
@@ -585,6 +596,89 @@ function buildTeamMemberDocument(input: {
   });
 }
 
+function membershipPriority(membership: TeamMember) {
+  return (
+    membership.roles.length * 1000 +
+    (membership.canManageTeam ? 100 : 0) +
+    (membership.canManagePlayers ? 50 : 0) +
+    (membership.playerId ? 25 : 0) +
+    new Date(membership.updatedAt).getTime() / 1_000_000_000_000
+  );
+}
+
+function sortMembershipsByPriority(memberships: TeamMember[]) {
+  return [...memberships].sort(
+    (left, right) => membershipPriority(right) - membershipPriority(left),
+  );
+}
+
+async function reconcileDuplicateMemberships(
+  userId: string,
+  memberships: TeamMember[],
+) {
+  const firestore = requireFirestore();
+  const activeMemberships = memberships.filter((membership) => membership.status === 'active');
+  const grouped = activeMemberships.reduce<Map<string, TeamMember[]>>((acc, membership) => {
+    const current = acc.get(membership.teamId) ?? [];
+    acc.set(membership.teamId, [...current, membership]);
+    return acc;
+  }, new Map());
+
+  const duplicates = [...grouped.entries()].filter(([, items]) => items.length > 1);
+
+  if (duplicates.length === 0) {
+    return memberships;
+  }
+
+  const updatedAt = nowIso();
+  const batch = writeBatch(firestore);
+  const normalizedById = new Map(memberships.map((membership) => [membership.id, membership]));
+
+  for (const [, items] of duplicates) {
+    const sortedItems = sortMembershipsByPriority(items);
+    const winner = sortedItems[0];
+    const mergedRoles = [...new Set(sortedItems.flatMap((membership) => membership.roles))];
+    const playerId =
+      sortedItems.find((membership) => membership.playerId)?.playerId ??
+      winner.playerId ??
+      null;
+    const mergedMembership = buildTeamMemberDocument({
+      ...winner,
+      playerId,
+      roles: mergedRoles,
+      canManageTeam: sortedItems.some((membership) => membership.canManageTeam),
+      canManagePlayers: sortedItems.some((membership) => membership.canManagePlayers),
+      status: 'active',
+      updatedAt,
+    });
+
+    batch.set(
+      doc(firestore, FIRESTORE_COLLECTIONS.teamMembers, mergedMembership.id),
+      mergedMembership,
+    );
+    normalizedById.set(mergedMembership.id, mergedMembership);
+
+    for (const duplicate of sortedItems.slice(1)) {
+      const inactiveMembership = buildTeamMemberDocument({
+        ...duplicate,
+        playerId: null,
+        status: 'inactive',
+        updatedAt,
+      });
+
+      batch.set(
+        doc(firestore, FIRESTORE_COLLECTIONS.teamMembers, inactiveMembership.id),
+        inactiveMembership,
+      );
+      normalizedById.set(inactiveMembership.id, inactiveMembership);
+    }
+  }
+
+  await batch.commit();
+
+  return [...normalizedById.values()].filter((membership) => membership.userId === userId);
+}
+
 async function persistUserContext(
   user: User,
   activeMembership: TeamMember | null,
@@ -613,7 +707,10 @@ async function persistUserContext(
 
 async function ensureMembershipsForUser(user: User) {
   const firestore = requireFirestore();
-  let memberships = await fetchTeamMembersByUserId(user.id);
+  let memberships = await reconcileDuplicateMemberships(
+    user.id,
+    await fetchTeamMembersByUserId(user.id),
+  );
   const legacyTeamId = user.activeTeamId ?? user.teamId ?? null;
 
   if (legacyTeamId && !memberships.some((membership) => membership.teamId === legacyTeamId)) {
@@ -656,8 +753,11 @@ async function ensureMembershipsForUser(user: User) {
   const teams = await fetchTeamsByIds(memberships.map((membership) => membership.teamId));
   const teamsById = new Map(teams.map((team) => [team.id, team]));
   const activeMembership =
-    memberships.find((membership) => membership.teamId === user.activeTeamId) ??
-    memberships[0] ??
+    memberships.find(
+      (membership) =>
+        membership.teamId === user.activeTeamId && membership.status === 'active',
+    ) ??
+    memberships.find((membership) => membership.status === 'active') ??
     null;
   const contextOutOfSync =
     user.activeTeamId !== (activeMembership?.teamId ?? null) ||
@@ -1337,7 +1437,7 @@ export const firebaseRepository: AppRepository = {
         };
       }
 
-      const teamPlayers = await fetchPlayersByTeamId(team.id);
+      const teamPlayers = (await fetchPlayersByTeamId(team.id)).filter(isActivePlayer);
       const normalizedUserEmail = normalizeEmail(user.email);
       const existingPlayer =
         teamPlayers.find((player) => player.linkedUserId === user.id) ??
@@ -1377,18 +1477,22 @@ export const firebaseRepository: AppRepository = {
         playerId = createdPlayer.id;
       }
 
-      const membershipRef = doc(collection(firestore, FIRESTORE_COLLECTIONS.teamMembers));
       const membership = buildTeamMemberDocument({
-        id: membershipRef.id,
+        id:
+          existingMembership?.id ??
+          doc(collection(firestore, FIRESTORE_COLLECTIONS.teamMembers)).id,
         userId: user.id,
         teamId: team.id,
         playerId,
-        roles: ['player'],
-        canManageTeam: false,
-        canManagePlayers: false,
-        createdAt: updatedAt,
+        roles: existingMembership?.roles.includes('admin')
+          ? ['admin', 'player']
+          : ['player'],
+        canManageTeam: existingMembership?.canManageTeam ?? false,
+        canManagePlayers: existingMembership?.canManagePlayers ?? false,
+        createdAt: existingMembership?.createdAt ?? updatedAt,
         updatedAt,
-        joinedAt: updatedAt,
+        joinedAt: existingMembership?.joinedAt ?? updatedAt,
+        status: 'active',
       });
       const updatedUser = normalizeUserDocument({
         ...user,
@@ -1399,7 +1503,7 @@ export const firebaseRepository: AppRepository = {
         updatedAt,
       });
 
-      batch.set(membershipRef, membership);
+      batch.set(doc(firestore, FIRESTORE_COLLECTIONS.teamMembers, membership.id), membership);
       batch.set(doc(firestore, FIRESTORE_COLLECTIONS.users, user.id), updatedUser);
       await batch.commit();
       return {
@@ -1667,11 +1771,150 @@ export const firebaseRepository: AppRepository = {
     }
   },
 
+  async removePlayer(playerId: string, actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      const currentPlayer = await fetchPlayerById(playerId);
+      const currentTeam = await fetchTeamById(currentPlayer.teamId);
+      await ensurePlayerManager(actorUserId, currentPlayer.teamId);
+
+      if (currentPlayer.deletedAt || currentPlayer.status === 'inactive') {
+        throw createRepositoryError(
+          'Esse jogador ja foi removido do elenco ativo.',
+          'failed-precondition',
+        );
+      }
+
+      const updatedAt = nowIso();
+      const futureMatches = (await fetchMatchesByTeamId(currentTeam.id)).filter(
+        (match) => match.status !== 'finished' && match.status !== 'canceled',
+      );
+      const futureMatchIds = new Set(futureMatches.map((match) => match.id));
+      const futureAttendance = (await fetchAttendanceByTeamId(currentTeam.id)).filter(
+        (item) => item.playerId === currentPlayer.id && futureMatchIds.has(item.matchId),
+      );
+      const futureLineups = (await fetchLineupsByTeamId(currentTeam.id)).filter(
+        (lineup) =>
+          futureMatchIds.has(lineup.matchId) &&
+          (lineup.benchPlayerIds.includes(currentPlayer.id) ||
+            lineup.starters.some((starter) => starter.playerId === currentPlayer.id)),
+      );
+
+      const updatedPlayer = normalizePlayerDocument({
+        ...currentPlayer,
+        linkedUserId: null,
+        linkedEmail: null,
+        status: 'inactive',
+        deletedAt: updatedAt,
+        updatedAt,
+      });
+
+      const batch = writeBatch(firestore);
+      batch.set(doc(firestore, FIRESTORE_COLLECTIONS.players, currentPlayer.id), updatedPlayer);
+
+      for (const attendanceRecord of futureAttendance) {
+        batch.delete(doc(firestore, FIRESTORE_COLLECTIONS.attendance, attendanceRecord.id));
+      }
+
+      for (const lineup of futureLineups) {
+        const updatedLineup = normalizeLineupDocument({
+          ...lineup,
+          starters: lineup.starters.filter(
+            (starter) => starter.playerId !== currentPlayer.id,
+          ),
+          benchPlayerIds: lineup.benchPlayerIds.filter(
+            (benchPlayerId) => benchPlayerId !== currentPlayer.id,
+          ),
+          updatedAt,
+        });
+
+        batch.set(doc(firestore, FIRESTORE_COLLECTIONS.lineups, lineup.id), updatedLineup);
+      }
+
+      let linkedUserContext:
+        | {
+            linkedUser: User;
+            nextMembership: TeamMember | null;
+            teamsById: Map<string, Team>;
+          }
+        | null = null;
+
+      if (currentPlayer.linkedUserId) {
+        const linkedUser = await fetchUserById(currentPlayer.linkedUserId);
+        const existingMembership = await fetchTeamMemberByUserAndTeam(
+          linkedUser.id,
+          currentTeam.id,
+        );
+
+        if (existingMembership) {
+          const keepAdminAccess = existingMembership.roles.includes('admin');
+          const updatedMembership = buildTeamMemberDocument({
+            ...existingMembership,
+            playerId: null,
+            roles: keepAdminAccess
+              ? existingMembership.roles.filter((role) => role !== 'player')
+              : [],
+            canManageTeam: keepAdminAccess && existingMembership.canManageTeam,
+            canManagePlayers: keepAdminAccess && existingMembership.canManagePlayers,
+            status: keepAdminAccess ? 'active' : 'inactive',
+            updatedAt,
+          });
+
+          batch.set(
+            doc(firestore, FIRESTORE_COLLECTIONS.teamMembers, updatedMembership.id),
+            updatedMembership,
+          );
+
+          const nextMemberships = (await fetchTeamMembersByUserId(linkedUser.id)).map(
+            (membership) =>
+              membership.id === updatedMembership.id ? updatedMembership : membership,
+          );
+          const nextActiveMembership =
+            nextMemberships.find(
+              (membership) =>
+                membership.status === 'active' &&
+                membership.teamId === linkedUser.activeTeamId,
+            ) ??
+            nextMemberships.find((membership) => membership.status === 'active') ??
+            null;
+          const relatedTeams = await fetchTeamsByIds(
+            nextMemberships
+              .filter((membership) => membership.status === 'active')
+              .map((membership) => membership.teamId),
+          );
+
+          linkedUserContext = {
+            linkedUser,
+            nextMembership: nextActiveMembership,
+            teamsById: new Map(relatedTeams.map((team) => [team.id, team])),
+          };
+        }
+      }
+
+      await batch.commit();
+
+      if (linkedUserContext) {
+        await persistUserContext(
+          linkedUserContext.linkedUser,
+          linkedUserContext.nextMembership,
+          linkedUserContext.teamsById,
+        );
+      }
+
+      return updatedPlayer;
+    } catch (error) {
+      throw toFriendlyFirestoreError(
+        error,
+        'Nao foi possivel remover o jogador agora.',
+      );
+    }
+  },
+
   async createMatch(input: CreateMatchInput, creatorUserId: string) {
     try {
       const firestore = requireFirestore();
       const { actor } = await ensureTeamAdmin(creatorUserId, input.teamId);
-      const teamPlayers = await fetchPlayersByTeamId(input.teamId);
+      const teamPlayers = (await fetchPlayersByTeamId(input.teamId)).filter(isActivePlayer);
       const createdAt = nowIso();
       const matchRef = doc(collection(firestore, FIRESTORE_COLLECTIONS.matches));
       const match = normalizeMatchDocument({
@@ -1681,6 +1924,7 @@ export const firebaseRepository: AppRepository = {
         date: input.date,
         time: input.time,
         venue: input.venue.trim(),
+        locationUrl: input.locationUrl?.trim() || null,
         opponentName: input.opponentName.trim(),
         opponentLogoUrl: input.opponentLogoUrl ?? null,
         linePlayersCount: input.linePlayersCount,
@@ -1738,6 +1982,10 @@ export const firebaseRepository: AppRepository = {
         date: input.date,
         time: input.time,
         venue: input.venue.trim(),
+        locationUrl:
+          input.locationUrl !== undefined
+            ? input.locationUrl?.trim() || null
+            : currentMatch.locationUrl ?? null,
         opponentName: input.opponentName.trim(),
         opponentLogoUrl:
           input.opponentLogoUrl !== undefined

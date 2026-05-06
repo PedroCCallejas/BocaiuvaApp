@@ -102,6 +102,7 @@ export interface CreateMatchInput {
   date: string;
   time: string;
   venue: string;
+  locationUrl?: string | null;
   opponentName: string;
   opponentLogoUrl?: string | null;
   linePlayersCount: number;
@@ -114,6 +115,7 @@ export interface UpdateMatchInput {
   date: string;
   time: string;
   venue: string;
+  locationUrl?: string | null;
   opponentName: string;
   opponentLogoUrl?: string | null;
   linePlayersCount: number;
@@ -209,6 +211,7 @@ export interface AppRepository {
   joinTeamWithInviteCode(inviteCode: string, userId: string): Promise<JoinTeamResult>;
   createPlayer(input: CreatePlayerInput, actorUserId: string): Promise<Player>;
   updatePlayer(playerId: string, input: UpdatePlayerInput, actorUserId: string): Promise<Player>;
+  removePlayer(playerId: string, actorUserId: string): Promise<Player>;
   createMatch(input: CreateMatchInput, creatorUserId: string): Promise<Match>;
   updateMatch(matchId: string, input: UpdateMatchInput, actorUserId: string): Promise<Match>;
   updateAttendance(input: UpdateAttendanceInput, actorUserId: string): Promise<AttendanceRecord>;

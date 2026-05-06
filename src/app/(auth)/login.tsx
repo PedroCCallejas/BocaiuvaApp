@@ -31,6 +31,7 @@ export default function LoginScreen() {
   const loginWithGoogle = useAppStore((state) => state.loginWithGoogle);
   const isMockMode = backendMode === 'mock';
   const googleConfigured = isGoogleSignInConfigured();
+  const showGoogleLogin = !isMockMode && googleConfigured;
   const [demoLoading, setDemoLoading] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest(
@@ -201,17 +202,23 @@ export default function LoginScreen() {
         />
         {!isMockMode ? (
           <>
-            <AppButton
-              label="Entrar com Google"
-              variant="secondary"
-              onPress={() => void handleGoogleLogin()}
-              disabled={!request}
-              loading={googleLoading}
-              fullWidth
-            />
+            {showGoogleLogin ? (
+              <AppButton
+                label="Entrar com Google"
+                variant="secondary"
+                onPress={() => void handleGoogleLogin()}
+                disabled={!request}
+                loading={googleLoading}
+                fullWidth
+              />
+            ) : null}
             {!googleConfigured ? (
               <Text style={[styles.helperNote, { color: theme.colors.textMuted }]}>
-                Esse acesso sera liberado assim que a conta estiver pronta.
+                Esse acesso aparece assim que os dados do Google forem configurados no app.
+              </Text>
+            ) : !request ? (
+              <Text style={[styles.helperNote, { color: theme.colors.textMuted }]}>
+                Preparando a entrada com Google.
               </Text>
             ) : null}
           </>

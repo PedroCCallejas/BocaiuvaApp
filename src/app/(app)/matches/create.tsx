@@ -7,21 +7,42 @@ import { z } from 'zod';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
 import { Screen } from '@/components/ui/Screen';
-import { LINE_PLAYER_OPTIONS, MATCH_TYPE_LABELS } from '@/constants/options';
+import { MATCH_TYPE_LABELS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { formatDateBR, isValidTime, parseDateBRToISO } from '@/lib/date';
+import { isValidExternalUrl } from '@/lib/url';
 import { useAppStore } from '@/store/app-store';
 import { selectCanManageTeam, selectCurrentTeam } from '@/store/selectors';
 import type { MatchType } from '@/types/domain';
 
 const schema = z.object({
   opponentName: z.string().min(3, 'Informe o adversario.'),
-  date: z.string().min(10, 'Use o formato YYYY-MM-DD.'),
-  time: z.string().min(5, 'Use o formato HH:mm.'),
+  date: z.string().refine((value) => Boolean(parseDateBRToISO(value)), {
+    message: 'Use o formato DD/MM/AAAA.',
+  }),
+  time: z.string().refine((value) => isValidTime(value), {
+    message: 'Use o formato HH:mm.',
+  }),
   venue: z.string().min(3, 'Informe o local.'),
+  locationUrl: z
+    .string()
+    .optional()
+    .refine((value) => !value?.trim() || isValidExternalUrl(value), {
+      message: 'Cole um link valido de mapas.',
+    }),
   notes: z.string().optional(),
   matchType: z.enum(['society', 'futsal', 'field', 'training']),
-  linePlayersCount: z.number().min(4),
+  linePlayersCount: z
+    .string()
+    .min(1, 'Informe quantos jogadores de linha vao para o jogo.')
+    .refine((value) => /^\d+$/.test(value.trim()), {
+      message: 'Use apenas numeros inteiros.',
+    })
+    .refine((value) => {
+      const count = Number(value.trim());
+      return count >= 1 && count <= 15;
+    }, 'Escolha um numero entre 1 e 15 jogadores de linha.'),
 });
 
 type MatchValues = z.infer<typeof schema>;
@@ -41,12 +62,13 @@ export default function CreateMatchScreen() {
     resolver: zodResolver(schema),
     defaultValues: {
       opponentName: 'Novo adversario',
-      date: '2026-05-20',
+      date: formatDateBR('2026-05-20'),
       time: '20:00',
       venue: 'Campo principal',
+      locationUrl: '',
       notes: '',
       matchType: 'society',
-      linePlayersCount: 6,
+      linePlayersCount: '6',
     },
   });
 
@@ -60,6 +82,9 @@ export default function CreateMatchScreen() {
     try {
       const matchId = await createMatch({
         ...values,
+        date: parseDateBRToISO(values.date) ?? values.date,
+        locationUrl: values.locationUrl?.trim() || null,
+        linePlayersCount: Number(values.linePlayersCount.trim()),
         teamId: currentTeam.id,
         seasonId: currentTeam.activeSeasonId ?? null,
       });
@@ -112,6 +137,21 @@ export default function CreateMatchScreen() {
             />
           )}
         />
+        <Controller
+          control={control}
+          name="locationUrl"
+          render={({ field }) => (
+            <AppInput
+              label="Link da localizacao"
+              autoCapitalize="none"
+              autoCorrect={false}
+              value={field.value ?? ''}
+              onBlur={field.onBlur}
+              onChangeText={field.onChange}
+              error={errors.locationUrl?.message}
+            />
+          )}
+        />
         <View style={styles.row}>
           <View style={styles.half}>
             <Controller
@@ -120,6 +160,7 @@ export default function CreateMatchScreen() {
               render={({ field }) => (
                 <AppInput
                   label="Data"
+                  keyboardType="number-pad"
                   value={field.value}
                   onBlur={field.onBlur}
                   onChangeText={field.onChange}
@@ -135,6 +176,7 @@ export default function CreateMatchScreen() {
               render={({ field }) => (
                 <AppInput
                   label="Horario"
+                  keyboardType="numbers-and-punctuation"
                   value={field.value}
                   onBlur={field.onBlur}
                   onChangeText={field.onChange}
@@ -166,26 +208,20 @@ export default function CreateMatchScreen() {
             );
           })}
         </View>
-        <Text style={[styles.fieldLabel, { color: theme.colors.textMuted }]}>Jogadores em campo</Text>
-        <View style={styles.chipRow}>
-          {LINE_PLAYER_OPTIONS.map((count) => {
-            const selected = watch('linePlayersCount') === count;
-            return (
-              <Pressable
-                key={count}
-                onPress={() => setValue('linePlayersCount', count)}
-                style={[
-                  styles.chip,
-                  {
-                    backgroundColor: selected ? theme.colors.secondarySoft : theme.colors.surfaceMuted,
-                    borderColor: selected ? theme.colors.secondary : theme.colors.border,
-                  },
-                ]}>
-                <Text style={[styles.chipLabel, { color: theme.colors.text }]}>{count + 1}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <Controller
+          control={control}
+          name="linePlayersCount"
+          render={({ field }) => (
+            <AppInput
+              label="Quantos jogadores de linha"
+              keyboardType="number-pad"
+              value={field.value}
+              onBlur={field.onBlur}
+              onChangeText={field.onChange}
+              error={errors.linePlayersCount?.message}
+            />
+          )}
+        />
         <Controller
           control={control}
           name="notes"

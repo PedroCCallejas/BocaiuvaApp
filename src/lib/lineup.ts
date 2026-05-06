@@ -125,6 +125,35 @@ function fallbackCoordinates(starterCount: number) {
   return result;
 }
 
+function buildAdaptiveFormationLabel(linePlayersCount: number) {
+  if (linePlayersCount <= 2) {
+    return String(linePlayersCount);
+  }
+
+  const attackLine = Math.max(1, Math.round(linePlayersCount / 3));
+  const defenseLine = Math.max(1, Math.round(linePlayersCount / 3));
+  const midfieldLine = Math.max(1, linePlayersCount - attackLine - defenseLine);
+  const lines = [defenseLine, midfieldLine, attackLine].filter((value) => value > 0);
+
+  return lines.join('-');
+}
+
+function buildAdaptiveFormationPreset(
+  matchType: MatchType,
+  linePlayersCount: number,
+): FormationPreset {
+  const starterCount = linePlayersCount + 1;
+
+  return {
+    key: `custom-${matchType}-${linePlayersCount}`,
+    label: buildAdaptiveFormationLabel(linePlayersCount),
+    matchType,
+    linePlayersCount,
+    starterCount,
+    coordinates: fallbackCoordinates(starterCount),
+  };
+}
+
 export function getFormationPresets(matchType: MatchType, linePlayersCount: number) {
   const matching = formationPresets.filter(
     (preset) =>
@@ -135,7 +164,15 @@ export function getFormationPresets(matchType: MatchType, linePlayersCount: numb
     return matching;
   }
 
-  return formationPresets.filter((preset) => preset.linePlayersCount === linePlayersCount);
+  const compatibleByCount = formationPresets.filter(
+    (preset) => preset.linePlayersCount === linePlayersCount,
+  );
+
+  if (compatibleByCount.length > 0) {
+    return compatibleByCount;
+  }
+
+  return [buildAdaptiveFormationPreset(matchType, linePlayersCount)];
 }
 
 export function buildLineupFromPreset(

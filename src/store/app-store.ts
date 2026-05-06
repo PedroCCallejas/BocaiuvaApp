@@ -41,6 +41,7 @@ export interface AppState {
   joinTeamWithInviteCode: (inviteCode: string) => Promise<{ alreadyMember: boolean }>;
   createPlayer: (input: CreatePlayerInput) => Promise<string>;
   updatePlayer: (playerId: string, input: UpdatePlayerInput) => Promise<void>;
+  removePlayer: (playerId: string) => Promise<void>;
   createMatch: (input: CreateMatchInput) => Promise<string>;
   updateMatch: (matchId: string, input: UpdateMatchInput) => Promise<void>;
   setAttendance: (input: UpdateAttendanceInput) => Promise<void>;
@@ -198,6 +199,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     await repository.updatePlayer(playerId, input, userId);
+    await refreshSnapshot(set, authService.getCurrentUser());
+  },
+
+  async removePlayer(playerId) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessao expirada.');
+    }
+
+    await repository.removePlayer(playerId, userId);
     await refreshSnapshot(set, authService.getCurrentUser());
   },
 

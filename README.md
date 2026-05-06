@@ -32,8 +32,10 @@ Aplicativo mobile em React Native + Expo para organizar times de futebol amador,
 - Vinculo automatico entre conta e jogador reservado pelo e-mail
 - Escudo/logo do time por URL opcional
 - Lista e edicao real de jogadores no Firestore quando `EXPO_PUBLIC_DATA_SOURCE=firebase`
+- Remocao suave de jogador do elenco com preservacao do historico
 - Estatisticas iniciais por jogador com edicao manual para jogos, gols, assistencias e MVPs
 - Partidas reais com agenda, presenca e escalacao persistidas quando `EXPO_PUBLIC_DATA_SOURCE=firebase`
+- Link de localizacao da partida para abrir no app de mapas
 - Dashboard do time
 - Lista de jogadores
 - Cadastro e edicao de jogadores com regras por perfil
@@ -84,7 +86,11 @@ Aplicativo mobile em React Native + Expo para organizar times de futebol amador,
 - Geracao e atualizacao real de presenca em `attendance/{attendanceId}`
 - Escalacao visual salva em `lineups/{lineupId}` com titulares e reservas
 - Edicao e cancelamento de partida antes do encerramento
+- Formulario de partida com numero livre de jogadores de linha entre `1` e `15`
+- Data de partida exibida e preenchida em `DD/MM/AAAA` e `DD/MM/AAAA HH:mm`
+- Campo `locationUrl` opcional em partidas para abrir Google Maps ou Waze
 - Encerramento simplificado da partida com placar salvo no modo com conta conectada
+- Remocao de jogador faz soft delete com limpeza de presenca e escalacao de partidas futuras
 - Estatisticas manuais em `players/{playerId}.manualStats` para jogos, gols, assistencias, campanha e MVPs
 - Leituras do Firestore carregadas a partir do `activeTeamId`, com `teamId` em todo documento do dominio
 - Admin pode adicionar e editar jogadores com validacao de nome, apelido, numero, posicoes, pe dominante e status
@@ -128,6 +134,8 @@ EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=...
 ```
 
 3. Reinicie o Expo apos alterar o `.env`.
+4. O login com Google usa o redirect URI baseado no `scheme` do app (`appboca://auth`).
+5. Se os client IDs do Google nao estiverem preenchidos, o botao de Google fica oculto na tela de login.
 
 ## Liberacao manual para criar time
 
@@ -158,10 +166,13 @@ Observacoes importantes:
 - A opcao `Criar meu time` ou `Criar novo time` so aparece quando `canCreateTeam` estiver liberado manualmente.
 - Uma mesma conta pode participar de varios times e trocar o time atual na tela `Meus times`.
 - Os papeis do usuario agora sao avaliados por time, a partir da colecao `teamMembers`.
+- Duplicidades antigas de participacao no mesmo time sao deduplicadas automaticamente na leitura e na interface.
 - Se houver um jogador do time com `linkedEmail` igual ao e-mail da conta, o app vincula esse jogador automaticamente no primeiro acesso.
 - Se ainda nao existir cadastro para esse e-mail, o app cria um jogador basico e o admin pode completar os dados depois.
 - O time atual da sessao fica em `users/{uid}.activeTeamId`, enquanto `teamId` e `playerId` continuam como espelho de compatibilidade do time aberto no momento.
 - Partidas, presenca e escalacao sempre carregam a partir do time ativo.
+- Jogadores removidos saem do elenco ativo e deixam de aparecer nas proximas partidas, sem apagar o historico anterior.
+- O local da partida pode exibir apenas o nome do lugar ou tambem um link externo para abrir a rota.
 - O modo com conta conectada ja salva placar e status final da partida, mas gols, assistencias, MVP e notas continuam para a proxima migracao.
 - Enquanto `matchStats`, MVP e notas ainda nao migram para Firestore, rankings e estatisticas usam `manualStats` como base principal.
 - `matchStats`, `MVP` e `ratings` ainda nao foram migrados para Firestore.

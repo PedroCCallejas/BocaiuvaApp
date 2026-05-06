@@ -122,6 +122,14 @@ function findTeamPlayers(teamId: string) {
   return database.players.filter((player) => player.teamId === teamId);
 }
 
+function isActivePlayer(player: Player) {
+  return player.status !== 'inactive' && !player.deletedAt;
+}
+
+function findSelectableTeamPlayers(teamId: string) {
+  return findTeamPlayers(teamId).filter(isActivePlayer);
+}
+
 function findMembership(membershipId: string) {
   const membership = database.teamMembers.find((item) => item.id === membershipId);
   if (!membership) {
@@ -131,18 +139,46 @@ function findMembership(membershipId: string) {
 }
 
 function findUserMemberships(userId: string) {
-  return database.teamMembers.filter(
+  const memberships = database.teamMembers.filter(
     (membership) => membership.userId === userId && membership.status === 'active',
   );
+  const byTeamId = new Map<string, TeamMember>();
+
+  for (const membership of memberships) {
+    const current = byTeamId.get(membership.teamId);
+
+    if (!current) {
+      byTeamId.set(membership.teamId, membership);
+      continue;
+    }
+
+    const currentScore =
+      current.roles.length * 1000 +
+      (current.canManageTeam ? 100 : 0) +
+      (current.canManagePlayers ? 50 : 0) +
+      (current.playerId ? 25 : 0) +
+      new Date(current.updatedAt).getTime() / 1_000_000_000_000;
+    const nextScore =
+      membership.roles.length * 1000 +
+      (membership.canManageTeam ? 100 : 0) +
+      (membership.canManagePlayers ? 50 : 0) +
+      (membership.playerId ? 25 : 0) +
+      new Date(membership.updatedAt).getTime() / 1_000_000_000_000;
+
+    byTeamId.set(membership.teamId, nextScore >= currentScore ? membership : current);
+  }
+
+  return [...byTeamId.values()];
 }
 
 function findMembershipByUserAndTeam(userId: string, teamId: string) {
+  return findUserMemberships(userId).find((membership) => membership.teamId === teamId) ?? null;
+}
+
+function findAnyMembershipByUserAndTeam(userId: string, teamId: string) {
   return (
     database.teamMembers.find(
-      (membership) =>
-        membership.userId === userId &&
-        membership.teamId === teamId &&
-        membership.status === 'active',
+      (membership) => membership.userId === userId && membership.teamId === teamId,
     ) ?? null
   );
 }
@@ -546,7 +582,7 @@ function syncLinkedUser(player: Player) {
 
   const team = findTeam(player.teamId);
   const membership =
-    findMembershipByUserAndTeam(linkedUser.id, player.teamId) ??
+    findAnyMembershipByUserAndTeam(linkedUser.id, player.teamId) ??
     createMembership({
       userId: linkedUser.id,
       teamId: player.teamId,
@@ -561,6 +597,7 @@ function syncLinkedUser(player: Player) {
   }
 
   membership.playerId = player.id;
+  membership.status = 'active';
   if (!membership.roles.includes('player')) {
     membership.roles = [...membership.roles, 'player'];
   }
@@ -573,6 +610,7 @@ function syncLinkedUser(player: Player) {
   linkedUser.appRole = resolveTeamAppRole(linkedUser, team);
   linkedUser.updatedAt = nowIso();
   player.linkedEmail = normalizeEmail(linkedUser.email);
+  player.deletedAt = null;
   syncUserActiveContext(linkedUser);
 }
 
@@ -853,8 +891,9 @@ export const mockRepository: AppRepository = {
       throw new Error('Nao encontramos um time com esse codigo.');
     }
 
-    const existingMembership = findMembershipByUserAndTeam(actor.id, team.id);
-    if (existingMembership) {
+    const existingMembership = findAnyMembershipByUserAndTeam(actor.id, team.id);
+    if (existingMembership?.status === 'active') {
+      existingMembership.updatedAt = nowIso();
       actor.activeTeamId = team.id;
       actor.teamId = team.id;
       actor.playerId = existingMembership.playerId;
@@ -868,7 +907,7 @@ export const mockRepository: AppRepository = {
 
     const normalizedActorEmail = normalizeEmail(actor.email);
     const candidatePlayer =
-      findTeamPlayers(team.id).find(
+      findSelectableTeamPlayers(team.id).find(
         (player) =>
           !player.linkedUserId &&
           normalizeEmail(player.linkedEmail ?? '') === normalizedActorEmail,
@@ -934,6 +973,7 @@ export const mockRepository: AppRepository = {
       celebrationVideoUrl: input.celebrationVideoUrl ?? null,
       allowSelfEditJerseyNumber: input.allowSelfEditJerseyNumber ?? false,
       manualStats: normalizeManualStats(input.manualStats),
+      deletedAt: null,
       createdAt,
       updatedAt: createdAt,
     };
@@ -1010,6 +1050,9 @@ export const mockRepository: AppRepository = {
       }
       if (input.status) {
         player.status = input.status;
+        if (input.status !== 'inactive') {
+          player.deletedAt = null;
+        }
       }
       if (input.bio !== undefined) {
         player.bio = input.bio?.trim() ?? '';
@@ -1084,6 +1127,72 @@ export const mockRepository: AppRepository = {
     return clone(player);
   },
 
+  async removePlayer(playerId: string, actorUserId: string) {
+    const player = findPlayer(playerId);
+    requirePlayerManager(actorUserId, player.teamId);
+
+    if (player.deletedAt || player.status === 'inactive') {
+      throw new Error('Esse jogador ja foi removido do elenco ativo.');
+    }
+
+    const updatedAt = nowIso();
+    const linkedUserId = player.linkedUserId ?? null;
+    const team = findTeam(player.teamId);
+
+    player.linkedUserId = null;
+    player.linkedEmail = null;
+    player.status = 'inactive';
+    player.deletedAt = updatedAt;
+    player.updatedAt = updatedAt;
+
+    if (linkedUserId) {
+      const linkedUser = findUser(linkedUserId);
+      const membership = findAnyMembershipByUserAndTeam(linkedUser.id, team.id);
+
+      if (membership) {
+        const keepAdminAccess = membership.roles.includes('admin');
+        membership.playerId = null;
+        membership.roles = keepAdminAccess
+          ? membership.roles.filter((role) => role !== 'player')
+          : [];
+        membership.canManageTeam = keepAdminAccess;
+        membership.canManagePlayers = keepAdminAccess;
+        membership.status = keepAdminAccess ? 'active' : 'inactive';
+        membership.updatedAt = updatedAt;
+      }
+
+      syncUserActiveContext(linkedUser);
+      linkedUser.appRole = resolveTeamAppRole(
+        linkedUser,
+        linkedUser.activeTeamId ? findTeam(linkedUser.activeTeamId) : null,
+      );
+      linkedUser.updatedAt = updatedAt;
+    }
+
+    const futureMatchIds = new Set(
+      database.matches
+        .filter(
+          (match) =>
+            match.teamId === player.teamId &&
+            match.status !== 'finished' &&
+            match.status !== 'canceled',
+        )
+        .map((match) => match.id),
+    );
+
+    database.attendance = database.attendance.filter(
+      (item) => !(item.playerId === player.id && futureMatchIds.has(item.matchId)),
+    );
+
+    for (const lineup of database.lineups.filter((item) => futureMatchIds.has(item.matchId))) {
+      lineup.starters = lineup.starters.filter((starter) => starter.playerId !== player.id);
+      lineup.benchPlayerIds = lineup.benchPlayerIds.filter((benchPlayerId) => benchPlayerId !== player.id);
+      lineup.updatedAt = updatedAt;
+    }
+
+    return clone(player);
+  },
+
   async createMatch(input: CreateMatchInput, creatorUserId: string) {
     const createdAt = nowIso();
     const creator = requireTeamAdmin(creatorUserId, input.teamId);
@@ -1095,6 +1204,7 @@ export const mockRepository: AppRepository = {
       date: input.date,
       time: input.time,
       venue: input.venue.trim(),
+      locationUrl: input.locationUrl?.trim() || null,
       opponentName: input.opponentName.trim(),
       opponentLogoUrl: input.opponentLogoUrl ?? null,
       linePlayersCount: input.linePlayersCount,
@@ -1109,7 +1219,7 @@ export const mockRepository: AppRepository = {
       mvpTotalVotes: 0,
     };
 
-    const attendance = findTeamPlayers(input.teamId).map<AttendanceRecord>((player) => ({
+    const attendance = findSelectableTeamPlayers(input.teamId).map<AttendanceRecord>((player) => ({
       id: createId('attendance'),
       teamId: input.teamId,
       matchId: match.id,
@@ -1136,6 +1246,7 @@ export const mockRepository: AppRepository = {
     match.date = input.date;
     match.time = input.time;
     match.venue = input.venue.trim();
+    match.locationUrl = input.locationUrl?.trim() || null;
     match.opponentName = input.opponentName.trim();
     match.opponentLogoUrl =
       input.opponentLogoUrl !== undefined

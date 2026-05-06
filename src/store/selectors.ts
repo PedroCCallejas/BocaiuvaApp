@@ -20,6 +20,40 @@ interface DerivedSnapshotSelectors {
   currentRoleLabel: string;
 }
 
+function isPlayerAvailable(player: Player | null | undefined) {
+  return Boolean(player && player.status !== 'inactive' && !player.deletedAt);
+}
+
+function scoreMembership(membership: TeamMember) {
+  return (
+    membership.roles.length * 1000 +
+    (membership.canManageTeam ? 100 : 0) +
+    (membership.canManagePlayers ? 50 : 0) +
+    (membership.playerId ? 25 : 0) +
+    new Date(membership.updatedAt).getTime() / 1_000_000_000_000
+  );
+}
+
+function dedupeMemberships(memberships: TeamMember[]) {
+  const byTeamId = new Map<string, TeamMember>();
+
+  for (const membership of memberships) {
+    const current = byTeamId.get(membership.teamId);
+
+    if (!current) {
+      byTeamId.set(membership.teamId, membership);
+      continue;
+    }
+
+    byTeamId.set(
+      membership.teamId,
+      scoreMembership(membership) >= scoreMembership(current) ? membership : current,
+    );
+  }
+
+  return [...byTeamId.values()];
+}
+
 let cachedSnapshot: AppState['snapshot'] | null = null;
 let cachedCurrentUserId: string | null = null;
 let cachedDerived: DerivedSnapshotSelectors | null = null;
@@ -59,7 +93,8 @@ function getDerivedSelectors(state: Slice): DerivedSnapshotSelectors {
   const currentUser =
     state.snapshot.users.find((user) => user.id === state.currentUserId) ?? null;
   const userMemberships = currentUser
-    ? [...state.snapshot.teamMembers]
+    ? dedupeMemberships(
+        [...state.snapshot.teamMembers]
         .filter((membership) => membership.userId === currentUser.id && membership.status === 'active')
         .sort((left, right) => {
           if (left.teamId === currentUser.activeTeamId) {
@@ -69,7 +104,8 @@ function getDerivedSelectors(state: Slice): DerivedSnapshotSelectors {
             return 1;
           }
           return left.joinedAt.localeCompare(right.joinedAt);
-        })
+        }),
+      )
     : [];
   const currentMembership =
     userMemberships.find((membership) => membership.teamId === currentUser?.activeTeamId) ??
@@ -81,7 +117,7 @@ function getDerivedSelectors(state: Slice): DerivedSnapshotSelectors {
     state.snapshot.players.find((player) => player.id === currentMembership?.playerId) ?? null;
   const teamPlayers = currentTeam
     ? [...state.snapshot.players]
-        .filter((player) => player.teamId === currentTeam.id)
+        .filter((player) => player.teamId === currentTeam.id && isPlayerAvailable(player))
         .sort((left, right) => left.jerseyNumber - right.jerseyNumber)
     : [];
   const teamMatches = currentTeam

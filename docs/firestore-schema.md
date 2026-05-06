@@ -74,6 +74,7 @@ Notas:
 Notas:
 
 - Cada documento representa a participacao de uma conta em um time.
+- A interface considera apenas uma participacao ativa por `userId + teamId`, mesmo que existam duplicatas antigas no banco.
 - `roles` aceita `admin`, `player` ou ambos ao mesmo tempo.
 - `canManageTeam` libera edicao do time e convites.
 - `canManagePlayers` libera cadastro, edicao de jogadores e ajuste de estatisticas manuais.
@@ -131,6 +132,7 @@ Notas:
 - `manualStats`
 - `introVideoUrl`
 - `celebrationVideoUrl`
+- `deletedAt`
 - `createdAt`
 - `updatedAt`
 
@@ -141,6 +143,7 @@ Notas:
 - `linkedEmail` permite reservar um cadastro antes da conta do jogador existir.
 - `allowSelfEditJerseyNumber` permite ao admin liberar a troca da camisa pelo proprio jogador.
 - `manualStats` segura o historico inicial enquanto partidas reais ainda nao sao persistidas.
+- `deletedAt` marca a remocao suave do jogador do elenco ativo.
 - Nada de foto, video, upload ou Storage entra nesta fase.
 
 ### `players/{playerId}.manualStats`
@@ -167,6 +170,7 @@ Notas:
 - `date`
 - `time`
 - `venue`
+- `locationUrl`
 - `opponentName`
 - `opponentLogoUrl`
 - `linePlayersCount`
@@ -186,6 +190,7 @@ Notas:
 - Todo documento de partida pertence a um `teamId`.
 - A leitura parte do `activeTeamId` da conta.
 - Admin do time pode criar, editar, cancelar e encerrar a partida.
+- `locationUrl` e opcional e aceita links externos de mapas.
 - Nesta etapa, o modo com conta conectada salva placar e status final, mas ainda nao persiste `matchStats`, MVP ou notas.
 
 ### `attendance/{attendanceId}`
@@ -249,6 +254,7 @@ Notas:
 - Criacao de partida: grava `matches/{matchId}` e cria `attendance` pendente para o elenco do time ativo.
 - Resposta de presenca: atualiza `attendance` no time ativo.
 - Escalacao visual: grava `lineups/{lineupId}` com titulares e reservas apenas dos confirmados.
+- Remocao de jogador: marca `players/{playerId}` como inativo, limpa presenca e escalacao futura e preserva o historico anterior.
 
 ## Indices recomendados
 

@@ -1,4 +1,4 @@
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 
 import { MatchCard } from '@/components/cards/MatchCard';
@@ -11,6 +11,7 @@ import { SectionHeader } from '@/components/ui/SectionHeader';
 import { MATCH_TYPE_LABELS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { formatMatchDateTime } from '@/lib/date';
 import {
   getConfirmedPlayers,
   getMvpSummary,
@@ -77,6 +78,26 @@ export default function MatchDetailsScreen() {
   const matchStats = snapshot.matchStats
     .filter((item) => item.matchId === currentMatch.id)
     .sort((left, right) => right.goals + right.assists - (left.goals + left.assists));
+
+  async function handleOpenLocation() {
+    if (!currentMatch.locationUrl) {
+      return;
+    }
+
+    try {
+      const supported = await Linking.canOpenURL(currentMatch.locationUrl);
+      if (!supported) {
+        throw new Error('O link de localizacao nao pode ser aberto neste aparelho.');
+      }
+
+      await Linking.openURL(currentMatch.locationUrl);
+    } catch (error) {
+      Alert.alert(
+        'Nao foi possivel abrir a localizacao',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    }
+  }
 
   async function respond(status: 'confirmed' | 'absent') {
     if (!currentPlayer) {
@@ -149,11 +170,31 @@ export default function MatchDetailsScreen() {
           {currentMatch.opponentName}
         </Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          {MATCH_TYPE_LABELS[currentMatch.matchType]} - {currentMatch.venue}
+          {MATCH_TYPE_LABELS[currentMatch.matchType]} - {formatMatchDateTime(currentMatch)}
+        </Text>
+        <Text style={[styles.description, { color: theme.colors.textMuted }]}>
+          {currentMatch.venue}
         </Text>
       </View>
 
       <MatchCard match={currentMatch} attendance={attendanceSummary} />
+
+      <View style={styles.section}>
+        <SectionHeader
+          title="Local da partida"
+          subtitle={currentMatch.locationUrl ? 'Abra o caminho no seu app de mapas.' : 'Endereco informado para o elenco.'}
+        />
+        <Text style={[styles.locationText, { color: theme.colors.text }]}>
+          {currentMatch.venue}
+        </Text>
+        {currentMatch.locationUrl ? (
+          <AppButton
+            label="Abrir localizacao"
+            variant="secondary"
+            onPress={() => void handleOpenLocation()}
+          />
+        ) : null}
+      </View>
 
       {canManage && currentMatch.status !== 'finished' && currentMatch.status !== 'canceled' ? (
         <View style={styles.section}>
@@ -367,5 +408,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
+  },
+  locationText: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
   },
 });

@@ -34,6 +34,7 @@ export default function PlayerDetailsScreen() {
   const canManageTeam = useAppStore(selectCanManageTeam);
   const currentPlayer = useAppStore(selectCurrentPlayer);
   const player = useAppStore((state) => findPlayerById(state, String(playerId)));
+  const removePlayer = useAppStore((state) => state.removePlayer);
 
   if (!team || !player) {
     return (
@@ -79,6 +80,33 @@ export default function PlayerDetailsScreen() {
     Alert.alert('Convite copiado', 'A mensagem de convite foi copiada para enviar ao jogador.');
   }
 
+  function handleRemovePlayer() {
+    Alert.alert(
+      'Remover jogador',
+      'Esse jogador vai sair do elenco ativo e nao aparecera mais nas proximas partidas do time.',
+      [
+        { text: 'Voltar', style: 'cancel' },
+        {
+          text: 'Remover jogador',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await removePlayer(currentPlayerRecord.id);
+                router.replace('/players');
+              } catch (error) {
+                Alert.alert(
+                  'Nao foi possivel remover',
+                  error instanceof Error ? error.message : 'Tente novamente.',
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }
+
   return (
     <Screen>
       <SectionHeader
@@ -97,6 +125,13 @@ export default function PlayerDetailsScreen() {
         />
         {canManageTeam ? (
           <AppButton label="Copiar convite" variant="secondary" onPress={handleCopyInvite} />
+        ) : null}
+        {canManagePlayers ? (
+          <AppButton
+            label="Remover jogador"
+            variant="danger"
+            onPress={handleRemovePlayer}
+          />
         ) : null}
       </View>
 

@@ -113,6 +113,7 @@ export interface Player extends BaseEntity {
   introVideoUrl?: string | null;
   celebrationVideoUrl?: string | null;
   manualStats?: ManualPlayerStats;
+  deletedAt?: string | null;
 }
 
 export interface Scoreboard {
@@ -127,6 +128,7 @@ export interface Match extends BaseEntity {
   date: string;
   time: string;
   venue: string;
+  locationUrl?: string | null;
   opponentName: string;
   opponentLogoUrl?: string | null;
   linePlayersCount: number;

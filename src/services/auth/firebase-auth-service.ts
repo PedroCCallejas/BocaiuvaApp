@@ -8,7 +8,7 @@ import {
   signOut,
   updateProfile,
   type User as FirebaseUser,
-} from '@firebase/auth';
+} from 'firebase/auth';
 
 import {
   auth,

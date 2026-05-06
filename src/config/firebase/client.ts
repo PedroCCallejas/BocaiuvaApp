@@ -1,16 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import * as FirebaseAuth from '@firebase/auth'
+import * as FirebaseAuth from 'firebase/auth'
 import { getApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app'
 import { getFirestore, type Firestore } from 'firebase/firestore'
 
 type FirebaseAuthModule = typeof FirebaseAuth & {
-  getReactNativePersistence: (storage: typeof AsyncStorage) => any
+  getReactNativePersistence?: (
+    storage: typeof AsyncStorage
+  ) => FirebaseAuth.Persistence
 }
 
 const { getAuth, initializeAuth } = FirebaseAuth
-// The RN persistence helper exists at runtime, but the public typings do not expose it here.
-const { getReactNativePersistence } =
-  FirebaseAuth as FirebaseAuthModule
+const { getReactNativePersistence } = FirebaseAuth as FirebaseAuthModule
+
 type Auth = FirebaseAuth.Auth
 
 export const isFirebaseDataSource =
@@ -61,17 +62,28 @@ let app: FirebaseApp | null = null
 let auth: Auth | null = null
 let db: Firestore | null = null
 
-if (firebaseEnabled && firebaseConfig) {
-  app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp()
+function createAuthInstance(firebaseApp: FirebaseApp) {
+  const reactNativePersistence =
+    typeof getReactNativePersistence === 'function'
+      ? getReactNativePersistence(AsyncStorage)
+      : undefined
 
   try {
-    auth = initializeAuth(app, {
-      persistence: getReactNativePersistence(AsyncStorage),
-    })
-  } catch {
-    auth = getAuth(app)
-  }
+    if (reactNativePersistence) {
+      return initializeAuth(firebaseApp, {
+        persistence: reactNativePersistence,
+      })
+    }
 
+    return initializeAuth(firebaseApp)
+  } catch {
+    return getAuth(firebaseApp)
+  }
+}
+
+if (firebaseEnabled && firebaseConfig) {
+  app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp()
+  auth = createAuthInstance(app)
   db = getFirestore(app)
 }
 

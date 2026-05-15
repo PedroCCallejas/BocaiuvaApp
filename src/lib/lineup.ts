@@ -1,4 +1,4 @@
-import type { LineupNode, LineupZone, MatchType, Player } from '@/types/domain';
+import type { Lineup, LineupNode, LineupZone, MatchType, Player } from '@/types/domain';
 
 export interface FormationPreset {
   key: string;
@@ -7,6 +7,12 @@ export interface FormationPreset {
   linePlayersCount: number;
   starterCount: number;
   coordinates: Array<{ x: number; y: number; zone: LineupZone }>;
+}
+
+export interface LineupLayoutState {
+  formationKey: string;
+  starters: LineupNode[];
+  benchPlayerIds: string[];
 }
 
 const formationPresets: FormationPreset[] = [
@@ -190,7 +196,103 @@ export function buildLineupFromPreset(
       x: coordinates[index]?.x ?? 50,
       y: coordinates[index]?.y ?? 50,
       zone: coordinates[index]?.zone ?? 'midfield',
+      label: null,
     })),
     benchPlayerIds: players.slice(preset.starterCount).map((player) => player.id),
+  };
+}
+
+function clampPercent(value: number, fallback: number) {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Number(Math.min(Math.max(value, 0), 100).toFixed(1));
+}
+
+export function inferLineupZone(y: number): LineupZone {
+  if (y >= 82) {
+    return 'goalkeeper';
+  }
+
+  if (y >= 58) {
+    return 'defense';
+  }
+
+  if (y >= 34) {
+    return 'midfield';
+  }
+
+  return 'attack';
+}
+
+export function buildLineupStateFromSource(params: {
+  existingLineup?: Pick<Lineup, 'formationKey' | 'starters' | 'benchPlayerIds'> | null;
+  preset: FormationPreset;
+  players: Player[];
+}): LineupLayoutState {
+  const autoLineup = buildLineupFromPreset(params.preset, params.players);
+  if (!params.existingLineup) {
+    return {
+      formationKey: params.preset.key,
+      starters: autoLineup.starters,
+      benchPlayerIds: autoLineup.benchPlayerIds,
+    };
+  }
+
+  const availablePlayerIds = new Set(params.players.map((player) => player.id));
+  const normalizedFallbackCoordinates =
+    params.preset.coordinates.length >= params.preset.starterCount
+      ? params.preset.coordinates
+      : fallbackCoordinates(params.preset.starterCount);
+  const usedPlayerIds = new Set<string>();
+  const starters = params.existingLineup.starters
+    .flatMap((node, index) => {
+      if (!availablePlayerIds.has(node.playerId) || usedPlayerIds.has(node.playerId)) {
+        return [];
+      }
+
+      usedPlayerIds.add(node.playerId);
+      const fallback = normalizedFallbackCoordinates[index] ?? {
+        x: 50,
+        y: 50,
+        zone: 'midfield' as const,
+      };
+
+      return [{
+        playerId: node.playerId,
+        x: clampPercent(node.x, fallback.x),
+        y: clampPercent(node.y, fallback.y),
+        zone: node.zone ?? inferLineupZone(clampPercent(node.y, fallback.y)),
+        label: node.label?.trim() || null,
+      } satisfies LineupNode];
+    })
+    .slice(0, params.preset.starterCount);
+
+  const benchSet = new Set<string>();
+  const benchPlayerIds: string[] = [];
+
+  for (const playerId of params.existingLineup.benchPlayerIds ?? []) {
+    if (
+      availablePlayerIds.has(playerId) &&
+      !usedPlayerIds.has(playerId) &&
+      !benchSet.has(playerId)
+    ) {
+      benchSet.add(playerId);
+      benchPlayerIds.push(playerId);
+    }
+  }
+
+  for (const player of params.players) {
+    if (!usedPlayerIds.has(player.id) && !benchSet.has(player.id)) {
+      benchSet.add(player.id);
+      benchPlayerIds.push(player.id);
+    }
+  }
+
+  return {
+    formationKey: params.existingLineup.formationKey || params.preset.key,
+    starters,
+    benchPlayerIds,
   };
 }

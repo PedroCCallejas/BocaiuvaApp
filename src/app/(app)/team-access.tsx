@@ -55,9 +55,11 @@ export default function TeamAccessScreen() {
   const joinTeamWithInviteCode = useAppStore((state) => state.joinTeamWithInviteCode);
   const setActiveTeam = useAppStore((state) => state.setActiveTeam);
   const refreshAccess = useAppStore((state) => state.refreshAccess);
+  const logout = useAppStore((state) => state.logout);
   const [submittingJoin, setSubmittingJoin] = useState(false);
   const [switchingTeamId, setSwitchingTeamId] = useState<string | null>(null);
   const [refreshingAccess, setRefreshingAccess] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const {
     control,
     handleSubmit,
@@ -144,8 +146,24 @@ export default function TeamAccessScreen() {
     }
   }
 
+  async function handleLogout() {
+    setLoggingOut(true);
+
+    try {
+      await logout();
+      router.replace('/login');
+    } catch (error) {
+      Alert.alert(
+        'Nao foi possivel sair',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    } finally {
+      setLoggingOut(false);
+    }
+  }
+
   return (
-    <Screen contentContainerStyle={styles.screen}>
+    <Screen formMode contentContainerStyle={styles.screen}>
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>
           {membershipCards.length > 0 ? 'Meus times' : 'Entrar em um time'}
@@ -253,6 +271,13 @@ export default function TeamAccessScreen() {
         variant="ghost"
         onPress={() => void handleRefreshAccess()}
         loading={refreshingAccess}
+        fullWidth
+      />
+      <AppButton
+        label="Sair da conta"
+        variant="danger"
+        onPress={() => void handleLogout()}
+        loading={loggingOut}
         fullWidth
       />
     </Screen>

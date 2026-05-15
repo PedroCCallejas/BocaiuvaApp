@@ -11,3 +11,4 @@ export const authService = isFirebaseDataSource
   : mockAuthService;
 
 export const isUsingFirebaseAuth = authService.getMode() === 'firebase';
+

@@ -1,4 +1,11 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type GestureResponderEvent,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { fonts } from '@/constants/theme';
@@ -6,7 +13,7 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 
 interface AppButtonProps {
   label: string;
-  onPress: () => void;
+  onPress: (event?: GestureResponderEvent) => void;
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
   disabled?: boolean;
   loading?: boolean;

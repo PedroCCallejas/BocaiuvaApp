@@ -1,4 +1,5 @@
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect } from 'react';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -53,33 +54,87 @@ const schema = z.object({
 type MatchValues = z.infer<typeof schema>;
 
 export default function EditMatchScreen() {
-  const { matchId } = useLocalSearchParams<{ matchId: string }>();
+  const params = useLocalSearchParams<{ matchId?: string | string[] }>();
   const theme = useAppTheme();
+  const ready = useAppStore((state) => state.ready);
+  const syncStatus = useAppStore((state) => state.syncStatus);
   const team = useAppStore(selectCurrentTeam);
   const canManage = useAppStore(selectCanManageTeam);
-  const match = useAppStore((state) => findMatchById(state, String(matchId)));
+  const rawMatchId = params.matchId;
+  const resolvedMatchId =
+    typeof rawMatchId === 'string' ? rawMatchId : rawMatchId?.[0] ?? '';
+  const match = useAppStore((state) => findMatchById(state, resolvedMatchId));
   const updateMatch = useAppStore((state) => state.updateMatch);
   const {
     control,
     handleSubmit,
+    reset,
     watch,
     setValue,
     formState: { errors, isSubmitting },
   } = useForm<MatchValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      opponentName: match?.opponentName ?? 'Novo adversario',
-      date: formatDateBR(match?.date ?? '2026-05-20'),
-      time: match?.time ?? '20:00',
-      venue: match?.venue ?? 'Campo principal',
-      locationUrl: match?.locationUrl ?? '',
-      notes: match?.notes ?? '',
-      matchType: match?.matchType ?? 'society',
-      linePlayersCount: String(match?.linePlayersCount ?? 6),
+      opponentName: '',
+      date: '',
+      time: '',
+      venue: '',
+      locationUrl: '',
+      notes: '',
+      matchType: 'society',
+      linePlayersCount: '6',
     },
   });
 
-  if (!team || !canManage || !match) {
+  useEffect(() => {
+    if (!match) {
+      return;
+    }
+
+    reset({
+      opponentName: match.opponentName,
+      date: formatDateBR(match.date),
+      time: match.time ?? '',
+      venue: match.venue ?? '',
+      locationUrl: match.locationUrl ?? '',
+      notes: match.notes ?? '',
+      matchType: match.matchType,
+      linePlayersCount: String(match.linePlayersCount ?? 6),
+    });
+  }, [match, reset]);
+
+  const waitingForMatch =
+    !ready ||
+    (syncStatus === 'connecting' && (!match || !team)) ||
+    (!match && !resolvedMatchId);
+
+  if (waitingForMatch) {
+    return (
+      <Screen>
+        <View style={styles.loadingState}>
+          <ActivityIndicator color={theme.colors.primary} />
+          <Text style={[styles.description, { color: theme.colors.textMuted }]}>
+            Carregando dados da partida...
+          </Text>
+        </View>
+      </Screen>
+    );
+  }
+
+  if (!match) {
+    return (
+      <Screen>
+        <EmptyState
+          title="Partida nao encontrada"
+          description="Nao conseguimos localizar esta partida no snapshot atual."
+          actionLabel="Voltar"
+          onAction={() => router.back()}
+        />
+      </Screen>
+    );
+  }
+
+  if (!team || !canManage) {
     return (
       <Screen>
         <EmptyState
@@ -119,7 +174,7 @@ export default function EditMatchScreen() {
   }
 
   return (
-    <Screen>
+    <Screen formMode>
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Editar partida</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
@@ -272,6 +327,12 @@ export default function EditMatchScreen() {
 }
 
 const styles = StyleSheet.create({
+  loadingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
   hero: {
     gap: 8,
   },

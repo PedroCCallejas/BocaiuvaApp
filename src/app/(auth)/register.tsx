@@ -45,7 +45,7 @@ export default function RegisterScreen() {
   }
 
   return (
-    <Screen contentContainerStyle={styles.screen}>
+    <Screen formMode contentContainerStyle={styles.screen}>
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Criar conta</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>

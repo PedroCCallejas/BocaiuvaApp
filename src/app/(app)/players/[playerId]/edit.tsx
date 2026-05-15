@@ -1,4 +1,5 @@
 import { Alert, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { PlayerForm } from '@/components/forms/PlayerForm';
@@ -8,6 +9,7 @@ import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { buildPlayerPhotoStoragePath, uploadImage } from '@/lib/uploadImage';
 import { useAppStore } from '@/store/app-store';
 import {
   findPlayerById,
@@ -25,6 +27,8 @@ export default function EditPlayerScreen() {
   const player = useAppStore((state) => findPlayerById(state, String(playerId)));
   const updatePlayer = useAppStore((state) => state.updatePlayer);
   const removePlayer = useAppStore((state) => state.removePlayer);
+  const reactivatePlayer = useAppStore((state) => state.reactivatePlayer);
+  const [photoUploadProgress, setPhotoUploadProgress] = useState<number | null>(null);
 
   if (!team || !player) {
     return (
@@ -59,7 +63,7 @@ export default function EditPlayerScreen() {
     try {
       await updatePlayer(editablePlayer.id, {
         linkedUserId: null,
-        linkedEmail: editablePlayer.linkedEmail ?? null,
+        linkedEmail: null,
       });
       Alert.alert('Conta desvinculada', 'O jogador voltou a ficar sem conta conectada.');
     } catch (error) {
@@ -97,8 +101,34 @@ export default function EditPlayerScreen() {
     );
   }
 
+  function handleReactivatePlayer() {
+    Alert.alert(
+      'Reativar jogador',
+      'Esse cadastro volta ao elenco ativo e o app tenta restaurar o vinculo da conta automaticamente.',
+      [
+        { text: 'Voltar', style: 'cancel' },
+        {
+          text: 'Reativar jogador',
+          onPress: () => {
+            void (async () => {
+              try {
+                await reactivatePlayer(editablePlayer.id);
+                Alert.alert('Jogador reativado', 'O cadastro voltou ao elenco ativo.');
+              } catch (error) {
+                Alert.alert(
+                  'Nao foi possivel reativar',
+                  error instanceof Error ? error.message : 'Tente novamente.',
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }
+
   return (
-    <Screen>
+    <Screen formMode>
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>
           {variant === 'admin' ? 'Editar jogador' : 'Editar meu perfil'}
@@ -125,7 +155,7 @@ export default function EditPlayerScreen() {
         />
       ) : null}
 
-      {variant === 'admin' ? (
+      {variant === 'admin' && editablePlayer.status !== 'inactive' && !editablePlayer.deletedAt ? (
         <AppButton
           label="Remover jogador"
           variant="danger"
@@ -133,9 +163,17 @@ export default function EditPlayerScreen() {
         />
       ) : null}
 
+      {variant === 'admin' && (editablePlayer.status === 'inactive' || editablePlayer.deletedAt) ? (
+        <AppButton
+          label="Reativar jogador"
+          onPress={handleReactivatePlayer}
+        />
+      ) : null}
+
       <PlayerForm
         variant={variant}
         submitLabel="Salvar alteracoes"
+        imageUploadProgress={photoUploadProgress}
         helperText={
           variant === 'self'
             ? 'Os dados administrativos do cadastro continuam sob controle de quem gerencia o elenco.'
@@ -163,26 +201,54 @@ export default function EditPlayerScreen() {
         }}
         onSubmit={async (payload) => {
           try {
+            const { pendingPhoto, ...playerPayload } = payload;
             await updatePlayer(editablePlayer.id, {
-              fullName: payload.fullName,
-              nickname: payload.nickname,
-              photoUrl: payload.photoUrl,
-              jerseyNumber: payload.jerseyNumber,
-              primaryPosition: payload.primaryPosition,
-              secondaryPositions: payload.secondaryPositions,
-              dominantFoot: payload.dominantFoot,
-              status: payload.status,
-              linkedEmail: payload.linkedEmail ?? null,
-              bio: payload.bio,
-              preferredPosition: payload.preferredPosition,
-              introVideoUrl: payload.introVideoUrl ?? null,
-              celebrationVideoUrl: payload.celebrationVideoUrl ?? null,
+              fullName: playerPayload.fullName,
+              nickname: playerPayload.nickname,
+              photoUrl: pendingPhoto
+                ? editablePlayer.photoUrl ?? null
+                : playerPayload.photoUrl,
+              jerseyNumber: playerPayload.jerseyNumber,
+              primaryPosition: playerPayload.primaryPosition,
+              secondaryPositions: playerPayload.secondaryPositions,
+              dominantFoot: playerPayload.dominantFoot,
+              status: playerPayload.status,
+              linkedEmail: playerPayload.linkedEmail ?? null,
+              bio: playerPayload.bio,
+              preferredPosition: playerPayload.preferredPosition,
+              introVideoUrl: playerPayload.introVideoUrl ?? null,
+              celebrationVideoUrl: playerPayload.celebrationVideoUrl ?? null,
               allowSelfEditJerseyNumber:
-                payload.allowSelfEditJerseyNumber ?? false,
-              manualStats: payload.manualStats,
+                playerPayload.allowSelfEditJerseyNumber ?? false,
+              manualStats: playerPayload.manualStats,
             });
+
+            if (pendingPhoto) {
+              try {
+                setPhotoUploadProgress(0);
+                const uploadedPhoto = await uploadImage({
+                  asset: pendingPhoto,
+                  storagePath: buildPlayerPhotoStoragePath(editablePlayer.teamId, editablePlayer.id),
+                  onProgress: setPhotoUploadProgress,
+                });
+                await updatePlayer(editablePlayer.id, {
+                  photoUrl: uploadedPhoto.downloadUrl,
+                });
+              } catch (error) {
+                Alert.alert(
+                  'Alteracoes salvas sem trocar a foto',
+                  error instanceof Error
+                    ? error.message
+                    : 'O restante das alteracoes foi salvo, mas o upload da foto falhou.',
+                );
+              } finally {
+                setPhotoUploadProgress(null);
+              }
+            }
+
             router.replace(`/players/${editablePlayer.id}`);
           } catch (error) {
+            setPhotoUploadProgress(null);
             Alert.alert(
               'Nao foi possivel salvar',
               error instanceof Error ? error.message : 'Tente novamente.',

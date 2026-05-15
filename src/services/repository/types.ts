@@ -1,4 +1,5 @@
 import type {
+  AppNotification,
   AttendanceRecord,
   AttendanceStatus,
   FootPreference,
@@ -12,12 +13,18 @@ import type {
   Player,
   PlayerRating,
   Position,
-  RatingCriterion,
+  TeamRatingCriterion,
   Season,
   Team,
   TeamMember,
   User,
 } from '@/types/domain';
+import type {
+  ImportLegacyMatchesResult,
+  ImportedMatchPayloadItem,
+  LegacyMatchImportPreview,
+  RegisterFinishedMatchPlayerInput,
+} from '@/types/match-import';
 
 export type RepositoryMode = 'mock' | 'firebase';
 
@@ -32,6 +39,8 @@ export interface AppSnapshot {
   matchStats: MatchStat[];
   mvpVotes: MvpVote[];
   playerRatings: PlayerRating[];
+  ratingCriteria: TeamRatingCriterion[];
+  notifications: AppNotification[];
   seasons: Season[];
 }
 
@@ -56,6 +65,8 @@ export const emptySnapshot: AppSnapshot = {
   matchStats: [],
   mvpVotes: [],
   playerRatings: [],
+  ratingCriteria: [],
+  notifications: [],
   seasons: [],
 };
 
@@ -172,6 +183,11 @@ export interface JoinTeamResult {
   alreadyMember: boolean;
 }
 
+export interface SnapshotSubscriptionHandlers {
+  onSnapshot: (snapshot: AppSnapshot) => void;
+  onError?: (error: unknown) => void;
+}
+
 export interface FinishMatchPlayerStatInput {
   playerId: string;
   goals: number;
@@ -182,7 +198,24 @@ export interface FinishMatchInput {
   matchId: string;
   teamScore: number;
   opponentScore: number;
+  ownGoalsForTeam?: number;
   playerStats: FinishMatchPlayerStatInput[];
+}
+
+export interface RegisterFinishedMatchInput {
+  seasonId?: string | null;
+  date: string;
+  time?: string | null;
+  venue?: string | null;
+  locationUrl?: string | null;
+  opponentName: string;
+  opponentLogoUrl?: string | null;
+  linePlayersCount?: number | null;
+  matchType: MatchType;
+  notes?: string | null;
+  teamScore: number;
+  opponentScore: number;
+  players: RegisterFinishedMatchPlayerInput[];
 }
 
 export interface SubmitMvpVoteInput {
@@ -193,13 +226,34 @@ export interface SubmitMvpVoteInput {
 export interface SubmitPlayerRatingInput {
   matchId: string;
   targetPlayerId: string;
-  criteria: Record<RatingCriterion, number>;
+  criteriaScores: Record<string, number>;
+}
+
+export interface CreateRatingCriterionInput {
+  label: string;
+  description?: string | null;
+  type: TeamRatingCriterion['type'];
+  weight?: number | null;
+  active?: boolean;
+}
+
+export interface UpdateRatingCriterionInput {
+  label?: string;
+  description?: string | null;
+  type?: TeamRatingCriterion['type'];
+  weight?: number | null;
+  active?: boolean;
+  order?: number;
 }
 
 export interface AppRepository {
   getMode(): RepositoryMode;
   getInitialSnapshot(): Promise<AppSnapshot>;
   getSnapshot(): Promise<AppSnapshot>;
+  subscribeSnapshot?(
+    currentUserId: string,
+    handlers: SnapshotSubscriptionHandlers,
+  ): Promise<() => void> | (() => void);
   login(input: LoginInput): Promise<User>;
   loginWithGoogle(input: GoogleLoginInput): Promise<User>;
   register(input: RegisterInput): Promise<User>;
@@ -207,19 +261,47 @@ export interface AppRepository {
   createTeam(input: CreateTeamInput, adminUserId: string): Promise<Team>;
   updateTeam(teamId: string, input: UpdateTeamInput, actorUserId: string): Promise<Team>;
   regenerateTeamInviteCode(teamId: string, actorUserId: string): Promise<Team>;
+  createRatingCriterion(
+    input: CreateRatingCriterionInput,
+    actorUserId: string,
+  ): Promise<TeamRatingCriterion>;
+  updateRatingCriterion(
+    criterionId: string,
+    input: UpdateRatingCriterionInput,
+    actorUserId: string,
+  ): Promise<TeamRatingCriterion>;
+  deleteRatingCriterion(
+    criterionId: string,
+    actorUserId: string,
+  ): Promise<void>;
   setActiveTeam(teamId: string, userId: string): Promise<User>;
   joinTeamWithInviteCode(inviteCode: string, userId: string): Promise<JoinTeamResult>;
   createPlayer(input: CreatePlayerInput, actorUserId: string): Promise<Player>;
   updatePlayer(playerId: string, input: UpdatePlayerInput, actorUserId: string): Promise<Player>;
   removePlayer(playerId: string, actorUserId: string): Promise<Player>;
+  reactivatePlayer(playerId: string, actorUserId: string): Promise<Player>;
   createMatch(input: CreateMatchInput, creatorUserId: string): Promise<Match>;
   updateMatch(matchId: string, input: UpdateMatchInput, actorUserId: string): Promise<Match>;
   updateAttendance(input: UpdateAttendanceInput, actorUserId: string): Promise<AttendanceRecord>;
   saveLineup(input: SaveLineupInput, actorUserId: string): Promise<Lineup>;
   finishMatch(input: FinishMatchInput, actorUserId: string): Promise<Match>;
+  registerFinishedMatch(
+    input: RegisterFinishedMatchInput,
+    actorUserId: string,
+  ): Promise<Match>;
+  previewLegacyMatchImport(
+    payload: ImportedMatchPayloadItem[],
+    actorUserId: string,
+  ): Promise<LegacyMatchImportPreview>;
+  importLegacyMatches(
+    payload: ImportedMatchPayloadItem[],
+    actorUserId: string,
+  ): Promise<ImportLegacyMatchesResult>;
   submitMvpVote(input: SubmitMvpVoteInput, actorUserId: string): Promise<MvpVote>;
   submitPlayerRating(
     input: SubmitPlayerRatingInput,
     actorUserId: string,
   ): Promise<PlayerRating>;
+  markNotificationAsRead(notificationId: string, actorUserId: string): Promise<void>;
+  markAllNotificationsAsRead(actorUserId: string): Promise<void>;
 }

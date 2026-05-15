@@ -46,7 +46,7 @@ export default function ForgotPasswordScreen() {
   }
 
   return (
-    <Screen contentContainerStyle={styles.screen}>
+    <Screen formMode contentContainerStyle={styles.screen}>
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Recuperar senha</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>

@@ -1,8 +1,9 @@
-import { RATING_CRITERIA_ORDER } from '@/constants/options';
+import { buildMatchMvpBreakdown, buildRatingSummary } from '@/lib/stats';
 import type {
   MatchResult,
   Player,
   PlayerRating,
+  PlayerRatingCriteriaSnapshotItem,
   RatingCriterion,
 } from '@/types/domain';
 import type { AppSnapshot } from '@/services/repository/types';
@@ -63,30 +64,15 @@ export interface MvpSummary {
 }
 
 export function getMvpSummary(snapshot: AppSnapshot, matchId: string): MvpSummary {
-  const eligible = new Set(getConfirmedPlayerIds(snapshot, matchId));
-  const votes = snapshot.mvpVotes.filter(
-    (vote) =>
-      vote.matchId === matchId &&
-      eligible.has(vote.voterPlayerId) &&
-      eligible.has(vote.targetPlayerId),
-  );
-
-  const counts = votes.reduce<Record<string, number>>((acc, vote) => {
-    acc[vote.targetPlayerId] = (acc[vote.targetPlayerId] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  const results = Object.entries(counts)
-    .map(([playerId, count]) => ({ playerId, votes: count }))
-    .sort((left, right) => right.votes - left.votes);
-  const topVotes = results[0]?.votes ?? 0;
+  const breakdown = buildMatchMvpBreakdown(snapshot, matchId);
 
   return {
-    totalVotes: votes.length,
-    results,
-    winnerPlayerIds: results
-      .filter((item) => item.votes === topVotes && topVotes > 0)
-      .map((item) => item.playerId),
+    totalVotes: breakdown.totalVotes,
+    results: breakdown.results.map((item) => ({
+      playerId: item.playerId,
+      votes: item.votes,
+    })),
+    winnerPlayerIds: breakdown.winnerPlayerIds,
   };
 }
 
@@ -110,12 +96,27 @@ export function hasPlayerRatedTarget(
   raterPlayerId: string,
   targetPlayerId: string,
 ) {
-  return snapshot.playerRatings.some(
+  return Boolean(
+    findPlayerRating(snapshot, matchId, raterPlayerId, targetPlayerId),
+  );
+}
+
+export function findPlayerRating(
+  snapshot: AppSnapshot,
+  matchId: string,
+  raterPlayerId?: string | null,
+  targetPlayerId?: string | null,
+) {
+  if (!raterPlayerId || !targetPlayerId) {
+    return null;
+  }
+
+  return snapshot.playerRatings.find(
     (rating) =>
       rating.matchId === matchId &&
       rating.raterPlayerId === raterPlayerId &&
       rating.targetPlayerId === targetPlayerId,
-  );
+  ) ?? null;
 }
 
 export interface PlayerRatingSummary {
@@ -123,17 +124,15 @@ export interface PlayerRatingSummary {
   overallAverage: number;
   totalRatings: number;
   criteriaAverages: Record<RatingCriterion, number>;
+  criteriaAdjustedAverages: Record<RatingCriterion, number>;
+  criteriaCounts: Record<RatingCriterion, number>;
+  criteriaSnapshotById: Record<RatingCriterion, PlayerRatingCriteriaSnapshotItem>;
 }
 
-function average(numbers: number[]) {
-  if (numbers.length === 0) {
-    return 0;
-  }
-
-  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
-}
-
-function summarizeRatings(ratings: PlayerRating[]): PlayerRatingSummary[] {
+function summarizeRatings(
+  ratings: PlayerRating[],
+  currentCriteria = [] as AppSnapshot['ratingCriteria'],
+): PlayerRatingSummary[] {
   const grouped = ratings.reduce<Record<string, PlayerRating[]>>((acc, rating) => {
     acc[rating.targetPlayerId] = [...(acc[rating.targetPlayerId] ?? []), rating];
     return acc;
@@ -141,22 +140,16 @@ function summarizeRatings(ratings: PlayerRating[]): PlayerRatingSummary[] {
 
   return Object.entries(grouped)
     .map(([playerId, playerRatings]) => {
-      const criteriaAverages = RATING_CRITERIA_ORDER.reduce<
-        Record<RatingCriterion, number>
-      >((acc, criterion) => {
-        acc[criterion] = Number(
-          average(playerRatings.map((item) => item.criteria[criterion])).toFixed(1),
-        );
-        return acc;
-      }, {} as Record<RatingCriterion, number>);
+      const summary = buildRatingSummary(playerRatings, currentCriteria);
 
       return {
         playerId,
-        overallAverage: Number(
-          average(playerRatings.map((item) => item.overall)).toFixed(1),
-        ),
-        totalRatings: playerRatings.length,
-        criteriaAverages,
+        overallAverage: summary.overallAverage,
+        totalRatings: summary.totalRatings,
+        criteriaAverages: summary.criteriaAverages,
+        criteriaAdjustedAverages: summary.criteriaAdjustedAverages,
+        criteriaCounts: summary.criteriaCounts,
+        criteriaSnapshotById: summary.criteriaSnapshotById,
       };
     })
     .sort((left, right) => right.overallAverage - left.overallAverage);
@@ -171,7 +164,7 @@ export function getRatingsSummary(snapshot: AppSnapshot, matchId: string) {
       eligible.has(item.targetPlayerId),
   );
 
-  return summarizeRatings(ratings);
+  return summarizeRatings(ratings, snapshot.ratingCriteria);
 }
 
 export function findPlayerById(players: Player[], playerId: string) {

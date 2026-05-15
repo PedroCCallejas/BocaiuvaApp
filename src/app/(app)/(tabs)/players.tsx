@@ -1,65 +1,158 @@
+import { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
+import { PlayerCard } from '@/components/cards/PlayerCard';
+import { SyncStatusCard } from '@/components/cards/SyncStatusCard';
 import { AppButton } from '@/components/ui/AppButton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
-import { PlayerCard } from '@/components/cards/PlayerCard';
-import { buildPlayerAggregates } from '@/lib/stats';
+import { fonts } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
+import { buildPlayerAggregates, buildPlayerStatsLabel } from '@/lib/stats';
 import { useAppStore } from '@/store/app-store';
 import {
   selectCanManagePlayers,
   selectCurrentPlayer,
   selectCurrentTeam,
-  selectTeamPlayers,
+  selectIsRefreshingData,
+  selectSyncStatusHint,
+  selectSyncStatusMessage,
+  selectTeamHistoricalPlayers,
 } from '@/store/selectors';
 
+type PlayerRosterFilter = 'active' | 'inactive' | 'all';
+
+const PLAYER_FILTER_LABELS: Record<PlayerRosterFilter, string> = {
+  active: 'Ativos',
+  inactive: 'Inativos',
+  all: 'Todos',
+};
+
 export default function PlayersScreen() {
+  const theme = useAppTheme();
   const snapshot = useAppStore((state) => state.snapshot);
   const team = useAppStore(selectCurrentTeam);
-  const players = useAppStore(selectTeamPlayers);
+  const players = useAppStore(selectTeamHistoricalPlayers);
   const canManagePlayers = useAppStore(selectCanManagePlayers);
   const currentPlayer = useAppStore(selectCurrentPlayer);
+  const refreshData = useAppStore((state) => state.refreshData);
+  const refreshing = useAppStore(selectIsRefreshingData);
+  const syncMessage = useAppStore(selectSyncStatusMessage);
+  const syncHint = useAppStore(selectSyncStatusHint);
+  const [rosterFilter, setRosterFilter] = useState<PlayerRosterFilter>('active');
 
   if (!team) {
     return null;
   }
 
-  const stats = buildPlayerAggregates(snapshot, team.id);
+  const stats = buildPlayerAggregates(snapshot, team.id, { playerScope: 'all' });
+  const activePlayers = players.filter((player) => player.status !== 'inactive' && !player.deletedAt);
+  const inactivePlayers = players.filter((player) => player.status === 'inactive' || player.deletedAt);
+  const visiblePlayers = useMemo(() => {
+    if (!canManagePlayers) {
+      return activePlayers;
+    }
+
+    switch (rosterFilter) {
+      case 'inactive':
+        return inactivePlayers;
+      case 'all':
+        return players;
+      case 'active':
+      default:
+        return activePlayers;
+    }
+  }, [activePlayers, canManagePlayers, inactivePlayers, players, rosterFilter]);
 
   return (
-    <Screen>
+    <Screen onRefresh={() => void refreshData()} refreshing={refreshing}>
       <SectionHeader
         title="Elenco"
         subtitle={
-          players.length > 0
-            ? `${players.length} jogadores cadastrados para ${team.name}`
+          visiblePlayers.length > 0
+            ? `${visiblePlayers.length} jogador(es) em ${PLAYER_FILTER_LABELS[canManagePlayers ? rosterFilter : 'active'].toLowerCase()}`
             : `Monte o elenco de ${team.name}`
         }
         actionLabel={canManagePlayers ? 'Adicionar jogador' : undefined}
         onAction={canManagePlayers ? () => router.push('/players/create') : undefined}
       />
+      <SyncStatusCard
+        hint={syncHint}
+        loading={refreshing}
+        message={syncMessage}
+        onRefresh={() => void refreshData()}
+      />
+
       {canManagePlayers ? (
-        <AppButton label="Adicionar jogador" onPress={() => router.push('/players/create')} />
+        <>
+          <View style={styles.filterRow}>
+            {(['active', 'inactive', 'all'] as PlayerRosterFilter[]).map((filter) => {
+              const selected = rosterFilter === filter;
+              const total =
+                filter === 'active'
+                  ? activePlayers.length
+                  : filter === 'inactive'
+                    ? inactivePlayers.length
+                    : players.length;
+
+              return (
+                <Pressable
+                  key={filter}
+                  onPress={() => setRosterFilter(filter)}
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: selected
+                        ? theme.colors.primarySoft
+                        : theme.colors.surface,
+                      borderColor: selected ? theme.colors.primary : theme.colors.border,
+                    },
+                  ]}>
+                  <Text style={[styles.filterText, { color: theme.colors.text }]}>
+                    {PLAYER_FILTER_LABELS[filter]} ({total})
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <AppButton label="Adicionar jogador" onPress={() => router.push('/players/create')} />
+        </>
       ) : null}
-      {players.length === 0 ? (
+
+      {visiblePlayers.length === 0 ? (
         <EmptyState
-          title="Nenhum jogador cadastrado ainda"
-          description={
-            canManagePlayers
-              ? 'Convide seus jogadores para comecar ou cadastre o primeiro nome do elenco.'
-              : 'O administrador ainda nao cadastrou jogadores neste time.'
+          title={
+            players.length === 0
+              ? 'Nenhum jogador cadastrado ainda'
+              : rosterFilter === 'inactive'
+                ? 'Nenhum jogador inativo'
+                : 'Nenhum jogador encontrado neste filtro'
           }
-          actionLabel={canManagePlayers ? 'Convidar jogadores' : undefined}
-          onAction={canManagePlayers ? () => router.push('/team-invite' as never) : undefined}
+          description={
+            players.length === 0
+              ? canManagePlayers
+                ? 'Convide seus jogadores para comecar ou cadastre o primeiro nome do elenco.'
+                : 'O administrador ainda nao cadastrou jogadores neste time.'
+              : rosterFilter === 'inactive'
+                ? 'Quando alguem sair do elenco ativo, o cadastro continua aparecendo aqui para reativacao.'
+                : 'Troque o filtro para visualizar outra parte do elenco.'
+          }
+          actionLabel={
+            players.length === 0 && canManagePlayers ? 'Convidar jogadores' : undefined
+          }
+          onAction={
+            players.length === 0 && canManagePlayers
+              ? () => router.push('/team-invite' as never)
+              : undefined
+          }
         />
       ) : null}
-      {players.map((player) => {
-        const item = stats.find((entry) => entry.player.id === player.id);
-        const label = item
-          ? `${item.goals} gols - ${item.assists} assistencias - ${item.mvps} MVPs`
-          : undefined;
 
+      {visiblePlayers.map((player) => {
+        const item = stats.find((entry) => entry.player.id === player.id);
+        const label = item ? buildPlayerStatsLabel(item) : undefined;
         const canOpen =
           canManagePlayers || (currentPlayer?.id != null && currentPlayer.id === player.id);
 
@@ -75,3 +168,22 @@ export default function PlayersScreen() {
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  filterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  filterChip: {
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  filterText: {
+    fontFamily: fonts.heading,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+});

@@ -1,8 +1,23 @@
-import { isMatchInFuture, sortMatchesByDate } from '@/lib/date';
+import {
+  hasMatchElapsedHours,
+  isMatchInFuture,
+  sortMatchesByDate,
+} from '@/lib/date';
+import { getActiveRatingCriteria, sortRatingCriteria } from '@/lib/rating-criteria';
+import { resolvePlayerForUser } from '@/lib/player-linking';
+import { isNotificationRead, sortNotificationsByDate } from '@/lib/notifications';
 import type { AppState } from '@/store/app-store';
-import type { Match, Player, Team, TeamMember, User } from '@/types/domain';
+import type {
+  AppNotification,
+  Match,
+  Player,
+  Team,
+  TeamMember,
+  User,
+} from '@/types/domain';
 
 type Slice = Pick<AppState, 'snapshot' | 'currentUserId'>;
+type SyncSlice = Pick<AppState, 'syncStatus' | 'hasLiveSync' | 'lastSyncedAt'>;
 
 interface DerivedSnapshotSelectors {
   currentUser: User | null;
@@ -11,9 +26,16 @@ interface DerivedSnapshotSelectors {
   currentPlayer: Player | null;
   userMemberships: TeamMember[];
   teamPlayers: Player[];
+  teamHistoricalPlayers: Player[];
   teamMatches: Match[];
+  teamNotifications: AppNotification[];
+  unreadNotifications: AppNotification[];
   upcomingMatches: Match[];
+  overdueMatches: Match[];
+  openMatches: Match[];
   finishedMatches: Match[];
+  teamRatingCriteria: AppState['snapshot']['ratingCriteria'];
+  activeTeamRatingCriteria: AppState['snapshot']['ratingCriteria'];
   canManageTeam: boolean;
   canManagePlayers: boolean;
   canCreateTeam: boolean;
@@ -35,23 +57,72 @@ function scoreMembership(membership: TeamMember) {
 }
 
 function dedupeMemberships(memberships: TeamMember[]) {
-  const byTeamId = new Map<string, TeamMember>();
+  const byTeamId = new Map<string, TeamMember[]>();
 
   for (const membership of memberships) {
-    const current = byTeamId.get(membership.teamId);
-
-    if (!current) {
-      byTeamId.set(membership.teamId, membership);
-      continue;
-    }
-
-    byTeamId.set(
-      membership.teamId,
-      scoreMembership(membership) >= scoreMembership(current) ? membership : current,
-    );
+    const current = byTeamId.get(membership.teamId) ?? [];
+    byTeamId.set(membership.teamId, [...current, membership]);
   }
 
-  return [...byTeamId.values()];
+  return [...byTeamId.values()].map((items) => {
+    if (items.length === 1) {
+      return items[0];
+    }
+
+    const sorted = [...items].sort(
+      (left, right) => scoreMembership(right) - scoreMembership(left),
+    );
+    const winner = sorted[0];
+
+    return {
+      ...winner,
+      playerId:
+        sorted.find((membership) => membership.playerId)?.playerId ??
+        winner.playerId ??
+        null,
+      roles: [...new Set(sorted.flatMap((membership) => membership.roles))],
+      canManageTeam: sorted.some((membership) => membership.canManageTeam),
+      canManagePlayers: sorted.some((membership) => membership.canManagePlayers),
+      joinedAt: sorted.reduce(
+        (earliest, membership) =>
+          membership.joinedAt.localeCompare(earliest) < 0
+            ? membership.joinedAt
+            : earliest,
+        winner.joinedAt,
+      ),
+      updatedAt: sorted.reduce(
+        (latest, membership) =>
+          membership.updatedAt.localeCompare(latest) > 0
+            ? membership.updatedAt
+            : latest,
+        winner.updatedAt,
+      ),
+      status: sorted.some((membership) => membership.status === 'active')
+        ? 'active'
+        : winner.status,
+    };
+  });
+}
+
+function resolveCurrentPlayer(
+  players: Player[],
+  currentUser: User | null,
+  currentMembership: TeamMember | null,
+) {
+  if (
+    !currentUser ||
+    !currentMembership ||
+    !currentMembership.roles.includes('player')
+  ) {
+    return null;
+  }
+
+  return resolvePlayerForUser({
+    teamPlayers: players,
+    teamId: currentMembership.teamId,
+    user: currentUser,
+    membership: currentMembership,
+  });
 }
 
 let cachedSnapshot: AppState['snapshot'] | null = null;
@@ -113,11 +184,19 @@ function getDerivedSelectors(state: Slice): DerivedSnapshotSelectors {
     null;
   const currentTeam =
     state.snapshot.teams.find((team) => team.id === currentMembership?.teamId) ?? null;
-  const currentPlayer =
-    state.snapshot.players.find((player) => player.id === currentMembership?.playerId) ?? null;
-  const teamPlayers = currentTeam
+  const currentPlayer = resolveCurrentPlayer(
+    state.snapshot.players,
+    currentUser,
+    currentMembership,
+  );
+  const teamHistoricalPlayers = currentTeam
     ? [...state.snapshot.players]
-        .filter((player) => player.teamId === currentTeam.id && isPlayerAvailable(player))
+        .filter((player) => player.teamId === currentTeam.id)
+        .sort((left, right) => left.jerseyNumber - right.jerseyNumber)
+    : [];
+  const teamPlayers = currentTeam
+    ? teamHistoricalPlayers
+        .filter((player) => isPlayerAvailable(player))
         .sort((left, right) => left.jerseyNumber - right.jerseyNumber)
     : [];
   const teamMatches = currentTeam
@@ -125,8 +204,40 @@ function getDerivedSelectors(state: Slice): DerivedSnapshotSelectors {
         state.snapshot.matches.filter((match) => match.teamId === currentTeam.id),
       )
     : [];
-  const upcomingMatches = teamMatches.filter((match) => isMatchInFuture(match));
+  const teamNotifications = currentTeam
+    ? sortNotificationsByDate(
+        state.snapshot.notifications.filter(
+          (notification) => notification.teamId === currentTeam.id,
+        ),
+      )
+    : [];
+  const unreadNotifications = currentUser
+    ? teamNotifications.filter(
+        (notification) => !isNotificationRead(notification, currentUser.id),
+      )
+    : [];
+  const upcomingMatches = teamMatches.filter(
+    (match) =>
+      match.status !== 'finished' &&
+      match.status !== 'canceled' &&
+      isMatchInFuture(match),
+  );
+  const overdueMatches = teamMatches.filter(
+    (match) =>
+      match.status !== 'finished' &&
+      match.status !== 'canceled' &&
+      hasMatchElapsedHours(match, 24),
+  );
+  const openMatches = teamMatches.filter(
+    (match) => match.status !== 'finished' && match.status !== 'canceled',
+  );
   const finishedMatches = teamMatches.filter((match) => match.status === 'finished');
+  const teamRatingCriteria = currentTeam
+    ? sortRatingCriteria(
+        state.snapshot.ratingCriteria.filter((criterion) => criterion.teamId === currentTeam.id),
+      )
+    : [];
+  const activeTeamRatingCriteria = getActiveRatingCriteria(teamRatingCriteria);
 
   cachedSnapshot = state.snapshot;
   cachedCurrentUserId = state.currentUserId;
@@ -137,9 +248,16 @@ function getDerivedSelectors(state: Slice): DerivedSnapshotSelectors {
     currentPlayer,
     userMemberships,
     teamPlayers,
+    teamHistoricalPlayers,
     teamMatches,
+    teamNotifications,
+    unreadNotifications,
     upcomingMatches,
+    overdueMatches,
+    openMatches,
     finishedMatches,
+    teamRatingCriteria,
+    activeTeamRatingCriteria,
     canManageTeam: currentMembership?.canManageTeam === true,
     canManagePlayers: currentMembership?.canManagePlayers === true,
     canCreateTeam: currentUser?.canCreateTeam === true,
@@ -173,16 +291,48 @@ export function selectTeamPlayers(state: Slice) {
   return getDerivedSelectors(state).teamPlayers;
 }
 
+export function selectTeamHistoricalPlayers(state: Slice) {
+  return getDerivedSelectors(state).teamHistoricalPlayers;
+}
+
 export function selectTeamMatches(state: Slice) {
   return getDerivedSelectors(state).teamMatches;
+}
+
+export function selectTeamNotifications(state: Slice) {
+  return getDerivedSelectors(state).teamNotifications;
+}
+
+export function selectUnreadNotifications(state: Slice) {
+  return getDerivedSelectors(state).unreadNotifications;
+}
+
+export function selectUnreadNotificationsCount(state: Slice) {
+  return getDerivedSelectors(state).unreadNotifications.length;
 }
 
 export function selectUpcomingMatches(state: Slice) {
   return getDerivedSelectors(state).upcomingMatches;
 }
 
+export function selectOverdueMatches(state: Slice) {
+  return getDerivedSelectors(state).overdueMatches;
+}
+
+export function selectOpenMatches(state: Slice) {
+  return getDerivedSelectors(state).openMatches;
+}
+
 export function selectFinishedMatches(state: Slice) {
   return getDerivedSelectors(state).finishedMatches;
+}
+
+export function selectCurrentTeamRatingCriteria(state: Slice) {
+  return getDerivedSelectors(state).teamRatingCriteria;
+}
+
+export function selectActiveTeamRatingCriteria(state: Slice) {
+  return getDerivedSelectors(state).activeTeamRatingCriteria;
 }
 
 export function selectCanManageTeam(state: Slice) {
@@ -230,19 +380,71 @@ export function getAttendanceSummary(state: Pick<AppState, 'snapshot'>, matchId:
 export function getAttendanceBuckets(state: Pick<AppState, 'snapshot'>, matchId: string) {
   const items = state.snapshot.attendance.filter((item) => item.matchId === matchId);
   const players = state.snapshot.players;
+  const byJersey = (left: Player, right: Player) => left.jerseyNumber - right.jerseyNumber;
 
   return {
     confirmed: items
       .filter((item) => item.status === 'confirmed')
       .map((item) => players.find((player) => player.id === item.playerId))
-      .filter((player): player is (typeof players)[number] => Boolean(player)),
+      .filter((player): player is (typeof players)[number] => Boolean(player))
+      .sort(byJersey),
     absent: items
       .filter((item) => item.status === 'absent')
       .map((item) => players.find((player) => player.id === item.playerId))
-      .filter((player): player is (typeof players)[number] => Boolean(player)),
+      .filter((player): player is (typeof players)[number] => Boolean(player))
+      .sort(byJersey),
     pending: items
       .filter((item) => item.status === 'pending')
       .map((item) => players.find((player) => player.id === item.playerId))
-      .filter((player): player is (typeof players)[number] => Boolean(player)),
+      .filter((player): player is (typeof players)[number] => Boolean(player))
+      .sort(byJersey),
   };
+}
+
+export function selectSyncStatus(state: SyncSlice) {
+  return state.syncStatus;
+}
+
+export function selectHasLiveSync(state: SyncSlice) {
+  return state.hasLiveSync;
+}
+
+export function selectLastSyncedAt(state: SyncSlice) {
+  return state.lastSyncedAt;
+}
+
+export function selectIsRefreshingData(state: SyncSlice) {
+  return state.syncStatus === 'refreshing';
+}
+
+export function selectSyncStatusMessage(state: SyncSlice) {
+  if (state.syncStatus === 'connecting') {
+    return 'Conectando seu time...';
+  }
+
+  if (state.syncStatus === 'refreshing') {
+    return 'Atualizando os dados do elenco...';
+  }
+
+  if (state.hasLiveSync) {
+    return 'Tudo em dia entre seus aparelhos.';
+  }
+
+  return 'Dados prontos para voce.';
+}
+
+export function selectSyncStatusHint(state: SyncSlice) {
+  if (state.syncStatus === 'connecting') {
+    return 'As novidades do time vao aparecer assim que a conexao terminar.';
+  }
+
+  if (state.syncStatus === 'refreshing') {
+    return 'Buscando as ultimas mudancas sem precisar sair do app.';
+  }
+
+  if (state.hasLiveSync) {
+    return 'Mudancas feitas no celular ou no navegador aparecem aqui automaticamente.';
+  }
+
+  return 'Se algo ainda nao apareceu, use o botao de atualizar.';
 }

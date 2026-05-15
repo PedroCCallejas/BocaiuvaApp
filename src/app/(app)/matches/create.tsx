@@ -95,7 +95,7 @@ export default function CreateMatchScreen() {
   }
 
   return (
-    <Screen>
+    <Screen formMode>
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Criar nova partida</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>

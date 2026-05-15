@@ -1,10 +1,12 @@
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router } from 'expo-router';
 import { z } from 'zod';
 
 import { TeamHeroCard } from '@/components/cards/TeamHeroCard';
+import { ImageUploadField } from '@/components/forms/ImageUploadField';
 import { AppButton } from '@/components/ui/AppButton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { AppInput } from '@/components/ui/AppInput';
@@ -12,13 +14,19 @@ import { Screen } from '@/components/ui/Screen';
 import { TEAM_COLOR_PRESETS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import {
+  buildTeamLogoStoragePath,
+  pickImage,
+  uploadImage,
+  type ImagePickerSource,
+  type SelectedImageAsset,
+} from '@/lib/uploadImage';
 import { useAppStore } from '@/store/app-store';
 import { selectCanCreateTeam, selectCurrentUser } from '@/store/selectors';
 
 const schema = z.object({
   name: z.string().min(3, 'Informe o nome do time.'),
   coachName: z.string().min(3, 'Informe o responsavel.'),
-  logoUrl: z.string().url('Informe uma URL valida.').or(z.literal('')).optional(),
   paletteId: z.string().min(1, 'Escolha uma paleta.'),
 });
 
@@ -29,6 +37,9 @@ export default function TeamSetupScreen() {
   const currentUser = useAppStore(selectCurrentUser);
   const canCreateTeam = useAppStore(selectCanCreateTeam);
   const createTeam = useAppStore((state) => state.createTeam);
+  const updateTeam = useAppStore((state) => state.updateTeam);
+  const [pendingLogo, setPendingLogo] = useState<SelectedImageAsset | null>(null);
+  const [logoUploadProgress, setLogoUploadProgress] = useState<number | null>(null);
   const {
     control,
     handleSubmit,
@@ -40,7 +51,6 @@ export default function TeamSetupScreen() {
     defaultValues: {
       name: '',
       coachName: currentUser?.displayName ?? 'Responsavel',
-      logoUrl: '',
       paletteId: TEAM_COLOR_PRESETS[0]?.id ?? '',
     },
   });
@@ -57,7 +67,7 @@ export default function TeamSetupScreen() {
     description: '',
     inviteCode: 'ABC123',
     inviteCodeUpdatedAt: '',
-    logoUrl: watch('logoUrl')?.trim() || null,
+    logoUrl: pendingLogo?.uri ?? null,
     primaryColor: selectedPalette?.primary ?? '#355067',
     secondaryColor: selectedPalette?.secondary ?? '#DCE5EE',
     accentColor: selectedPalette?.accent ?? null,
@@ -81,22 +91,71 @@ export default function TeamSetupScreen() {
     );
   }
 
+  async function handlePickLogo(source: ImagePickerSource) {
+    try {
+      const asset = await pickImage(source);
+      if (!asset) {
+        return;
+      }
+
+      setPendingLogo(asset);
+    } catch (error) {
+      Alert.alert(
+        'Nao foi possivel abrir a imagem',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    }
+  }
+
   async function onSubmit(values: TeamSetupValues) {
     const palette =
       TEAM_COLOR_PRESETS.find((preset) => preset.id === values.paletteId) ??
       TEAM_COLOR_PRESETS[0];
 
     try {
-      await createTeam({
+      const createdTeam = await createTeam({
         name: values.name,
         coachName: values.coachName,
-        logoUrl: values.logoUrl?.trim() || null,
+        logoUrl: null,
         primaryColor: palette?.primary ?? '#355067',
         secondaryColor: palette?.secondary ?? '#DCE5EE',
         accentColor: palette?.accent ?? null,
       });
+
+      if (pendingLogo) {
+        try {
+          setLogoUploadProgress(0);
+          const uploadedLogo = await uploadImage({
+            asset: pendingLogo,
+            storagePath: buildTeamLogoStoragePath(createdTeam.id),
+            onProgress: setLogoUploadProgress,
+          });
+
+          await updateTeam(createdTeam.id, {
+            name: values.name,
+            coachName: values.coachName,
+            slug: createdTeam.slug,
+            description: '',
+            logoUrl: uploadedLogo.downloadUrl,
+            primaryColor: palette?.primary ?? '#355067',
+            secondaryColor: palette?.secondary ?? '#DCE5EE',
+            accentColor: palette?.accent ?? null,
+          });
+        } catch (error) {
+          Alert.alert(
+            'Time criado sem escudo',
+            error instanceof Error
+              ? error.message
+              : 'O time foi criado, mas o upload do escudo falhou.',
+          );
+        } finally {
+          setLogoUploadProgress(null);
+        }
+      }
+
       router.replace('/home');
     } catch (error) {
+      setLogoUploadProgress(null);
       Alert.alert(
         'Nao foi possivel criar o time',
         error instanceof Error ? error.message : 'Tente novamente.',
@@ -105,7 +164,7 @@ export default function TeamSetupScreen() {
   }
 
   return (
-    <Screen>
+    <Screen formMode>
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Crie seu time</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
@@ -149,20 +208,17 @@ export default function TeamSetupScreen() {
             />
           )}
         />
-        <Controller
-          control={control}
-          name="logoUrl"
-          render={({ field }) => (
-            <AppInput
-              label="Escudo por URL (opcional)"
-              autoCapitalize="none"
-              autoCorrect={false}
-              value={field.value ?? ''}
-              onBlur={field.onBlur}
-              onChangeText={field.onChange}
-              error={errors.logoUrl?.message}
-            />
-          )}
+        <ImageUploadField
+          label="Escudo do time"
+          hint="Escolha na galeria ou tire uma foto. O upload acontece quando o time for criado."
+          pendingImage={pendingLogo}
+          onPickFromLibrary={() => void handlePickLogo('library')}
+          onPickFromCamera={() => void handlePickLogo('camera')}
+          onClear={pendingLogo ? () => setPendingLogo(null) : undefined}
+          clearLabel="Remover escudo"
+          emptyLabel="Sem escudo"
+          progress={logoUploadProgress}
+          disabled={isSubmitting}
         />
         <Text style={[styles.paletteLabel, { color: theme.colors.textMuted }]}>
           Escolha a paleta do time

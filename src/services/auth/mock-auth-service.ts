@@ -1,4 +1,7 @@
-import { mockRepository } from '@/services/repository/mock-repository';
+import {
+  mockRepository,
+  resetMockRepositorySession,
+} from '@/services/repository/mock-repository';
 import type {
   GoogleLoginInput,
   LoginInput,
@@ -66,6 +69,7 @@ class MockAuthService implements AuthService {
 
   async logout() {
     this.currentUser = null;
+    resetMockRepositorySession();
     this.emit();
   }
 

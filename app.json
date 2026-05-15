@@ -1,14 +1,17 @@
 {
   "expo": {
-    "name": "AppBoca",
-    "slug": "AppBoca",
+    "name": "Bocaiuva APP",
+    "slug": "appboca",
+    "description": "Aplicativo para organizar times de futebol amador, jogos, presenca, escalacao e estatisticas.",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "appboca",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.seuapp.bocaiuva",
+      "supportsTablet": false
     },
     "android": {
       "adaptiveIcon": {
@@ -17,14 +20,37 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "package": "com.seuapp.bocaiuva",
+      "googleServicesFile": "./google-services.json",
+      "predictiveBackGestureEnabled": false,
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "bundler": "metro",
+      "favicon": "./assets/images/favicon.png",
+      "name": "Bocaiuva APP",
+      "shortName": "Bocaiuva",
+      "themeColor": "#051108",
+      "backgroundColor": "#051108"
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O app precisa acessar suas fotos para enviar imagens de jogadores e do time.",
+          "cameraPermission": "O app precisa usar a camera para tirar fotos de jogadores e do time."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#0E7A43",
+          "defaultChannel": "default"
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -40,6 +66,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ba99f492-9047-44f6-a2b6-682dbd19d998"
+      }
     }
   }
 }

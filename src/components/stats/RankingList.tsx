@@ -8,6 +8,7 @@ export interface RankingItem {
   label: string;
   subtitle?: string;
   value: number;
+  valueLabel?: string;
 }
 
 interface RankingListProps {
@@ -41,7 +42,9 @@ export function RankingList({ title, items }: RankingListProps) {
                 </Text>
               ) : null}
             </View>
-            <Text style={[styles.value, { color: theme.colors.text }]}>{item.value}</Text>
+            <Text style={[styles.value, { color: theme.colors.text }]}>
+              {item.valueLabel ?? item.value}
+            </Text>
           </View>
           <View style={[styles.track, { backgroundColor: theme.colors.backgroundElevated }]}>
             <View

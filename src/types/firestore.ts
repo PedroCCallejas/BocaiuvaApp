@@ -1,4 +1,5 @@
 import type {
+  AppNotification,
   AttendanceRecord,
   Lineup,
   Match,
@@ -9,6 +10,7 @@ import type {
   Season,
   Team,
   TeamMember,
+  TeamRatingCriterion,
   User,
 } from '@/types/domain';
 
@@ -23,7 +25,15 @@ export const FIRESTORE_COLLECTIONS = {
   matchStats: 'matchStats',
   mvpVotes: 'mvpVotes',
   playerRatings: 'playerRatings',
+  ratingCriteria: 'ratingCriteria',
+  notifications: 'notifications',
   seasons: 'seasons',
+} as const;
+
+export const FIRESTORE_POST_MATCH_COLLECTIONS = {
+  matchStats: FIRESTORE_COLLECTIONS.matchStats,
+  mvpVotes: FIRESTORE_COLLECTIONS.mvpVotes,
+  playerRatings: FIRESTORE_COLLECTIONS.playerRatings,
 } as const;
 
 export type FirestoreCollectionName =
@@ -32,6 +42,7 @@ export type FirestoreCollectionName =
 export type FirestoreUserDocument = User;
 export type FirestoreTeamDocument = Team;
 export type FirestoreTeamMemberDocument = TeamMember;
+export type FirestoreTeamRatingCriterionDocument = TeamRatingCriterion;
 export type FirestorePlayerDocument = Player;
 export type FirestoreMatchDocument = Match;
 export type FirestoreLineupDocument = Lineup;
@@ -39,4 +50,9 @@ export type FirestoreAttendanceDocument = AttendanceRecord;
 export type FirestoreMatchStatDocument = MatchStat;
 export type FirestoreMvpVoteDocument = MvpVote;
 export type FirestorePlayerRatingDocument = PlayerRating;
+export type FirestoreNotificationDocument = AppNotification;
+export type FirestorePostMatchDocument =
+  | FirestoreMatchStatDocument
+  | FirestoreMvpVoteDocument
+  | FirestorePlayerRatingDocument;
 export type FirestoreSeasonDocument = Season;

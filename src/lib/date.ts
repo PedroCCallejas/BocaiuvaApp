@@ -1,5 +1,10 @@
 import type { Match } from '@/types/domain';
 
+function normalizeTime(value?: string | null) {
+  const trimmed = value?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function parseIsoDateParts(value: string) {
   const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
 
@@ -87,7 +92,8 @@ function toDateFromIso(isoDate: string, time?: string) {
     return null;
   }
 
-  const timeParts = time ? parseTimeParts(time) : { hours: 0, minutes: 0 };
+  const normalizedTime = normalizeTime(time);
+  const timeParts = normalizedTime ? parseTimeParts(normalizedTime) : { hours: 0, minutes: 0 };
   if (!timeParts) {
     return null;
   }
@@ -138,11 +144,19 @@ export function formatDateTimeBR(
 ) {
   const date =
     typeof value === 'object' && !(value instanceof Date)
-      ? toDateFromIso(value.date, value.time ?? '00:00')
+      ? toDateFromIso(value.date, value.time ?? undefined)
       : toDateFromUnknown(value);
 
   if (!date) {
     return '';
+  }
+
+  if (
+    typeof value === 'object' &&
+    !(value instanceof Date) &&
+    !normalizeTime(value.time ?? undefined)
+  ) {
+    return formatDateBR(date);
   }
 
   return `${formatDateBR(date)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -159,7 +173,7 @@ export function parseDateBRToISO(value: string) {
 }
 
 export function isValidTime(value: string) {
-  return parseTimeParts(value) !== null;
+  return normalizeTime(value) === null || parseTimeParts(value) !== null;
 }
 
 export function matchDateTime(match: Pick<Match, 'date' | 'time'>) {
@@ -179,6 +193,17 @@ export function formatMatchDateTime(match: Pick<Match, 'date' | 'time'>) {
 
 export function isMatchInFuture(match: Pick<Match, 'date' | 'time'>) {
   return matchDateTime(match).getTime() >= Date.now();
+}
+
+export function isMatchInPast(match: Pick<Match, 'date' | 'time'>) {
+  return matchDateTime(match).getTime() < Date.now();
+}
+
+export function hasMatchElapsedHours(
+  match: Pick<Match, 'date' | 'time'>,
+  hours: number,
+) {
+  return Date.now() - matchDateTime(match).getTime() >= hours * 60 * 60 * 1000;
 }
 
 export function sortMatchesByDate(matches: Match[]) {

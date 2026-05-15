@@ -40,16 +40,20 @@ export default function AppLayout() {
       <Stack.Screen name="team-access" options={{ title: 'Meus times' }} />
       <Stack.Screen name="team-setup" options={{ title: 'Criar novo time' }} />
       <Stack.Screen name="team-settings" options={{ title: 'Editar time' }} />
+      <Stack.Screen name="team-rating-criteria" options={{ title: 'Criterios de avaliacao' }} />
       <Stack.Screen name="team-invite" options={{ title: 'Convidar jogadores' }} />
+      <Stack.Screen name="notifications" options={{ title: 'Notificacoes' }} />
       <Stack.Screen name="players/create" options={{ title: 'Novo jogador' }} />
       <Stack.Screen name="players/[playerId]" options={{ title: 'Jogador' }} />
       <Stack.Screen name="players/[playerId]/edit" options={{ title: 'Editar jogador' }} />
       <Stack.Screen name="matches/create" options={{ title: 'Nova partida' }} />
+      <Stack.Screen name="matches/register-legacy" options={{ title: 'Registrar jogo antigo' }} />
+      <Stack.Screen name="matches/import" options={{ title: 'Importar jogos' }} />
       <Stack.Screen name="matches/[matchId]" options={{ title: 'Detalhe da partida' }} />
       <Stack.Screen name="matches/[matchId]/edit" options={{ title: 'Editar partida' }} />
       <Stack.Screen name="matches/[matchId]/finish" options={{ title: 'Pos-jogo' }} />
       <Stack.Screen name="matches/[matchId]/mvp" options={{ title: 'Votacao MVP' }} />
-      <Stack.Screen name="matches/[matchId]/ratings" options={{ title: 'Notas anonimas' }} />
+      <Stack.Screen name="matches/[matchId]/ratings" options={{ title: 'Notas anônimas' }} />
       <Stack.Screen name="lineup/[matchId]" options={{ title: 'Escalacao visual' }} />
     </Stack>
   );

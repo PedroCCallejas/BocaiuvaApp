@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
+import { ImageUploadField } from '@/components/forms/ImageUploadField';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
 import {
@@ -16,6 +17,7 @@ import {
 } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { pickImage, type ImagePickerSource, type SelectedImageAsset } from '@/lib/uploadImage';
 import type {
   FootPreference,
   ManualPlayerStats,
@@ -26,7 +28,6 @@ import type {
 type PlayerFormState = {
   fullName: string;
   nickname: string;
-  photoUrl?: string;
   jerseyNumber: string;
   primaryPosition: string;
   secondaryPositions: string[];
@@ -52,7 +53,6 @@ function createPlayerSchema(variant: 'admin' | 'self') {
     .object({
       fullName: z.string(),
       nickname: z.string().min(2, 'Informe o apelido.'),
-      photoUrl: z.string().url('Informe uma URL valida.').or(z.literal('')).optional(),
       jerseyNumber: z.string(),
       primaryPosition: z.string(),
       secondaryPositions: z.array(z.string()),
@@ -152,6 +152,7 @@ export interface PlayerFormPayload {
   fullName: string;
   nickname: string;
   photoUrl?: string | null;
+  pendingPhoto?: SelectedImageAsset | null;
   jerseyNumber: number;
   primaryPosition: Position;
   secondaryPositions: Position[];
@@ -174,6 +175,7 @@ interface PlayerFormProps {
   submitLabel: string;
   loading?: boolean;
   helperText?: string;
+  imageUploadProgress?: number | null;
   onSubmit: (payload: PlayerFormPayload) => Promise<void> | void;
 }
 
@@ -183,10 +185,13 @@ export function PlayerForm({
   submitLabel,
   loading,
   helperText,
+  imageUploadProgress,
   onSubmit,
 }: PlayerFormProps) {
   const theme = useAppTheme();
   const schema = useMemo(() => createPlayerSchema(variant), [variant]);
+  const [pendingPhoto, setPendingPhoto] = useState<SelectedImageAsset | null>(null);
+  const [removePhoto, setRemovePhoto] = useState(false);
   const canSelfEditJerseyNumber =
     variant === 'self' &&
     (defaults.allowSelfEditJerseyNumber === true || defaults.jerseyNumber <= 0);
@@ -201,7 +206,6 @@ export function PlayerForm({
     defaultValues: {
       fullName: defaults.fullName,
       nickname: defaults.nickname,
-      photoUrl: defaults.photoUrl ?? '',
       jerseyNumber: String(defaults.jerseyNumber),
       primaryPosition: defaults.primaryPosition,
       secondaryPositions: defaults.secondaryPositions,
@@ -226,12 +230,40 @@ export function PlayerForm({
   const primaryPosition = (watch('primaryPosition') || defaults.primaryPosition) as Position;
   const secondaryPositions = (watch('secondaryPositions') || []) as Position[];
   const preferredPosition = watch('preferredPosition') || '';
+  const currentPhotoUrl = removePhoto ? null : defaults.photoUrl ?? null;
+
+  async function handlePickPhoto(source: ImagePickerSource) {
+    try {
+      const asset = await pickImage(source);
+      if (!asset) {
+        return;
+      }
+
+      setPendingPhoto(asset);
+      setRemovePhoto(false);
+    } catch (error) {
+      Alert.alert(
+        'Nao foi possivel abrir a imagem',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    }
+  }
+
+  function handleClearPhoto() {
+    if (pendingPhoto) {
+      setPendingPhoto(null);
+      return;
+    }
+
+    setRemovePhoto(true);
+  }
 
   async function submit(values: PlayerFormState) {
     const payload: PlayerFormPayload = {
       fullName: variant === 'admin' ? values.fullName.trim() : defaults.fullName,
       nickname: values.nickname.trim(),
-      photoUrl: values.photoUrl?.trim() ? values.photoUrl.trim() : null,
+      photoUrl: removePhoto ? null : defaults.photoUrl ?? null,
+      pendingPhoto,
       jerseyNumber:
         variant === 'admin' || canSelfEditJerseyNumber
           ? Number(values.jerseyNumber.trim() || String(defaults.jerseyNumber))
@@ -314,20 +346,25 @@ export function PlayerForm({
         )}
       />
 
-      <Controller
-        control={control}
-        name="photoUrl"
-        render={({ field }) => (
-          <AppInput
-            label="Foto (URL por enquanto)"
-            autoCapitalize="none"
-            autoCorrect={false}
-            value={field.value ?? ''}
-            onBlur={field.onBlur}
-            onChangeText={field.onChange}
-            error={errors.photoUrl?.message}
-          />
-        )}
+      <ImageUploadField
+        label="Foto do jogador"
+        hint="A imagem sera comprimida e enviada ao Storage quando voce salvar."
+        imageUrl={currentPhotoUrl}
+        pendingImage={pendingPhoto}
+        onPickFromLibrary={() => void handlePickPhoto('library')}
+        onPickFromCamera={() => void handlePickPhoto('camera')}
+        onClear={currentPhotoUrl || pendingPhoto ? handleClearPhoto : undefined}
+        clearLabel={
+          pendingPhoto
+            ? currentPhotoUrl
+              ? 'Cancelar nova foto'
+              : 'Remover foto'
+            : 'Remover foto'
+        }
+        emptyLabel="Sem foto"
+        shape="circle"
+        progress={imageUploadProgress}
+        disabled={loading || isSubmitting}
       />
 
       {variant === 'admin' ? (

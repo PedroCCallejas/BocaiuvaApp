@@ -1,4 +1,5 @@
 import { Alert, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
 import { router } from 'expo-router';
 
 import { PlayerForm } from '@/components/forms/PlayerForm';
@@ -6,6 +7,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { buildPlayerPhotoStoragePath, uploadImage } from '@/lib/uploadImage';
 import { useAppStore } from '@/store/app-store';
 import {
   selectCanManagePlayers,
@@ -19,6 +21,8 @@ export default function CreatePlayerScreen() {
   const canManage = useAppStore(selectCanManagePlayers);
   const players = useAppStore(selectTeamPlayers);
   const createPlayer = useAppStore((state) => state.createPlayer);
+  const updatePlayer = useAppStore((state) => state.updatePlayer);
+  const [photoUploadProgress, setPhotoUploadProgress] = useState<number | null>(null);
   const suggestedJersey = players.reduce((max, player) => Math.max(max, player.jerseyNumber), 0) + 1;
 
   if (!team || !canManage) {
@@ -33,7 +37,7 @@ export default function CreatePlayerScreen() {
   }
 
   return (
-    <Screen>
+    <Screen formMode>
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Novo jogador</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
@@ -43,6 +47,7 @@ export default function CreatePlayerScreen() {
       <PlayerForm
         variant="admin"
         submitLabel="Salvar jogador"
+        imageUploadProgress={photoUploadProgress}
         defaults={{
           fullName: '',
           nickname: '',
@@ -70,19 +75,46 @@ export default function CreatePlayerScreen() {
         }}
         onSubmit={async (payload) => {
           try {
+            const { pendingPhoto, ...playerPayload } = payload;
             const playerId = await createPlayer({
-              ...payload,
+              ...playerPayload,
               teamId: team.id,
+              photoUrl: pendingPhoto ? null : playerPayload.photoUrl ?? null,
               linkedUserId: null,
-              linkedEmail: payload.linkedEmail ?? null,
-              introVideoUrl: payload.introVideoUrl ?? null,
-              celebrationVideoUrl: payload.celebrationVideoUrl ?? null,
+              linkedEmail: playerPayload.linkedEmail ?? null,
+              introVideoUrl: playerPayload.introVideoUrl ?? null,
+              celebrationVideoUrl: playerPayload.celebrationVideoUrl ?? null,
               allowSelfEditJerseyNumber:
-                payload.allowSelfEditJerseyNumber ?? false,
-              manualStats: payload.manualStats,
+                playerPayload.allowSelfEditJerseyNumber ?? false,
+              manualStats: playerPayload.manualStats,
             });
+
+            if (pendingPhoto) {
+              try {
+                setPhotoUploadProgress(0);
+                const uploadedPhoto = await uploadImage({
+                  asset: pendingPhoto,
+                  storagePath: buildPlayerPhotoStoragePath(team.id, playerId),
+                  onProgress: setPhotoUploadProgress,
+                });
+                await updatePlayer(playerId, {
+                  photoUrl: uploadedPhoto.downloadUrl,
+                });
+              } catch (error) {
+                Alert.alert(
+                  'Jogador salvo sem foto',
+                  error instanceof Error
+                    ? error.message
+                    : 'O jogador foi salvo, mas o upload da foto falhou.',
+                );
+              } finally {
+                setPhotoUploadProgress(null);
+              }
+            }
+
             router.replace(`/players/${playerId}`);
           } catch (error) {
+            setPhotoUploadProgress(null);
             Alert.alert(
               'Nao foi possivel salvar',
               error instanceof Error ? error.message : 'Tente novamente.',

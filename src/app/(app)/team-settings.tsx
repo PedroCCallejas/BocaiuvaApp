@@ -1,10 +1,12 @@
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router } from 'expo-router';
 import { z } from 'zod';
 
 import { TeamHeroCard } from '@/components/cards/TeamHeroCard';
+import { ImageUploadField } from '@/components/forms/ImageUploadField';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -12,6 +14,13 @@ import { Screen } from '@/components/ui/Screen';
 import { TEAM_COLOR_PRESETS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import {
+  buildTeamLogoStoragePath,
+  pickImage,
+  uploadImage,
+  type ImagePickerSource,
+  type SelectedImageAsset,
+} from '@/lib/uploadImage';
 import { useAppStore } from '@/store/app-store';
 import {
   selectCanManageTeam,
@@ -24,7 +33,6 @@ const schema = z.object({
   coachName: z.string().min(3, 'Informe o responsavel.'),
   slug: z.string().min(3, 'Informe um slug curto para o time.'),
   description: z.string().optional(),
-  logoUrl: z.string().url('Informe uma URL valida.').or(z.literal('')).optional(),
   primaryColor: z.string().min(4),
   secondaryColor: z.string().min(4),
   accentColor: z.string().optional(),
@@ -38,6 +46,9 @@ export default function TeamSettingsScreen() {
   const team = useAppStore(selectCurrentTeam);
   const canManage = useAppStore(selectCanManageTeam);
   const updateTeam = useAppStore((state) => state.updateTeam);
+  const [pendingLogo, setPendingLogo] = useState<SelectedImageAsset | null>(null);
+  const [removeLogo, setRemoveLogo] = useState(false);
+  const [logoUploadProgress, setLogoUploadProgress] = useState<number | null>(null);
 
   const {
     control,
@@ -52,7 +63,6 @@ export default function TeamSettingsScreen() {
       coachName: team?.coachName ?? currentUser?.displayName ?? '',
       slug: team?.slug ?? '',
       description: team?.description ?? '',
-      logoUrl: team?.logoUrl ?? '',
       primaryColor: team?.primaryColor ?? TEAM_COLOR_PRESETS[0]?.primary ?? '#355067',
       secondaryColor: team?.secondaryColor ?? TEAM_COLOR_PRESETS[0]?.secondary ?? '#DCE5EE',
       accentColor: team?.accentColor ?? TEAM_COLOR_PRESETS[0]?.accent ?? '#8DB7D9',
@@ -71,6 +81,7 @@ export default function TeamSettingsScreen() {
   }
 
   const currentTeam = team;
+  const currentLogoUrl = removeLogo ? null : currentTeam.logoUrl ?? null;
 
   const previewTeam = {
     ...currentTeam,
@@ -78,11 +89,37 @@ export default function TeamSettingsScreen() {
     slug: watch('slug') || currentTeam.slug,
     description: watch('description') ?? '',
     coachName: watch('coachName') || currentTeam.coachName,
-    logoUrl: watch('logoUrl')?.trim() || null,
+    logoUrl: pendingLogo?.uri ?? currentLogoUrl,
     primaryColor: watch('primaryColor'),
     secondaryColor: watch('secondaryColor'),
     accentColor: watch('accentColor')?.trim() || null,
   };
+
+  async function handlePickLogo(source: ImagePickerSource) {
+    try {
+      const asset = await pickImage(source);
+      if (!asset) {
+        return;
+      }
+
+      setPendingLogo(asset);
+      setRemoveLogo(false);
+    } catch (error) {
+      Alert.alert(
+        'Nao foi possivel abrir a imagem',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    }
+  }
+
+  function handleClearLogo() {
+    if (pendingLogo) {
+      setPendingLogo(null);
+      return;
+    }
+
+    setRemoveLogo(true);
+  }
 
   async function onSubmit(values: TeamSettingsValues) {
     try {
@@ -91,13 +128,46 @@ export default function TeamSettingsScreen() {
         coachName: values.coachName,
         slug: values.slug,
         description: values.description?.trim() ?? '',
-        logoUrl: values.logoUrl?.trim() || null,
+        logoUrl: pendingLogo ? currentTeam.logoUrl ?? null : currentLogoUrl,
         primaryColor: values.primaryColor,
         secondaryColor: values.secondaryColor,
         accentColor: values.accentColor?.trim() || null,
       });
+
+      if (pendingLogo) {
+        try {
+          setLogoUploadProgress(0);
+          const uploadedLogo = await uploadImage({
+            asset: pendingLogo,
+            storagePath: buildTeamLogoStoragePath(currentTeam.id),
+            onProgress: setLogoUploadProgress,
+          });
+
+          await updateTeam(currentTeam.id, {
+            name: values.name,
+            coachName: values.coachName,
+            slug: values.slug,
+            description: values.description?.trim() ?? '',
+            logoUrl: uploadedLogo.downloadUrl,
+            primaryColor: values.primaryColor,
+            secondaryColor: values.secondaryColor,
+            accentColor: values.accentColor?.trim() || null,
+          });
+        } catch (error) {
+          Alert.alert(
+            'Alteracoes salvas sem trocar o escudo',
+            error instanceof Error
+              ? error.message
+              : 'O restante das alteracoes foi salvo, mas o upload do escudo falhou.',
+          );
+        } finally {
+          setLogoUploadProgress(null);
+        }
+      }
+
       router.back();
     } catch (error) {
+      setLogoUploadProgress(null);
       Alert.alert(
         'Nao foi possivel salvar o time',
         error instanceof Error ? error.message : 'Tente novamente.',
@@ -106,7 +176,7 @@ export default function TeamSettingsScreen() {
   }
 
   return (
-    <Screen>
+    <Screen formMode>
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Editar time</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
@@ -179,20 +249,24 @@ export default function TeamSettingsScreen() {
             />
           )}
         />
-        <Controller
-          control={control}
-          name="logoUrl"
-          render={({ field }) => (
-            <AppInput
-              label="Escudo por URL (opcional)"
-              autoCapitalize="none"
-              autoCorrect={false}
-              value={field.value ?? ''}
-              onBlur={field.onBlur}
-              onChangeText={field.onChange}
-              error={errors.logoUrl?.message}
-            />
-          )}
+        <ImageUploadField
+          label="Escudo do time"
+          hint="Escolha uma imagem para substituir o escudo atual do time."
+          imageUrl={currentLogoUrl}
+          pendingImage={pendingLogo}
+          onPickFromLibrary={() => void handlePickLogo('library')}
+          onPickFromCamera={() => void handlePickLogo('camera')}
+          onClear={currentLogoUrl || pendingLogo ? handleClearLogo : undefined}
+          clearLabel={
+            pendingLogo
+              ? currentLogoUrl
+                ? 'Cancelar novo escudo'
+                : 'Remover escudo'
+              : 'Remover escudo'
+          }
+          emptyLabel="Sem escudo"
+          progress={logoUploadProgress}
+          disabled={isSubmitting}
         />
         <Text style={[styles.paletteLabel, { color: theme.colors.textMuted }]}>
           Escolha a paleta do time
@@ -233,6 +307,26 @@ export default function TeamSettingsScreen() {
               </Pressable>
             );
           })}
+        </View>
+        <View
+          style={[
+            styles.secondaryCard,
+            {
+              backgroundColor: theme.colors.backgroundElevated,
+              borderColor: theme.colors.border,
+            },
+          ]}>
+          <Text style={[styles.secondaryTitle, { color: theme.colors.text }]}>
+            Criterios de avaliacao
+          </Text>
+          <Text style={[styles.secondaryText, { color: theme.colors.textMuted }]}>
+            Defina quais notas o elenco usa para avaliar os jogadores do time.
+          </Text>
+          <AppButton
+            label="Gerenciar criterios"
+            variant="secondary"
+            onPress={() => router.push('/team-rating-criteria' as never)}
+          />
         </View>
         <AppButton
           label="Salvar alteracoes"
@@ -313,5 +407,21 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 12,
     lineHeight: 18,
+  },
+  secondaryCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 16,
+    gap: 10,
+  },
+  secondaryTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  secondaryText: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
   },
 });

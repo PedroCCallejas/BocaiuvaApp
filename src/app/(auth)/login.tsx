@@ -1,21 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router } from 'expo-router';
 import { z } from 'zod';
 
-import { getGoogleAuthRequestConfig, isGoogleSignInConfigured } from '@/config/auth/google';
+import {
+  getGoogleAuthDebugInfo,
+  getGoogleAuthRequestConfig,
+  getGoogleSignInSetupHint,
+  isGoogleSignInConfigured,
+} from '@/config/auth/google';
 import { Screen } from '@/components/ui/Screen';
 import { AppInput } from '@/components/ui/AppInput';
 import { AppButton } from '@/components/ui/AppButton';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import {
+  extractGoogleAuthTokens,
+  getGoogleAuthRuntimeHint,
+  isExpoGoForGoogleAuth,
+} from '@/services/auth/google-auth';
 import { useAppStore } from '@/store/app-store';
-
-WebBrowser.maybeCompleteAuthSession();
 
 const schema = z.object({
   email: z.string().email('Informe um e-mail valido.'),
@@ -31,9 +38,14 @@ export default function LoginScreen() {
   const loginWithGoogle = useAppStore((state) => state.loginWithGoogle);
   const isMockMode = backendMode === 'mock';
   const googleConfigured = isGoogleSignInConfigured();
+  const googleSetupHint = !googleConfigured && __DEV__ ? getGoogleSignInSetupHint() : null;
+  const isExpoGo = isExpoGoForGoogleAuth();
   const showGoogleLogin = !isMockMode && googleConfigured;
+  const showGoogleSetupHint = Boolean(googleSetupHint);
+  const googleRuntimeHint = getGoogleAuthRuntimeHint();
   const [demoLoading, setDemoLoading] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const googleDebugInfo = useMemo(() => getGoogleAuthDebugInfo(), []);
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest(
     getGoogleAuthRequestConfig(),
   );
@@ -50,8 +62,31 @@ export default function LoginScreen() {
   });
 
   useEffect(() => {
+    if (__DEV__) {
+      console.info('[google-auth] request-config', googleDebugInfo);
+    }
+  }, [googleDebugInfo]);
+
+  useEffect(() => {
     if (!response) {
       return;
+    }
+
+    const { idToken, accessToken, errorMessage, idTokenSource } =
+      extractGoogleAuthTokens(response);
+
+    if (__DEV__) {
+      const debugResponse = response as typeof response & {
+        params?: Record<string, string>;
+      };
+      console.info('[google-auth] response', {
+        platform: googleDebugInfo.platform,
+        responseType: response.type,
+        redirectUri: googleDebugInfo.redirectUri,
+        clientIdUsed: googleDebugInfo.clientIdUsed,
+        idTokenFound: Boolean(idToken),
+        params: debugResponse.params ?? null,
+      });
     }
 
     if (response.type === 'dismiss' || response.type === 'cancel') {
@@ -61,27 +96,69 @@ export default function LoginScreen() {
 
     if (response.type !== 'success') {
       setGoogleLoading(false);
-      Alert.alert('Nao foi possivel entrar com Google', 'Tente novamente em instantes.');
-      return;
-    }
-
-    const idToken = response.params?.id_token;
-    const accessToken = response.params?.access_token;
-
-    if (!idToken) {
-      setGoogleLoading(false);
       Alert.alert(
         'Nao foi possivel entrar com Google',
-        'Faltou confirmar sua conta nesta tentativa. Tente novamente.',
+        'A autenticacao foi interrompida antes da confirmacao final.',
       );
       return;
     }
 
+    console.info('[google-auth] auth-success', {
+      platform: googleDebugInfo.platform,
+      redirectUri: googleDebugInfo.redirectUri,
+      clientIdUsed: googleDebugInfo.clientIdUsed,
+      responseType: response.type,
+    });
+
+    if (!idToken) {
+      setGoogleLoading(false);
+      if (__DEV__) {
+        console.warn('[google-auth] missing-id-token', {
+          platform: googleDebugInfo.platform,
+          responseType: response.type,
+          redirectUri: googleDebugInfo.redirectUri,
+          clientIdUsed: googleDebugInfo.clientIdUsed,
+          idTokenFound: false,
+          error: errorMessage,
+        });
+      }
+      Alert.alert(
+        'Nao foi possivel entrar com Google',
+        'O Google nao devolveu o token de login. Revise o client ID e o redirect do app.',
+      );
+      return;
+    }
+
+    console.info('[google-auth] id-token-found', {
+      platform: googleDebugInfo.platform,
+      clientIdUsed: googleDebugInfo.clientIdUsed,
+      responseType: response.type,
+      source: idTokenSource,
+      redirectUri: googleDebugInfo.redirectUri,
+      idTokenFound: true,
+    });
+
     void (async () => {
       try {
         await loginWithGoogle({ idToken, accessToken: accessToken ?? null });
+        console.info('[google-auth] firebase-login-success', {
+          platform: googleDebugInfo.platform,
+          redirectUri: googleDebugInfo.redirectUri,
+          clientIdUsed: googleDebugInfo.clientIdUsed,
+          responseType: response.type,
+          idTokenFound: true,
+          tokenSource: idTokenSource,
+        });
         router.replace('/');
       } catch (error) {
+        console.warn('[google-auth] firebase-login-error', {
+          platform: googleDebugInfo.platform,
+          redirectUri: googleDebugInfo.redirectUri,
+          clientIdUsed: googleDebugInfo.clientIdUsed,
+          responseType: response.type,
+          idTokenFound: true,
+          error: error instanceof Error ? error.message : error,
+        });
         Alert.alert(
           'Nao foi possivel entrar com Google',
           error instanceof Error ? error.message : 'Tente novamente.',
@@ -105,10 +182,20 @@ export default function LoginScreen() {
   }
 
   async function handleGoogleLogin() {
+    if (isExpoGo) {
+      Alert.alert(
+        'Use um development build',
+        googleRuntimeHint ??
+          'Entrar com Google precisa ser testado em development build ou build instalada.',
+      );
+      return;
+    }
+
     if (!googleConfigured) {
       Alert.alert(
         'Esse acesso ainda nao esta pronto',
-        'Entrar com Google sera liberado assim que a conta estiver configurada.',
+        googleSetupHint ??
+          'Entrar com Google sera liberado assim que a conta estiver configurada.',
       );
       return;
     }
@@ -116,9 +203,23 @@ export default function LoginScreen() {
     setGoogleLoading(true);
 
     try {
-      await promptAsync();
+      console.log(`[GOOGLE_AUTH] redirectUri: ${googleDebugInfo.redirectUri}`);
+      if (__DEV__) {
+        console.info('[google-auth] prompt', googleDebugInfo);
+      }
+      await promptAsync({
+        showInRecents: true,
+      });
     } catch (error) {
       setGoogleLoading(false);
+      if (__DEV__) {
+        console.warn('[google-auth] prompt-error', {
+          platform: googleDebugInfo.platform,
+          redirectUri: googleDebugInfo.redirectUri,
+          clientIdUsed: googleDebugInfo.clientIdUsed,
+          error: error instanceof Error ? error.message : error,
+        });
+      }
       Alert.alert(
         'Nao foi possivel abrir o Google',
         error instanceof Error ? error.message : 'Tente novamente.',
@@ -143,7 +244,7 @@ export default function LoginScreen() {
   }
 
   return (
-    <Screen contentContainerStyle={styles.screen}>
+    <Screen formMode contentContainerStyle={styles.screen}>
       <View style={styles.hero}>
         <Text style={[styles.eyebrow, { color: theme.colors.secondary }]}>Seu futebol organizado</Text>
         <Text style={[styles.title, { color: theme.colors.text }]}>
@@ -207,14 +308,18 @@ export default function LoginScreen() {
                 label="Entrar com Google"
                 variant="secondary"
                 onPress={() => void handleGoogleLogin()}
-                disabled={!request}
+                disabled={!request || isExpoGo}
                 loading={googleLoading}
                 fullWidth
               />
             ) : null}
-            {!googleConfigured ? (
+            {showGoogleSetupHint ? (
               <Text style={[styles.helperNote, { color: theme.colors.textMuted }]}>
-                Esse acesso aparece assim que os dados do Google forem configurados no app.
+                {googleSetupHint}
+              </Text>
+            ) : showGoogleLogin && isExpoGo ? (
+              <Text style={[styles.helperNote, { color: theme.colors.textMuted }]}>
+                {googleRuntimeHint}
               </Text>
             ) : !request ? (
               <Text style={[styles.helperNote, { color: theme.colors.textMuted }]}>

@@ -1,50 +1,137 @@
 import { makeRedirectUri } from 'expo-auth-session';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 const GOOGLE_PLACEHOLDER_CLIENT_ID = 'google-client-id-not-configured';
+type GoogleAuthPlatform = 'android' | 'ios' | 'web';
 
 const googleAuthEnv = {
-  clientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID?.trim() ?? '',
   androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID?.trim() ?? '',
   iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim() ?? '',
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim() ?? '',
 };
 
-export function isGoogleSignInConfigured() {
+function getGoogleAuthPlatform(): GoogleAuthPlatform {
   if (Platform.OS === 'android') {
-    return Boolean(googleAuthEnv.androidClientId || googleAuthEnv.clientId);
+    return 'android';
   }
 
   if (Platform.OS === 'ios') {
-    return Boolean(googleAuthEnv.iosClientId || googleAuthEnv.clientId);
+    return 'ios';
   }
 
-  return Boolean(googleAuthEnv.webClientId || googleAuthEnv.clientId);
+  return 'web';
+}
+
+function getAppScheme() {
+  const configuredScheme = Constants.expoConfig?.scheme;
+
+  if (Array.isArray(configuredScheme)) {
+    return configuredScheme.find(Boolean)?.trim() || 'appboca';
+  }
+
+  if (typeof configuredScheme === 'string' && configuredScheme.trim()) {
+    return configuredScheme.trim();
+  }
+
+  return 'appboca';
+}
+
+function getPlatformClientId(platform = getGoogleAuthPlatform()) {
+  switch (platform) {
+    case 'android':
+      return googleAuthEnv.androidClientId;
+    case 'ios':
+      return googleAuthEnv.iosClientId;
+    case 'web':
+    default:
+      return googleAuthEnv.webClientId;
+  }
+}
+
+function getPlatformClientIdEnvName(platform = getGoogleAuthPlatform()) {
+  switch (platform) {
+    case 'android':
+      return 'EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID';
+    case 'ios':
+      return 'EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID';
+    case 'web':
+    default:
+      return 'EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID';
+  }
+}
+
+function getPlatformLabel(platform = getGoogleAuthPlatform()) {
+  switch (platform) {
+    case 'android':
+      return 'Android';
+    case 'ios':
+      return 'iOS';
+    case 'web':
+    default:
+      return 'web';
+  }
+}
+
+export function isGoogleSignInConfigured() {
+  return Boolean(getPlatformClientId());
+}
+
+export function getGoogleSignInSetupHint() {
+  const platform = getGoogleAuthPlatform();
+  const platformClientId = getPlatformClientId(platform);
+
+  if (platformClientId) {
+    return null;
+  }
+
+  return `Defina ${getPlatformClientIdEnvName(platform)} no .env para liberar o login com Google no ${getPlatformLabel(platform)}.`;
 }
 
 export function getGoogleRedirectUri() {
+  const appScheme = getAppScheme();
+
   return makeRedirectUri({
-    scheme: 'appboca',
+    scheme: appScheme,
+    native: `${appScheme}://auth`,
     path: 'auth',
   });
 }
 
 export function getGoogleAuthRequestConfig(loginHint?: string) {
-  const fallbackClientId =
-    googleAuthEnv.clientId ||
-    googleAuthEnv.androidClientId ||
-    googleAuthEnv.iosClientId ||
-    googleAuthEnv.webClientId ||
-    GOOGLE_PLACEHOLDER_CLIENT_ID;
+  const platform = getGoogleAuthPlatform();
+  const platformClientId = getPlatformClientId(platform) || GOOGLE_PLACEHOLDER_CLIENT_ID;
 
   return {
-    clientId: fallbackClientId,
+    clientId: platformClientId,
     androidClientId: googleAuthEnv.androidClientId || undefined,
     iosClientId: googleAuthEnv.iosClientId || undefined,
     webClientId: googleAuthEnv.webClientId || undefined,
     redirectUri: getGoogleRedirectUri(),
     loginHint,
     selectAccount: true,
-    scopes: ['profile', 'email'],
+    shouldAutoExchangeCode: Platform.OS !== 'web',
+    scopes: ['openid', 'profile', 'email'],
+  };
+}
+
+export function getGoogleAuthDebugInfo() {
+  const platform = getGoogleAuthPlatform();
+  const redirectUri = getGoogleRedirectUri();
+  const platformClientId = getPlatformClientId(platform);
+
+  return {
+    platform,
+    appOwnership: Constants.appOwnership ?? 'unknown',
+    scheme: getAppScheme(),
+    redirectUri,
+    clientIdUsed: platformClientId || GOOGLE_PLACEHOLDER_CLIENT_ID,
+    missingClientIdEnv: platformClientId
+      ? null
+      : getPlatformClientIdEnvName(platform),
+    hasAndroidClientId: Boolean(googleAuthEnv.androidClientId),
+    hasIosClientId: Boolean(googleAuthEnv.iosClientId),
+    hasWebClientId: Boolean(googleAuthEnv.webClientId),
+    configured: Boolean(platformClientId),
   };
 }

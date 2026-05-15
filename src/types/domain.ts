@@ -31,16 +31,29 @@ export type LineupZone = 'goalkeeper' | 'defense' | 'midfield' | 'attack';
 
 export type SeasonStatus = 'planned' | 'active' | 'completed';
 
-export type RatingCriterion =
-  | 'marking'
-  | 'attack'
-  | 'defense'
-  | 'stamina'
-  | 'resistance'
-  | 'grit'
-  | 'flair'
-  | 'passing'
-  | 'finishing';
+export type LegacyRatingCriterionId =
+  | 'dedicacao'
+  | 'energia'
+  | 'qualidade'
+  | 'decisivo'
+  | 'preciosismo'
+  | 'reclamacao'
+  | 'fominha'
+  | 'marra';
+
+export type RatingCriterion = string;
+export type RatingCriterionType = 'positive' | 'negative';
+
+export type NotificationType =
+  | 'match-created'
+  | 'match-updated'
+  | 'attendance-confirmed'
+  | 'attendance-absent'
+  | 'lineup-published'
+  | 'match-finished'
+  | 'mvp-voting-opened'
+  | 'mvp-winner'
+  | 'ratings-opened';
 
 export interface BaseEntity {
   id: string;
@@ -67,6 +80,7 @@ export interface User extends BaseEntity {
   teamId?: string | null;
   playerId?: string | null;
   avatarUrl?: string | null;
+  notificationTokens?: string[];
 }
 
 export interface TeamMember extends BaseEntity {
@@ -95,6 +109,16 @@ export interface Team extends BaseEntity {
   activeSeasonId?: string | null;
 }
 
+export interface TeamRatingCriterion extends BaseEntity {
+  teamId: string;
+  label: string;
+  description?: string | null;
+  type: RatingCriterionType;
+  weight: number;
+  active: boolean;
+  order: number;
+}
+
 export interface Player extends BaseEntity {
   teamId: string;
   linkedUserId?: string | null;
@@ -119,6 +143,7 @@ export interface Player extends BaseEntity {
 export interface Scoreboard {
   team: number;
   opponent: number;
+  ownGoalsForTeam?: number;
   result: MatchResult;
 }
 
@@ -147,6 +172,7 @@ export interface LineupNode {
   x: number;
   y: number;
   zone: LineupZone;
+  label?: string | null;
 }
 
 export interface Lineup extends BaseEntity {
@@ -186,14 +212,38 @@ export interface MvpVote extends BaseEntity {
   targetPlayerId: string;
 }
 
+export interface PlayerRatingCriteriaSnapshotItem {
+  criterionId: string;
+  label: string;
+  type: RatingCriterionType;
+  weight: number;
+  order: number;
+}
+
 export interface PlayerRating extends BaseEntity {
   teamId: string;
   matchId: string;
   raterPlayerId: string;
   targetPlayerId: string;
-  criteria: Record<RatingCriterion, number>;
+  criteriaScores?: Record<string, number>;
+  criteriaSnapshot?: Record<string, PlayerRatingCriteriaSnapshotItem>;
+  criteria?: Partial<Record<LegacyRatingCriterionId, number>>;
   overall: number;
 }
+
+export interface AppNotification extends BaseEntity {
+  teamId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  matchId?: string | null;
+  playerId?: string | null;
+  actorUserId?: string | null;
+  readByUserIds: string[];
+}
+
+export type PostMatchCollectionKey = 'matchStats' | 'mvpVotes' | 'playerRatings';
+export type PostMatchEntity = MatchStat | MvpVote | PlayerRating;
 
 export interface Season extends BaseEntity {
   teamId: string;

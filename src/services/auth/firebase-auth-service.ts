@@ -15,6 +15,7 @@ import {
   firebaseConfigError,
   firebaseEnabled,
 } from '@/config/firebase/client';
+import { normalizeEmail } from '@/lib/player-linking';
 import type {
   GoogleLoginInput,
   LoginInput,
@@ -92,7 +93,7 @@ class FirebaseAuthService implements AuthService {
     try {
       const credential = await signInWithEmailAndPassword(
         authInstance,
-        input.email.trim(),
+        normalizeEmail(input.email),
         input.password,
       );
 
@@ -127,7 +128,7 @@ class FirebaseAuthService implements AuthService {
     } catch (error) {
       throw toFriendlyAuthError(
         error,
-        'Nao foi possivel entrar com Google agora.',
+        'Nao foi possivel concluir a entrada com Google.',
       );
     }
   }
@@ -138,7 +139,7 @@ class FirebaseAuthService implements AuthService {
     try {
       const credential = await createUserWithEmailAndPassword(
         authInstance,
-        input.email.trim(),
+        normalizeEmail(input.email),
         input.password,
       );
 
@@ -164,7 +165,7 @@ class FirebaseAuthService implements AuthService {
     const authInstance = requireFirebaseAuth();
 
     try {
-      await sendPasswordResetEmail(authInstance, email.trim());
+      await sendPasswordResetEmail(authInstance, normalizeEmail(email));
     } catch (error) {
       throw toFriendlyAuthError(
         error,
@@ -185,7 +186,10 @@ class FirebaseAuthService implements AuthService {
 
       // Futuro: encaixar login social com Google aqui, sem misturar com email/senha.
     } catch (error) {
-      throw toFriendlyAuthError(error, 'Nao foi possivel sair da conta agora.');
+      throw toFriendlyAuthError(
+        error,
+        'Nao foi possivel sair da conta agora.',
+      );
     }
   }
 }

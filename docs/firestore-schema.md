@@ -11,12 +11,13 @@ Colecoes implementadas nesta etapa atual:
 - `matches`
 - `attendance`
 - `lineups`
-
-Colecoes planejadas para as proximas etapas:
-
 - `matchStats`
 - `mvpVotes`
 - `playerRatings`
+- `notifications`
+
+Colecoes planejadas para as proximas etapas:
+
 - `seasons`
 
 ## Regras de arquitetura
@@ -26,7 +27,10 @@ Colecoes planejadas para as proximas etapas:
 - `teamMembers` concentra os vinculos entre conta, time, papeis e jogador.
 - `players` sempre possuem `teamId`.
 - Leituras operacionais do app partem do `activeTeamId`, enquanto a navegacao de times usa as memberships da conta.
+- As permissoes de pos-partida usam a membership do `activeTeamId`.
+- Notificacoes internas tambem leem e gravam sempre pelo `activeTeamId`.
 - A estrutura ja fica pronta para multiplos times no mesmo projeto Firebase.
+- O uso em Web/PWA no iPhone reaproveita exatamente o mesmo schema e as mesmas regras de `activeTeamId`.
 
 ## Campos por colecao
 
@@ -159,8 +163,7 @@ Notas:
 Notas:
 
 - Todos os campos sao numericos e comecam em `0`.
-- Nesta etapa, rankings e cards de estatisticas usam `manualStats` como fonte principal no modo com Firestore.
-- Quando `matchStats` real for migrado, a ideia e somar os dados manuais com os dados vindos das partidas.
+- Rankings e cards de estatisticas somam `manualStats` com os dados reais das partidas.
 
 ### `matches/{matchId}`
 
@@ -191,7 +194,7 @@ Notas:
 - A leitura parte do `activeTeamId` da conta.
 - Admin do time pode criar, editar, cancelar e encerrar a partida.
 - `locationUrl` e opcional e aceita links externos de mapas.
-- Nesta etapa, o modo com conta conectada salva placar e status final, mas ainda nao persiste `matchStats`, MVP ou notas.
+- Ao encerrar a partida, o app grava placar, gols e assistencias dos jogadores confirmados.
 
 ### `attendance/{attendanceId}`
 
@@ -231,11 +234,96 @@ Notas:
 - A escalacao aceita apenas jogadores confirmados para a partida.
 - Admin e jogador no mesmo time tambem pode aparecer normalmente na escalacao se estiver confirmado.
 
+### `matchStats/{matchStatId}`
+
+- `id`
+- `teamId`
+- `matchId`
+- `playerId`
+- `played`
+- `started`
+- `goals`
+- `assists`
+- `yellowCards`
+- `redCards`
+- `notes`
+- `createdAt`
+- `updatedAt`
+
+Notas:
+
+- Todo registro carrega `teamId`.
+- Apenas jogadores confirmados podem receber estatisticas.
+- O app salva um registro estavel por jogador participante usando o par `matchId + playerId`.
+- O `id` recomendado fica no formato `matchId__playerId`.
+- Ao editar o pos-jogo, o app atualiza os registros validos e remove apenas sobras antigas.
+
+### `mvpVotes/{voteId}`
+
+- `id`
+- `teamId`
+- `matchId`
+- `voterPlayerId`
+- `targetPlayerId`
+- `createdAt`
+- `updatedAt`
+
+Notas:
+
+- Apenas jogadores confirmados podem votar.
+- Cada jogador confirmado vota uma unica vez por partida.
+- Nao e permitido votar em si mesmo.
+- O documento usa um identificador estavel com `matchId + voterPlayerId` para reforcar a regra de voto unico.
+- O `id` recomendado fica no formato `matchId__voterPlayerId`.
+
+### `playerRatings/{ratingId}`
+
+- `id`
+- `teamId`
+- `matchId`
+- `raterPlayerId`
+- `targetPlayerId`
+- `criteria`
+- `overall`
+- `createdAt`
+- `updatedAt`
+
+Notas:
+
+- Apenas jogadores confirmados podem avaliar.
+- Cada jogador confirmado pode avaliar outro jogador uma unica vez por partida.
+- Nao e permitido avaliar a si mesmo.
+- `overall` e a media consolidada das notas enviadas em `criteria`.
+- O documento usa um identificador estavel com `matchId + raterPlayerId + targetPlayerId`.
+- O `id` recomendado fica no formato `matchId__raterPlayerId__targetPlayerId`.
+
+### `notifications/{notificationId}`
+
+- `id`
+- `teamId`
+- `type`
+- `title`
+- `message`
+- `matchId`
+- `playerId`
+- `actorUserId`
+- `readByUserIds`
+- `createdAt`
+- `updatedAt`
+
+Notas:
+
+- Toda notificacao carrega `teamId`.
+- A leitura da interface usa apenas o `activeTeamId` da conta.
+- O documento guarda o estado de leitura por usuario em `readByUserIds`.
+- `matchId` e opcional para abrir o detalhe da partida relacionada.
+- `playerId` e opcional para destacar quem protagonizou o evento.
+- `actorUserId` registra quem disparou a movimentacao principal.
+- Nesta etapa nao existe push nativo; a notificacao fica somente dentro do app e da PWA.
+- IDs estaveis por evento ajudam a atualizar avisos sem duplicar historico desnecessariamente.
+
 ## Colecoes futuras
 
-- `matchStats`: `teamId`, `matchId`, `playerId`, `played`, `started`, `goals`, `assists`, `yellowCards`, `redCards`, `notes`
-- `mvpVotes`: `teamId`, `matchId`, `voterPlayerId`, `targetPlayerId`
-- `playerRatings`: `teamId`, `matchId`, `raterPlayerId`, `targetPlayerId`, `criteria`, `overall`
 - `seasons`: `teamId`, `name`, `year`, `startDate`, `endDate`, `status`
 
 ## Detalhes uteis
@@ -254,6 +342,12 @@ Notas:
 - Criacao de partida: grava `matches/{matchId}` e cria `attendance` pendente para o elenco do time ativo.
 - Resposta de presenca: atualiza `attendance` no time ativo.
 - Escalacao visual: grava `lineups/{lineupId}` com titulares e reservas apenas dos confirmados.
+- Pos-jogo: grava `matchStats/{matchStatId}` para os confirmados e fecha a partida com placar.
+- MVP: grava `mvpVotes/{voteId}` com um voto por jogador confirmado.
+- Avaliacoes: grava `playerRatings/{ratingId}` com uma avaliacao por alvo em cada partida.
+- Estatisticas e rankings: somam `manualStats` com `matchStats`, `mvpVotes` e `playerRatings` validos do time ativo.
+- Notificacoes: grava `notifications/{notificationId}` para nova partida, edicao, presenca, escalacao, encerramento, liberacao de voto/nota e destaque da partida.
+- Reabertura do app: o snapshot do `activeTeamId` recarrega os dados reais de pos-jogo e notificacoes do Firestore.
 - Remocao de jogador: marca `players/{playerId}` como inativo, limpa presenca e escalacao futura e preserva o historico anterior.
 
 ## Indices recomendados
@@ -272,3 +366,4 @@ Notas:
 - `matchStats(teamId, playerId)`
 - `mvpVotes(matchId, targetPlayerId)`
 - `playerRatings(matchId, targetPlayerId)`
+- `notifications(teamId, updatedAt)`

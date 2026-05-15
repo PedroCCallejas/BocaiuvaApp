@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { fonts } from '@/constants/theme';
+import { setupNotificationHandler } from '@/services/notifications';
 import { useAppStore } from '@/store/app-store';
 
 void SplashScreen.preventAutoHideAsync();
@@ -16,6 +17,7 @@ export default function RootLayout() {
   const bootstrap = useAppStore((state) => state.bootstrap);
 
   useEffect(() => {
+    void setupNotificationHandler();
     void bootstrap();
   }, [bootstrap]);
 

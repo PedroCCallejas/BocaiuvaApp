@@ -1,0 +1,33 @@
+{
+  "id": "/",
+  "name": "Bocaiuva APP",
+  "short_name": "Bocaiuva",
+  "description": "Aplicativo para organizar times de futebol amador, jogos, presenca, escalacao e estatisticas.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#051108",
+  "theme_color": "#051108",
+  "icons": [
+    {
+      "src": "/icons/pwa-192.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/pwa-512.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/apple-touch-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

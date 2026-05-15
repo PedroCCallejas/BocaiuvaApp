@@ -1,4 +1,32 @@
 import { calculateMatchResult, getConfirmedPlayerIds, getMvpSummary } from '@/lib/match';
+import { buildLegacyMatchImportPreview } from '@/lib/match-import';
+import {
+  buildRatingCriteriaSnapshot,
+  calculateOverallFromCriteriaScores,
+  countRatingCriterionUsage,
+  createDefaultTeamRatingCriteria,
+  getActiveRatingCriteria,
+  normalizeRatingCriteriaOrder,
+  normalizeTeamRatingCriterion,
+  validateActiveRatingCriteria,
+  validateRatingCriteriaSubmission,
+} from '@/lib/rating-criteria';
+import {
+  isPlayerAvailableForLinking,
+  normalizeEmail,
+  resolvePlayerForUser,
+} from '@/lib/player-linking';
+import {
+  buildNotificationId,
+  createAttendanceNotification,
+  createLineupPublishedNotification,
+  createMatchCreatedNotification,
+  createMatchFinishedNotification,
+  createMatchUpdatedNotification,
+  createMvpVotingOpenedNotification,
+  createMvpWinnerNotification,
+  createRatingsOpenedNotification,
+} from '@/lib/notifications';
 import {
   createEmptyManualStats,
   createInviteCode,
@@ -9,25 +37,31 @@ import {
   slugifyTeamName,
 } from '@/lib/team';
 import type {
+  AppNotification,
   AttendanceRecord,
   Match,
+  MatchType,
   MatchStat,
   MvpVote,
   Player,
   PlayerRating,
   Team,
   TeamMember,
+  TeamRatingCriterion,
   User,
 } from '@/types/domain';
 import { createSeedDatabase } from '@/mocks/seed';
+import { emptySnapshot } from '@/services/repository/types';
 import type {
   AppRepository,
   AppSnapshot,
   CreateMatchInput,
   CreatePlayerInput,
+  CreateRatingCriterionInput,
   CreateTeamInput,
   FinishMatchInput,
   GoogleLoginInput,
+  RegisterFinishedMatchInput,
   LoginInput,
   MockDatabase,
   RegisterInput,
@@ -35,39 +69,135 @@ import type {
   SubmitMvpVoteInput,
   SubmitPlayerRatingInput,
   UpdateMatchInput,
+  UpdateRatingCriterionInput,
   UpdateTeamInput,
   UpdateAttendanceInput,
   UpdatePlayerInput,
 } from '@/services/repository/types';
+import type {
+  ImportLegacyMatchesResult,
+  ImportedMatchPayloadItem,
+  LegacyMatchImportPreview,
+  RegisterFinishedMatchPlayerInput,
+} from '@/types/match-import';
 
 let database = createSeedDatabase();
+let mockSessionUserId: string | null = null;
+const repairingMockUsers = new Set<string>();
+
+export function resetMockRepositorySession() {
+  mockSessionUserId = null;
+}
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function snapshotFromDatabase(source: MockDatabase): AppSnapshot {
+function snapshotFromDatabase(source: MockDatabase, currentUserId: string | null): AppSnapshot {
+  if (!currentUserId) {
+    return clone(emptySnapshot);
+  }
+
+  const currentUser = source.users.find((user) => user.id === currentUserId) ?? null;
+  if (!currentUser) {
+    return clone(emptySnapshot);
+  }
+
+  ensureCurrentUserPlayerForActiveTeam(currentUser.id);
+  syncUserActiveContext(currentUser);
+  const memberships = findUserMemberships(currentUser.id);
+  const activeMembership =
+    memberships.find((membership) => membership.teamId === currentUser.activeTeamId) ?? null;
+  const activeTeamId = activeMembership?.teamId ?? null;
+  const teams = memberships
+    .map((membership) => source.teams.find((team) => team.id === membership.teamId) ?? null)
+    .filter((team): team is Team => Boolean(team));
+
   return clone({
-    users: source.users,
-    teams: source.teams,
-    teamMembers: source.teamMembers,
-    players: source.players,
-    matches: source.matches,
-    lineups: source.lineups,
-    attendance: source.attendance,
-    matchStats: source.matchStats,
-    mvpVotes: source.mvpVotes,
-    playerRatings: source.playerRatings,
-    seasons: source.seasons,
+    users: [currentUser],
+    teams,
+    teamMembers: memberships,
+    ratingCriteria: activeTeamId
+      ? source.ratingCriteria.filter((criterion) => criterion.teamId === activeTeamId)
+      : [],
+    players: activeTeamId
+      ? source.players.filter((player) => player.teamId === activeTeamId)
+      : [],
+    matches: activeTeamId
+      ? source.matches.filter((match) => match.teamId === activeTeamId)
+      : [],
+    lineups: activeTeamId
+      ? source.lineups.filter((lineup) => lineup.teamId === activeTeamId)
+      : [],
+    attendance: activeTeamId
+      ? source.attendance.filter((record) => record.teamId === activeTeamId)
+      : [],
+    matchStats: activeTeamId
+      ? source.matchStats.filter((stat) => stat.teamId === activeTeamId)
+      : [],
+    mvpVotes: activeTeamId
+      ? source.mvpVotes.filter((vote) => vote.teamId === activeTeamId)
+      : [],
+    playerRatings: activeTeamId
+      ? source.playerRatings.filter((rating) => rating.teamId === activeTeamId)
+      : [],
+    notifications: activeTeamId
+      ? source.notifications.filter((notification) => notification.teamId === activeTeamId)
+      : [],
+    seasons: activeTeamId
+      ? source.seasons.filter((season) => season.teamId === activeTeamId)
+      : [],
   });
 }
 
-function normalizeEmail(email: string) {
-  return email.trim().toLowerCase();
+function snapshotForTeam(teamId: string): AppSnapshot {
+  return clone({
+    ...emptySnapshot,
+    ratingCriteria: database.ratingCriteria.filter((criterion) => criterion.teamId === teamId),
+    players: database.players.filter((player) => player.teamId === teamId),
+    matches: database.matches.filter((match) => match.teamId === teamId),
+    lineups: database.lineups.filter((lineup) => lineup.teamId === teamId),
+    attendance: database.attendance.filter((record) => record.teamId === teamId),
+    matchStats: database.matchStats.filter((stat) => stat.teamId === teamId),
+    mvpVotes: database.mvpVotes.filter((vote) => vote.teamId === teamId),
+    playerRatings: database.playerRatings.filter((rating) => rating.teamId === teamId),
+    notifications: database.notifications.filter((notification) => notification.teamId === teamId),
+    seasons: database.seasons.filter((season) => season.teamId === teamId),
+  });
 }
 
 function createId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function buildStableDocumentId(...parts: string[]) {
+  return parts.join('__');
+}
+
+function normalizeMatchTime(time?: string | null) {
+  return time?.trim() ?? '';
+}
+
+function normalizeOptionalString(value?: string | null) {
+  const trimmed = value?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeMatchVenue(venue?: string | null) {
+  return venue?.trim() || 'Nao informado';
+}
+
+function defaultLinePlayersCount(matchType: MatchType) {
+  switch (matchType) {
+    case 'futsal':
+      return 4;
+    case 'field':
+      return 10;
+    case 'society':
+    case 'training':
+    default:
+      return 6;
+  }
 }
 
 function nowIso() {
@@ -88,6 +218,13 @@ function findUser(userId: string) {
     throw new Error('Usuario nao encontrado.');
   }
   return user;
+}
+
+function findUserByEmail(email: string) {
+  const normalizedEmail = normalizeEmail(email);
+  return (
+    database.users.find((user) => normalizeEmail(user.email) === normalizedEmail) ?? null
+  );
 }
 
 function findTeam(teamId: string) {
@@ -114,12 +251,315 @@ function findMatch(matchId: string) {
   return match;
 }
 
+function findMatchForTeam(teamId: string, matchId: string) {
+  const match = database.matches.find(
+    (item) => item.id === matchId && item.teamId === teamId,
+  );
+
+  if (!match) {
+    throw new Error('Partida nao encontrada.');
+  }
+
+  return match;
+}
+
 function findLineup(matchId: string) {
   return database.lineups.find((item) => item.matchId === matchId) ?? null;
 }
 
+function findLineupForTeam(teamId: string, matchId: string) {
+  return (
+    database.lineups.find(
+      (item) => item.teamId === teamId && item.matchId === matchId,
+    ) ?? null
+  );
+}
+
 function findTeamPlayers(teamId: string) {
   return database.players.filter((player) => player.teamId === teamId);
+}
+
+function findRatingCriteriaForTeam(teamId: string) {
+  return database.ratingCriteria.filter((criterion) => criterion.teamId === teamId);
+}
+
+function replaceTeamRatingCriteria(teamId: string, nextCriteria: TeamRatingCriterion[]) {
+  database.ratingCriteria = [
+    ...database.ratingCriteria.filter((criterion) => criterion.teamId !== teamId),
+    ...nextCriteria,
+  ];
+}
+
+function syncRatingCriteriaOrder(teamId: string) {
+  const normalized = normalizeRatingCriteriaOrder(
+    findRatingCriteriaForTeam(teamId).map((criterion) => normalizeTeamRatingCriterion(criterion)),
+  );
+  replaceTeamRatingCriteria(teamId, normalized);
+  return normalized;
+}
+
+function findRatingCriterionForTeam(teamId: string, criterionId: string) {
+  return (
+    findRatingCriteriaForTeam(teamId).find((criterion) => criterion.id === criterionId) ?? null
+  );
+}
+
+function isMatchOpenForAttendance(match: Match) {
+  return match.status !== 'finished' && match.status !== 'canceled';
+}
+
+function ensureOpenMatchAttendanceForPlayer(player: Player) {
+  if (!isActivePlayer(player)) {
+    return;
+  }
+
+  const updatedAt = nowIso();
+  const desiredUserId = player.linkedUserId ?? null;
+  const openMatchIds = new Set(
+    database.matches
+      .filter((match) => match.teamId === player.teamId && isMatchOpenForAttendance(match))
+      .map((match) => match.id),
+  );
+
+  for (const match of database.matches.filter(
+    (item) => item.teamId === player.teamId && openMatchIds.has(item.id),
+  )) {
+    const existingRecord =
+      database.attendance.find(
+        (attendance) =>
+          attendance.teamId === player.teamId &&
+          attendance.matchId === match.id &&
+          attendance.playerId === player.id,
+      ) ?? null;
+
+    if (existingRecord) {
+      if (existingRecord.userId !== desiredUserId) {
+        existingRecord.userId = desiredUserId;
+        existingRecord.updatedAt = updatedAt;
+      }
+
+      continue;
+    }
+
+    database.attendance.push({
+      id: buildStableDocumentId(match.id, player.id),
+      teamId: player.teamId,
+      matchId: match.id,
+      playerId: player.id,
+      userId: desiredUserId,
+      status: 'pending',
+      respondedAt: null,
+      createdAt: updatedAt,
+      updatedAt,
+    });
+  }
+}
+
+interface ResolvedFinishedMatchPlayerInput extends RegisterFinishedMatchPlayerInput {
+  player: Player;
+  started: boolean;
+}
+
+function resolveFinishedMatchPlayersInput(input: {
+  players: RegisterFinishedMatchPlayerInput[];
+  teamPlayers: Player[];
+  teamScore: number;
+}) {
+  if (input.players.length === 0) {
+    throw new Error('Informe pelo menos um jogador para registrar a partida.');
+  }
+
+  const playersById = new Map(input.teamPlayers.map((player) => [player.id, player]));
+  const usedPlayerIds = new Set<string>();
+  const resolvedPlayers = input.players.map<ResolvedFinishedMatchPlayerInput>((item) => {
+    const player = playersById.get(item.playerId);
+    if (!player) {
+      throw new Error('Todos os jogadores precisam pertencer ao time atual.');
+    }
+
+    if (usedPlayerIds.has(item.playerId)) {
+      throw new Error('Nao repita o mesmo jogador mais de uma vez na partida.');
+    }
+
+    if (item.goals < 0 || item.assists < 0) {
+      throw new Error('Gols e assistencias nao podem ser negativos.');
+    }
+
+    if (!item.played && (item.goals > 0 || item.assists > 0)) {
+      throw new Error('Um jogador marcado como ausente nao pode receber estatisticas.');
+    }
+
+    usedPlayerIds.add(item.playerId);
+
+    return {
+      ...item,
+      player,
+      started: item.started ?? item.played,
+    };
+  });
+
+  const playedPlayers = resolvedPlayers.filter((item) => item.played);
+  if (playedPlayers.length === 0) {
+    throw new Error('A partida precisa ter pelo menos um jogador participante.');
+  }
+
+  const totalGoals = playedPlayers.reduce((sum, item) => sum + item.goals, 0);
+  if (totalGoals > input.teamScore) {
+    throw new Error('A soma de gols dos jogadores nao pode ultrapassar o placar do time.');
+  }
+
+  return resolvedPlayers;
+}
+
+function createFinishedMatchRecord(input: {
+  actorUserId: string;
+  team: Team;
+  values: RegisterFinishedMatchInput;
+  teamPlayers?: Player[];
+}) {
+  const opponentName = input.values.opponentName.trim();
+  if (!opponentName) {
+    throw new Error('Informe o adversario da partida.');
+  }
+
+  if (input.values.teamScore < 0 || input.values.opponentScore < 0) {
+    throw new Error('O placar nao pode ter numeros negativos.');
+  }
+
+  if (
+    input.values.linePlayersCount != null &&
+    (input.values.linePlayersCount < 1 || input.values.linePlayersCount > 15)
+  ) {
+    throw new Error('A quantidade de jogadores de linha precisa ficar entre 1 e 15.');
+  }
+
+  const updatedAt = nowIso();
+  const teamPlayers = input.teamPlayers ?? findTeamPlayers(input.team.id);
+  const resolvedPlayers = resolveFinishedMatchPlayersInput({
+    players: input.values.players,
+    teamPlayers,
+    teamScore: input.values.teamScore,
+  });
+  const match: Match = {
+    id: createId('match'),
+    teamId: input.team.id,
+    seasonId: input.values.seasonId ?? input.team.activeSeasonId ?? null,
+    date: input.values.date,
+    time: normalizeMatchTime(input.values.time),
+    venue: normalizeMatchVenue(input.values.venue),
+    locationUrl: normalizeOptionalString(input.values.locationUrl),
+    opponentName,
+    opponentLogoUrl: input.values.opponentLogoUrl ?? null,
+    linePlayersCount:
+      input.values.linePlayersCount ?? defaultLinePlayersCount(input.values.matchType),
+    matchType: input.values.matchType,
+    notes: input.values.notes?.trim() ?? '',
+    status: 'finished',
+    createdBy: input.actorUserId,
+    scoreboard: {
+      team: input.values.teamScore,
+      opponent: input.values.opponentScore,
+      result: calculateMatchResult(input.values.teamScore, input.values.opponentScore),
+    },
+    finishedAt: updatedAt,
+    mvpWinnerPlayerIds: [],
+    mvpTotalVotes: 0,
+    createdAt: updatedAt,
+    updatedAt,
+  };
+
+  database.matches.push(match);
+
+  for (const item of resolvedPlayers) {
+    database.attendance.push({
+      id: buildStableDocumentId(match.id, item.player.id),
+      teamId: input.team.id,
+      matchId: match.id,
+      playerId: item.player.id,
+      userId: item.player.linkedUserId ?? null,
+      status: item.played ? 'confirmed' : 'absent',
+      respondedAt: updatedAt,
+      createdAt: updatedAt,
+      updatedAt,
+    });
+
+    if (!item.played) {
+      continue;
+    }
+
+    database.matchStats.push({
+      id: buildStableDocumentId(match.id, item.player.id),
+      teamId: input.team.id,
+      matchId: match.id,
+      playerId: item.player.id,
+      played: true,
+      started: item.started,
+      goals: item.goals,
+      assists: item.assists,
+      yellowCards: 0,
+      redCards: 0,
+      notes: '',
+      createdAt: updatedAt,
+      updatedAt,
+    });
+  }
+
+  return clone(match);
+}
+
+function findAttendanceForMatch(teamId: string, matchId: string) {
+  return database.attendance.filter(
+    (item) => item.teamId === teamId && item.matchId === matchId,
+  );
+}
+
+function findMatchStatsForMatch(teamId: string, matchId: string) {
+  return database.matchStats.filter(
+    (item) => item.teamId === teamId && item.matchId === matchId,
+  );
+}
+
+function findMvpVotesForMatch(teamId: string, matchId: string) {
+  return database.mvpVotes.filter(
+    (item) => item.teamId === teamId && item.matchId === matchId,
+  );
+}
+
+function findRatingsForMatch(teamId: string, matchId: string) {
+  return database.playerRatings.filter(
+    (item) => item.teamId === teamId && item.matchId === matchId,
+  );
+}
+
+function findNotificationsForTeam(teamId: string) {
+  return database.notifications.filter((item) => item.teamId === teamId);
+}
+
+function findNotificationByIdForTeam(teamId: string, notificationId: string) {
+  return (
+    database.notifications.find(
+      (item) => item.teamId === teamId && item.id === notificationId,
+    ) ?? null
+  );
+}
+
+function upsertNotification(notification: AppNotification) {
+  const existingIndex = database.notifications.findIndex(
+    (item) => item.id === notification.id,
+  );
+
+  if (existingIndex >= 0) {
+    database.notifications[existingIndex] = notification;
+    return;
+  }
+
+  database.notifications.push(notification);
+}
+
+function removeNotification(notificationId: string) {
+  database.notifications = database.notifications.filter(
+    (item) => item.id !== notificationId,
+  );
 }
 
 function isActivePlayer(player: Player) {
@@ -183,7 +623,56 @@ function findAnyMembershipByUserAndTeam(userId: string, teamId: string) {
   );
 }
 
+function repairCurrentUserMembershipsByLinkedPlayers(user: User) {
+  if (repairingMockUsers.has(user.id)) {
+    return;
+  }
+
+  repairingMockUsers.add(user.id);
+
+  try {
+    const normalizedUserEmail = normalizeEmail(user.email);
+    const playersByTeam = database.players.reduce<Map<string, Player[]>>((acc, player) => {
+      if (
+        !isPlayerAvailableForLinking(player) ||
+        !(
+          player.linkedUserId === user.id ||
+          (!player.linkedUserId &&
+            normalizeEmail(player.linkedEmail ?? '') === normalizedUserEmail)
+        )
+      ) {
+        return acc;
+      }
+
+      const current = acc.get(player.teamId) ?? [];
+      acc.set(player.teamId, [...current, player]);
+      return acc;
+    }, new Map());
+
+    for (const [teamId, candidates] of playersByTeam.entries()) {
+      const player = resolvePlayerForUser({
+        teamPlayers: candidates,
+        teamId,
+        user,
+      });
+
+      if (!player) {
+        continue;
+      }
+
+      player.linkedUserId = user.id;
+      player.linkedEmail = normalizedUserEmail;
+      player.updatedAt = nowIso();
+      syncLinkedUser(player, { syncContext: false });
+      ensureOpenMatchAttendanceForPlayer(player);
+    }
+  } finally {
+    repairingMockUsers.delete(user.id);
+  }
+}
+
 function syncUserActiveContext(user: User) {
+  repairCurrentUserMembershipsByLinkedPlayers(user);
   const memberships = findUserMemberships(user.id);
   const activeMembership =
     memberships.find((membership) => membership.teamId === user.activeTeamId) ??
@@ -205,30 +694,62 @@ function findTeamByInviteCode(inviteCode: string) {
 }
 
 function requireTeamAdmin(actorUserId: string, teamId: string) {
-  const actor = findUser(actorUserId);
-  const membership = findMembershipByUserAndTeam(actor.id, teamId);
+  const { actor, membership } = ensureMembershipContext(actorUserId, teamId);
 
-  if (
-    !membership ||
-    !membership.canManageTeam
-  ) {
+  if (!membership.canManageTeam) {
     throw new Error('Apenas o administrador do time pode fazer essa acao.');
   }
 
-  syncUserActiveContext(actor);
   return actor;
 }
 
 function requirePlayerManager(actorUserId: string, teamId: string) {
-  const actor = findUser(actorUserId);
-  const membership = findMembershipByUserAndTeam(actor.id, teamId);
+  const { actor, membership } = ensureMembershipContext(actorUserId, teamId);
 
-  if (!membership || !membership.canManagePlayers) {
+  if (!membership.canManagePlayers) {
     throw new Error('Apenas quem gerencia o elenco pode fazer essa acao.');
   }
 
-  syncUserActiveContext(actor);
   return actor;
+}
+
+function ensureActiveTeamContext(actorUserId: string) {
+  const actor = findUser(actorUserId);
+  syncUserActiveContext(actor);
+
+  if (!actor.activeTeamId) {
+    throw new Error('Escolha um time antes de continuar.');
+  }
+
+  const membership = findMembershipByUserAndTeam(actor.id, actor.activeTeamId);
+  if (!membership) {
+    throw new Error('Seu acesso ao time atual nao esta disponivel.');
+  }
+
+  if (membership.roles.includes('player')) {
+    ensureMembershipPlayerLink({
+      user: actor,
+      membership,
+      team: findTeam(actor.activeTeamId),
+    });
+    syncUserActiveContext(actor);
+  }
+
+  return {
+    actor,
+    membership,
+    activeTeamId: actor.activeTeamId,
+  };
+}
+
+function ensureMembershipContext(actorUserId: string, teamId: string) {
+  const context = ensureActiveTeamContext(actorUserId);
+
+  if (context.activeTeamId !== teamId) {
+    throw new Error('Troque para o time atual antes de continuar.');
+  }
+
+  return context;
 }
 
 function resolveTeamAppRole(user: User, team: Team | null) {
@@ -243,16 +764,92 @@ function resolveTeamAppRole(user: User, team: Team | null) {
   return 'player';
 }
 
-function requireLinkedPlayer(actorUserId: string) {
-  const actor = findUser(actorUserId);
-  const membership = syncUserActiveContext(actor);
+function ensureMembershipPlayerLink(input: {
+  user: User;
+  membership: TeamMember;
+  team: Team;
+}) {
+  if (!input.membership.roles.includes('player')) {
+    return null;
+  }
 
-  if (!membership?.playerId) {
+  const normalizedUserEmail = normalizeEmail(input.user.email);
+  const teamPlayers = findTeamPlayers(input.team.id);
+  let player = resolvePlayerForUser({
+    teamPlayers,
+    teamId: input.team.id,
+    user: input.user,
+    membership: input.membership,
+  });
+
+  if (!player) {
+    player = createBasicPlayer(input.team.id, input.user);
+    database.players.push(player);
+  }
+
+  player.linkedUserId = input.user.id;
+  player.linkedEmail = normalizedUserEmail;
+  player.updatedAt = nowIso();
+
+  input.membership.playerId = player.id;
+  input.membership.status = 'active';
+  input.membership.canManageTeam = input.membership.roles.includes('admin');
+  input.membership.canManagePlayers = input.membership.roles.includes('admin');
+  input.membership.updatedAt = nowIso();
+
+  if (input.user.activeTeamId === input.team.id || input.user.activeTeamId == null) {
+    input.user.activeTeamId = input.team.id;
+    input.user.teamId = input.team.id;
+    input.user.playerId = player.id;
+  }
+
+  input.user.appRole = resolveTeamAppRole(input.user, input.team);
+  input.user.updatedAt = nowIso();
+  ensureOpenMatchAttendanceForPlayer(player);
+
+  return player;
+}
+
+function ensureCurrentUserPlayerForActiveTeam(userId: string) {
+  const actor = findUser(userId);
+  syncUserActiveContext(actor);
+
+  if (!actor.activeTeamId) {
+    return null;
+  }
+
+  const membership = findMembershipByUserAndTeam(actor.id, actor.activeTeamId);
+  if (!membership || !membership.roles.includes('player')) {
+    return null;
+  }
+
+  const player = ensureMembershipPlayerLink({
+    user: actor,
+    membership,
+    team: findTeam(actor.activeTeamId),
+  });
+
+  syncUserActiveContext(actor);
+
+  return player?.id ?? membership.playerId ?? null;
+}
+
+function requireLinkedPlayer(actorUserId: string) {
+  const { actor, membership, activeTeamId } = ensureActiveTeamContext(actorUserId);
+  const currentPlayerId = membership.roles.includes('player')
+    ? ensureCurrentUserPlayerForActiveTeam(actorUserId)
+    : null;
+
+  if (!currentPlayerId) {
     throw new Error('Esta conta ainda nao esta vinculada a um jogador.');
   }
 
-  const player = findPlayer(membership.playerId);
-  return { actor, player };
+  const player = findPlayer(currentPlayerId);
+  if (player.teamId !== activeTeamId) {
+    throw new Error('Esta conta nao esta vinculada ao time atual.');
+  }
+
+  return { actor, player, membership, activeTeamId };
 }
 
 function assertJerseyAvailable(teamId: string, jerseyNumber: number, excludedPlayerId?: string) {
@@ -350,6 +947,59 @@ function validateLinkedUserAssignment(
   }
 
   return linkedUser;
+}
+
+function linkPlayerToUserIfEmailMatches(input: {
+  teamId: string;
+  player: Pick<Player, 'linkedUserId' | 'linkedEmail'>;
+  linkedUserId?: string | null;
+  linkedEmail?: string | null;
+  currentPlayerId?: string;
+  preferredUser?: User | null;
+}) {
+  const normalizedLinkedEmail = normalizeEmail(
+    input.linkedEmail ?? input.player.linkedEmail,
+  );
+  let linkedUser =
+    typeof input.linkedUserId === 'string' && input.linkedUserId
+      ? validateLinkedUserAssignment(
+          input.linkedUserId,
+          input.teamId,
+          input.currentPlayerId,
+        )
+      : null;
+
+  if (
+    !linkedUser &&
+    input.preferredUser &&
+    normalizedLinkedEmail &&
+    normalizeEmail(input.preferredUser.email) === normalizedLinkedEmail
+  ) {
+    linkedUser = validateLinkedUserAssignment(
+      input.preferredUser.id,
+      input.teamId,
+      input.currentPlayerId,
+    );
+  }
+
+  if (!linkedUser && normalizedLinkedEmail) {
+    const matchedUser = findUserByEmail(normalizedLinkedEmail);
+    if (matchedUser) {
+      linkedUser = validateLinkedUserAssignment(
+        matchedUser.id,
+        input.teamId,
+        input.currentPlayerId,
+      );
+    }
+  }
+
+  return {
+    linkedUser,
+    linkedUserId: linkedUser?.id ?? null,
+    linkedEmail: linkedUser
+      ? normalizeEmail(linkedUser.email)
+      : normalizedLinkedEmail || null,
+  };
 }
 
 function createMembership(input: {
@@ -570,7 +1220,10 @@ function buildInitialMatch(team: Team, creator: User): Match {
   };
 }
 
-function syncLinkedUser(player: Player) {
+function syncLinkedUser(
+  player: Player,
+  options?: { syncContext?: boolean },
+) {
   if (!player.linkedUserId) {
     return;
   }
@@ -611,7 +1264,10 @@ function syncLinkedUser(player: Player) {
   linkedUser.updatedAt = nowIso();
   player.linkedEmail = normalizeEmail(linkedUser.email);
   player.deletedAt = null;
-  syncUserActiveContext(linkedUser);
+
+  if (options?.syncContext !== false) {
+    syncUserActiveContext(linkedUser);
+  }
 }
 
 function unlinkPlayerFromUser(player: Player) {
@@ -643,11 +1299,46 @@ function unlinkPlayerFromUser(player: Player) {
 
 function syncMvpMatchFields(matchId: string) {
   const match = findMatch(matchId);
-  const summary = getMvpSummary(snapshotFromDatabase(database), matchId);
+  const summary = getMvpSummary(snapshotForTeam(match.teamId), matchId);
+  const updatedAt = nowIso();
 
   match.mvpWinnerPlayerIds = summary.winnerPlayerIds;
   match.mvpTotalVotes = summary.totalVotes;
-  match.updatedAt = nowIso();
+  match.updatedAt = updatedAt;
+
+  return {
+    match,
+    summary,
+    updatedAt,
+  };
+}
+
+function syncMvpWinnerNotification(
+  match: Match,
+  actorUserId?: string | null,
+  updatedAt = nowIso(),
+) {
+  const notificationId = buildNotificationId('mvp-winner', match.id);
+
+  if (!match.mvpWinnerPlayerIds || match.mvpWinnerPlayerIds.length !== 1) {
+    removeNotification(notificationId);
+    return;
+  }
+
+  const winner = findPlayer(match.mvpWinnerPlayerIds[0]);
+  const existing = findNotificationByIdForTeam(match.teamId, notificationId);
+
+  upsertNotification(
+    createMvpWinnerNotification({
+      id: notificationId,
+      teamId: match.teamId,
+      match,
+      winner,
+      actorUserId,
+      createdAt: existing?.createdAt,
+      updatedAt,
+    }),
+  );
 }
 
 function allowedSelfUpdateFields(input: UpdatePlayerInput) {
@@ -671,12 +1362,14 @@ function allowedSelfUpdateFields(input: UpdatePlayerInput) {
   }
 }
 
-function validateRatingCriteria(criteria: SubmitPlayerRatingInput['criteria']) {
-  for (const [key, value] of Object.entries(criteria)) {
-    if (value < 0 || value > 5) {
-      throw new Error(`A nota de ${key} deve ficar entre 0 e 5.`);
-    }
-  }
+function validateRatingCriteriaInput(
+  criteria: TeamRatingCriterion[],
+  input: SubmitPlayerRatingInput,
+) {
+  validateRatingCriteriaSubmission({
+    activeCriteria: getActiveRatingCriteria(criteria),
+    criteriaScores: input.criteriaScores,
+  });
 }
 
 export const mockRepository: AppRepository = {
@@ -688,14 +1381,14 @@ export const mockRepository: AppRepository = {
     for (const user of database.users) {
       syncUserActiveContext(user);
     }
-    return snapshotFromDatabase(database);
+    return snapshotFromDatabase(database, mockSessionUserId);
   },
 
   async getSnapshot() {
     for (const user of database.users) {
       syncUserActiveContext(user);
     }
-    return snapshotFromDatabase(database);
+    return snapshotFromDatabase(database, mockSessionUserId);
   },
 
   async login(input: LoginInput) {
@@ -709,6 +1402,7 @@ export const mockRepository: AppRepository = {
     }
 
     const user = findUser(credential.userId);
+    mockSessionUserId = user.id;
     syncUserActiveContext(user);
     return clone(user);
   },
@@ -743,6 +1437,7 @@ export const mockRepository: AppRepository = {
 
     database.users.push(user);
     database.credentials.push({ userId: id, email, password: input.password });
+    mockSessionUserId = user.id;
 
     return clone(user);
   },
@@ -762,6 +1457,7 @@ export const mockRepository: AppRepository = {
     const teamId = createId('team');
     const seasonId = createId('season');
     const inviteCode = createUniqueInviteCode();
+    const ratingCriteria = createDefaultTeamRatingCriteria(teamId, createdAt);
 
     const team: Team = {
       id: teamId,
@@ -826,6 +1522,7 @@ export const mockRepository: AppRepository = {
     database.teams.push(team);
     database.teamMembers.push(ownerMembership);
     database.seasons.push(season);
+    database.ratingCriteria.push(...ratingCriteria);
     database.players.push(...players);
     database.matches.push(match);
     database.attendance.push(...attendance);
@@ -867,6 +1564,112 @@ export const mockRepository: AppRepository = {
     return clone(team);
   },
 
+  async createRatingCriterion(input: CreateRatingCriterionInput, actorUserId: string) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+    const now = nowIso();
+    const existingCriteria = syncRatingCriteriaOrder(activeTeamId);
+    const activeCount = getActiveRatingCriteria(existingCriteria).length;
+    const shouldActivate = input.active !== false;
+
+    if (shouldActivate && activeCount >= 12) {
+      throw new Error('Use no maximo 12 criterios ativos por time.');
+    }
+
+    const nextCriterion = normalizeTeamRatingCriterion({
+      id: createId('criterion'),
+      teamId: activeTeamId,
+      label: input.label,
+      description: input.description ?? null,
+      type: input.type,
+      weight: input.weight ?? 1,
+      active: shouldActivate,
+      order: existingCriteria.length,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    replaceTeamRatingCriteria(activeTeamId, [...existingCriteria, nextCriterion]);
+    validateActiveRatingCriteria(syncRatingCriteriaOrder(activeTeamId));
+    return clone(findRatingCriterionForTeam(activeTeamId, nextCriterion.id)!);
+  },
+
+  async updateRatingCriterion(
+    criterionId: string,
+    input: UpdateRatingCriterionInput,
+    actorUserId: string,
+  ) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+    const criterion = findRatingCriterionForTeam(activeTeamId, criterionId);
+
+    if (!criterion) {
+      throw new Error('Criterio de avaliacao nao encontrado.');
+    }
+
+    const updatedCriterion = normalizeTeamRatingCriterion({
+      ...criterion,
+      label: input.label ?? criterion.label,
+      description:
+        input.description !== undefined ? input.description : criterion.description ?? null,
+      type: input.type ?? criterion.type,
+      weight: input.weight ?? criterion.weight,
+      active: input.active ?? criterion.active,
+      order: input.order ?? criterion.order,
+      updatedAt: nowIso(),
+    });
+    const currentCriteria = findRatingCriteriaForTeam(activeTeamId).map((item) =>
+      item.id === criterion.id ? updatedCriterion : item,
+    );
+    const normalizedCriteria = normalizeRatingCriteriaOrder(currentCriteria);
+    const activeCount = getActiveRatingCriteria(normalizedCriteria).length;
+
+    if (updatedCriterion.active && activeCount > 12) {
+      throw new Error('Use no maximo 12 criterios ativos por time.');
+    }
+
+    validateActiveRatingCriteria(normalizedCriteria);
+    replaceTeamRatingCriteria(activeTeamId, normalizedCriteria);
+
+    return clone(findRatingCriterionForTeam(activeTeamId, criterion.id)!);
+  },
+
+  async deleteRatingCriterion(criterionId: string, actorUserId: string) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+    const criterion = findRatingCriterionForTeam(activeTeamId, criterionId);
+
+    if (!criterion) {
+      throw new Error('Criterio de avaliacao nao encontrado.');
+    }
+
+    const usedCount = countRatingCriterionUsage(
+      database.playerRatings.filter((rating) => rating.teamId === activeTeamId),
+      criterion.id,
+    );
+
+    if (usedCount > 0) {
+      const nextCriteria = findRatingCriteriaForTeam(activeTeamId).map((item) =>
+        item.id === criterion.id
+          ? normalizeTeamRatingCriterion({
+              ...item,
+              active: false,
+              updatedAt: nowIso(),
+            })
+          : item,
+      );
+      validateActiveRatingCriteria(nextCriteria);
+      replaceTeamRatingCriteria(activeTeamId, normalizeRatingCriteriaOrder(nextCriteria));
+      return;
+    }
+
+    const nextCriteria = findRatingCriteriaForTeam(activeTeamId).filter(
+      (item) => item.id !== criterion.id,
+    );
+    validateActiveRatingCriteria(nextCriteria);
+    replaceTeamRatingCriteria(activeTeamId, normalizeRatingCriteriaOrder(nextCriteria));
+  },
+
   async setActiveTeam(teamId: string, userId: string) {
     const user = findUser(userId);
     const membership = findMembershipByUserAndTeam(user.id, teamId);
@@ -880,6 +1683,7 @@ export const mockRepository: AppRepository = {
     user.playerId = membership.playerId;
     user.appRole = resolveTeamAppRole(user, findTeam(membership.teamId));
     user.updatedAt = nowIso();
+    mockSessionUserId = user.id;
 
     return clone(user);
   },
@@ -932,6 +1736,7 @@ export const mockRepository: AppRepository = {
     actor.playerId = player.id;
     actor.appRole = actor.appRole === 'owner' ? 'owner' : 'player';
     actor.updatedAt = updatedAt;
+    ensureOpenMatchAttendanceForPlayer(player);
 
     return {
       team: clone(team),
@@ -940,22 +1745,32 @@ export const mockRepository: AppRepository = {
   },
 
   async createPlayer(input: CreatePlayerInput, actorUserId: string) {
-    requirePlayerManager(actorUserId, input.teamId);
+    const actor = requirePlayerManager(actorUserId, input.teamId);
     assertJerseyAvailable(input.teamId, input.jerseyNumber);
-    const linkedUser = input.linkedUserId
+    const explicitLinkedUser = input.linkedUserId
       ? validateLinkedUserAssignment(input.linkedUserId, input.teamId)
       : null;
     const linkedEmail = validateLinkedEmailAvailability(
       input.teamId,
-      linkedUser?.email ?? input.linkedEmail,
+      explicitLinkedUser?.email ?? input.linkedEmail,
     );
+    const linkResult = linkPlayerToUserIfEmailMatches({
+      teamId: input.teamId,
+      player: {
+        linkedUserId: null,
+        linkedEmail,
+      },
+      linkedUserId: input.linkedUserId ?? null,
+      linkedEmail,
+      preferredUser: explicitLinkedUser ?? actor,
+    });
 
     const createdAt = nowIso();
     const player: Player = {
       id: createId('player'),
       teamId: input.teamId,
-      linkedUserId: input.linkedUserId ?? null,
-      linkedEmail,
+      linkedUserId: linkResult.linkedUserId,
+      linkedEmail: linkResult.linkedEmail,
       fullName: input.fullName.trim(),
       nickname: input.nickname.trim(),
       photoUrl: input.photoUrl ?? null,
@@ -980,6 +1795,7 @@ export const mockRepository: AppRepository = {
 
     database.players.push(player);
     syncLinkedUser(player);
+    ensureOpenMatchAttendanceForPlayer(player);
 
     return clone(player);
   },
@@ -1000,14 +1816,14 @@ export const mockRepository: AppRepository = {
         assertJerseyAvailable(player.teamId, input.jerseyNumber, player.id);
       }
 
-      const linkedUser =
+      const explicitLinkedUser =
         typeof input.linkedUserId === 'string'
           ? validateLinkedUserAssignment(input.linkedUserId, player.teamId, player.id)
           : null;
 
       const nextLinkedEmail = validateLinkedEmailAvailability(
         player.teamId,
-        linkedUser?.email ??
+        explicitLinkedUser?.email ??
           (input.linkedEmail !== undefined ? input.linkedEmail : player.linkedEmail),
         player.id,
       );
@@ -1023,6 +1839,21 @@ export const mockRepository: AppRepository = {
       ) {
         unlinkPlayerFromUser(player);
       }
+
+      const linkResult = linkPlayerToUserIfEmailMatches({
+        teamId: player.teamId,
+        player,
+        linkedUserId:
+          input.linkedUserId !== undefined
+            ? input.linkedUserId
+            : player.linkedUserId ?? null,
+        linkedEmail:
+          input.linkedEmail !== undefined
+            ? nextLinkedEmail
+            : player.linkedEmail ?? nextLinkedEmail,
+        currentPlayerId: player.id,
+        preferredUser: explicitLinkedUser ?? actor,
+      });
 
       if (typeof input.fullName === 'string') {
         player.fullName = input.fullName.trim();
@@ -1069,17 +1900,15 @@ export const mockRepository: AppRepository = {
       if (input.allowSelfEditJerseyNumber !== undefined) {
         player.allowSelfEditJerseyNumber = input.allowSelfEditJerseyNumber;
       }
-      if (input.linkedUserId !== undefined) {
-        player.linkedUserId = input.linkedUserId;
-      }
-      if (input.linkedEmail !== undefined || nextLinkedEmail !== null) {
-        player.linkedEmail = nextLinkedEmail;
-      }
+      player.linkedUserId = linkResult.linkedUserId;
+      player.linkedEmail = linkResult.linkedEmail;
       if (input.manualStats !== undefined) {
         player.manualStats = normalizeManualStats(input.manualStats);
       }
     } else {
-      if (actor.playerId !== player.id || actor.teamId !== player.teamId) {
+      const currentPlayerId = ensureCurrentUserPlayerForActiveTeam(actorUserId);
+
+      if (currentPlayerId !== player.id || actor.teamId !== player.teamId) {
         throw new Error('Voce nao tem permissao para editar esse jogador.');
       }
 
@@ -1123,6 +1952,7 @@ export const mockRepository: AppRepository = {
 
     player.updatedAt = createdAt;
     syncLinkedUser(player);
+    ensureOpenMatchAttendanceForPlayer(player);
 
     return clone(player);
   },
@@ -1139,8 +1969,6 @@ export const mockRepository: AppRepository = {
     const linkedUserId = player.linkedUserId ?? null;
     const team = findTeam(player.teamId);
 
-    player.linkedUserId = null;
-    player.linkedEmail = null;
     player.status = 'inactive';
     player.deletedAt = updatedAt;
     player.updatedAt = updatedAt;
@@ -1193,6 +2021,44 @@ export const mockRepository: AppRepository = {
     return clone(player);
   },
 
+  async reactivatePlayer(playerId: string, actorUserId: string) {
+    const player = findPlayer(playerId);
+    requirePlayerManager(actorUserId, player.teamId);
+
+    if (player.status !== 'inactive' && !player.deletedAt) {
+      throw new Error('Esse jogador ja esta ativo no elenco.');
+    }
+
+    const explicitLinkedUser = player.linkedUserId
+      ? validateLinkedUserAssignment(player.linkedUserId, player.teamId, player.id)
+      : null;
+    const nextLinkedEmail = validateLinkedEmailAvailability(
+      player.teamId,
+      explicitLinkedUser?.email ?? player.linkedEmail,
+      player.id,
+    );
+    const linkResult = linkPlayerToUserIfEmailMatches({
+      teamId: player.teamId,
+      player,
+      linkedUserId: player.linkedUserId ?? null,
+      linkedEmail: nextLinkedEmail,
+      currentPlayerId: player.id,
+      preferredUser: explicitLinkedUser,
+    });
+    const updatedAt = nowIso();
+
+    player.linkedUserId = linkResult.linkedUserId;
+    player.linkedEmail = linkResult.linkedEmail;
+    player.status = 'active';
+    player.deletedAt = null;
+    player.updatedAt = updatedAt;
+
+    syncLinkedUser(player);
+    ensureOpenMatchAttendanceForPlayer(player);
+
+    return clone(player);
+  },
+
   async createMatch(input: CreateMatchInput, creatorUserId: string) {
     const createdAt = nowIso();
     const creator = requireTeamAdmin(creatorUserId, input.teamId);
@@ -1220,7 +2086,7 @@ export const mockRepository: AppRepository = {
     };
 
     const attendance = findSelectableTeamPlayers(input.teamId).map<AttendanceRecord>((player) => ({
-      id: createId('attendance'),
+      id: buildStableDocumentId(match.id, player.id),
       teamId: input.teamId,
       matchId: match.id,
       playerId: player.id,
@@ -1232,12 +2098,22 @@ export const mockRepository: AppRepository = {
 
     database.matches.push(match);
     database.attendance.push(...attendance);
+    upsertNotification(
+      createMatchCreatedNotification({
+        id: buildNotificationId('match-created', match.id),
+        teamId: match.teamId,
+        match,
+        actorUserId: creator.id,
+        updatedAt: createdAt,
+      }),
+    );
 
     return clone(match);
   },
 
   async updateMatch(matchId: string, input: UpdateMatchInput, actorUserId: string) {
-    const match = findMatch(matchId);
+    const { actor, activeTeamId } = ensureActiveTeamContext(actorUserId);
+    const match = findMatchForTeam(activeTeamId, matchId);
     requireTeamAdmin(actorUserId, match.teamId);
     const updatedAt = nowIso();
     const nextStatus = input.status ?? match.status;
@@ -1262,39 +2138,51 @@ export const mockRepository: AppRepository = {
     }
     match.updatedAt = updatedAt;
 
+    const notificationId = buildNotificationId('match-updated', match.id);
+    const existing = findNotificationByIdForTeam(match.teamId, notificationId);
+    upsertNotification(
+      createMatchUpdatedNotification({
+        id: notificationId,
+        teamId: match.teamId,
+        match,
+        actorUserId: actor.id,
+        createdAt: existing?.createdAt,
+        updatedAt,
+      }),
+    );
+
     return clone(match);
   },
 
   async updateAttendance(input: UpdateAttendanceInput, actorUserId: string) {
-    const match = findMatch(input.matchId);
-    const actor = findUser(actorUserId);
-    const membership = findMembershipByUserAndTeam(actor.id, match.teamId);
+    const { actor, membership, activeTeamId } = ensureActiveTeamContext(actorUserId);
+    const currentPlayerId = membership.roles.includes('player')
+      ? ensureCurrentUserPlayerForActiveTeam(actorUserId)
+      : null;
+    const match = findMatchForTeam(activeTeamId, input.matchId);
     const now = nowIso();
-
-    if (!membership) {
-      throw new Error('Voce ainda nao participa desse time.');
-    }
 
     if (match.status === 'finished' || match.status === 'canceled') {
       throw new Error('A presenca desta partida nao aceita mais alteracoes.');
     }
 
-    ensurePlayerBelongsToTeam(input.playerId, match.teamId);
+    const player = ensurePlayerBelongsToTeam(input.playerId, match.teamId);
 
     const canManageAttendance = membership.canManageTeam === true;
-    const isOwnAttendance = membership.playerId === input.playerId;
+    const isOwnAttendance = currentPlayerId === input.playerId;
 
     if (!canManageAttendance && !isOwnAttendance) {
       throw new Error('Voce so pode responder a sua propria presenca.');
     }
 
-    let record = database.attendance.find(
-      (item) => item.matchId === input.matchId && item.playerId === input.playerId,
+    let record = findAttendanceForMatch(activeTeamId, input.matchId).find(
+      (item) => item.playerId === input.playerId,
     );
+    const attendanceId = buildStableDocumentId(match.id, player.id);
 
     if (!record) {
       record = {
-        id: createId('attendance'),
+        id: attendanceId,
         teamId: match.teamId,
         matchId: input.matchId,
         playerId: input.playerId,
@@ -1306,25 +2194,45 @@ export const mockRepository: AppRepository = {
       };
 
       database.attendance.push(record);
-      return clone(record);
+    } else {
+      record.userId =
+        isOwnAttendance ? actor.id : record.userId ?? findPlayer(input.playerId).linkedUserId ?? null;
+      record.status = input.status;
+      record.respondedAt = now;
+      record.updatedAt = now;
     }
 
-    record.userId =
-      isOwnAttendance ? actor.id : record.userId ?? findPlayer(input.playerId).linkedUserId ?? null;
-    record.status = input.status;
-    record.respondedAt = now;
-    record.updatedAt = now;
+    const notificationId = buildNotificationId('attendance-confirmed', match.id, player.id);
+    if (input.status === 'confirmed' || input.status === 'absent') {
+      const existing = findNotificationByIdForTeam(match.teamId, notificationId);
+      upsertNotification(
+        createAttendanceNotification({
+          id: notificationId,
+          teamId: match.teamId,
+          match,
+          player,
+          status: input.status,
+          actorUserId: actor.id,
+          createdAt: existing?.createdAt,
+          updatedAt: now,
+        }),
+      );
+    } else {
+      removeNotification(notificationId);
+    }
+
     return clone(record);
   },
 
   async saveLineup(input: SaveLineupInput, actorUserId: string) {
-    const match = findMatch(input.matchId);
+    const { actor, activeTeamId } = ensureActiveTeamContext(actorUserId);
+    const match = findMatchForTeam(activeTeamId, input.matchId);
     requireTeamAdmin(actorUserId, match.teamId);
     const now = nowIso();
-    const existing = database.lineups.find((item) => item.matchId === input.matchId);
+    const existing = findLineupForTeam(activeTeamId, input.matchId);
     const confirmedPlayerIds = new Set(
-      database.attendance
-        .filter((item) => item.matchId === input.matchId && item.status === 'confirmed')
+      findAttendanceForMatch(activeTeamId, input.matchId)
+        .filter((item) => item.status === 'confirmed')
         .map((item) => item.playerId),
     );
 
@@ -1367,6 +2275,18 @@ export const mockRepository: AppRepository = {
       existing.starters = clone(input.starters);
       existing.benchPlayerIds = [...input.benchPlayerIds];
       existing.updatedAt = now;
+      const notificationId = buildNotificationId('lineup-published', match.id);
+      const existingNotification = findNotificationByIdForTeam(match.teamId, notificationId);
+      upsertNotification(
+        createLineupPublishedNotification({
+          id: notificationId,
+          teamId: match.teamId,
+          match,
+          actorUserId: actor.id,
+          createdAt: existingNotification?.createdAt,
+          updatedAt: now,
+        }),
+      );
       return clone(existing);
     }
 
@@ -1382,16 +2302,43 @@ export const mockRepository: AppRepository = {
     };
 
     database.lineups.push(lineup);
+    upsertNotification(
+      createLineupPublishedNotification({
+        id: buildNotificationId('lineup-published', match.id),
+        teamId: match.teamId,
+        match,
+        actorUserId: actor.id,
+        updatedAt: now,
+      }),
+    );
     return clone(lineup);
   },
 
   async finishMatch(input: FinishMatchInput, actorUserId: string) {
-    const match = findMatch(input.matchId);
+    const { actor, activeTeamId } = ensureActiveTeamContext(actorUserId);
+    const match = findMatchForTeam(activeTeamId, input.matchId);
     requireTeamAdmin(actorUserId, match.teamId);
 
     const now = nowIso();
-    const confirmedPlayerIds = new Set(getConfirmedPlayerIds(snapshotFromDatabase(database), match.id));
-    const starterIds = new Set(findLineup(match.id)?.starters.map((item) => item.playerId) ?? []);
+    const snapshot = snapshotForTeam(activeTeamId);
+    const confirmedPlayerIds = new Set(getConfirmedPlayerIds(snapshot, match.id));
+    const starterIds = new Set(
+      findLineupForTeam(activeTeamId, match.id)?.starters.map((item) => item.playerId) ?? [],
+    );
+
+    if (match.status === 'canceled') {
+      throw new Error('Uma partida cancelada nao pode ser encerrada.');
+    }
+
+    const ownGoalsForTeam = input.ownGoalsForTeam ?? 0;
+
+    if (input.teamScore < 0 || input.opponentScore < 0 || ownGoalsForTeam < 0) {
+      throw new Error('O placar nao pode ter numeros negativos.');
+    }
+
+    if (confirmedPlayerIds.size === 0) {
+      throw new Error('Confirme a presenca do elenco antes de fechar a partida.');
+    }
 
     for (const stat of input.playerStats) {
       if (!confirmedPlayerIds.has(stat.playerId)) {
@@ -1410,58 +2357,234 @@ export const mockRepository: AppRepository = {
       {},
     );
 
-    database.matchStats = database.matchStats.filter((item) => item.matchId !== match.id);
+    const nextStatIds = new Set(
+      [...confirmedPlayerIds].map((playerId) => buildStableDocumentId(match.id, playerId)),
+    );
+    database.matchStats = database.matchStats.filter(
+      (item) => item.matchId !== match.id || nextStatIds.has(item.id),
+    );
 
-    const statsToInsert = [...confirmedPlayerIds].map<MatchStat>((playerId) => ({
-      id: createId('stat'),
-      teamId: match.teamId,
-      matchId: match.id,
-      playerId,
-      played: true,
-      started: starterIds.has(playerId),
-      goals: submittedMap[playerId]?.goals ?? 0,
-      assists: submittedMap[playerId]?.assists ?? 0,
-      yellowCards: 0,
-      redCards: 0,
-      createdAt: now,
-      updatedAt: now,
-    }));
+    const statsToInsert = [...confirmedPlayerIds].map<MatchStat>((playerId) => {
+      const existing = findMatchStatsForMatch(activeTeamId, match.id).find(
+        (item) => item.playerId === playerId,
+      );
 
-    database.matchStats.push(...statsToInsert);
+      return {
+        id: buildStableDocumentId(match.id, playerId),
+        teamId: match.teamId,
+        matchId: match.id,
+        playerId,
+        played: true,
+        started: starterIds.has(playerId),
+        goals: submittedMap[playerId]?.goals ?? 0,
+        assists: submittedMap[playerId]?.assists ?? 0,
+        yellowCards: 0,
+        redCards: 0,
+        notes: '',
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+    });
+
+    for (const stat of statsToInsert) {
+      const existingIndex = database.matchStats.findIndex((item) => item.id === stat.id);
+      if (existingIndex >= 0) {
+        database.matchStats[existingIndex] = stat;
+      } else {
+        database.matchStats.push(stat);
+      }
+    }
 
     match.scoreboard = {
       team: input.teamScore,
       opponent: input.opponentScore,
+      ownGoalsForTeam,
       result: calculateMatchResult(input.teamScore, input.opponentScore),
     };
     match.status = 'finished';
-    match.finishedAt = now;
+    match.finishedAt = match.finishedAt ?? now;
     match.updatedAt = now;
+
+    const matchFinishedNotificationId = buildNotificationId('match-finished', match.id);
+    const existingFinishedNotification = findNotificationByIdForTeam(
+      match.teamId,
+      matchFinishedNotificationId,
+    );
+    upsertNotification(
+      createMatchFinishedNotification({
+        id: matchFinishedNotificationId,
+        teamId: match.teamId,
+        match,
+        actorUserId: actor.id,
+        createdAt: existingFinishedNotification?.createdAt,
+        updatedAt: now,
+      }),
+    );
+
+    const votingNotificationId = buildNotificationId('mvp-voting-opened', match.id);
+    const existingVotingNotification = findNotificationByIdForTeam(
+      match.teamId,
+      votingNotificationId,
+    );
+    upsertNotification(
+      createMvpVotingOpenedNotification({
+        id: votingNotificationId,
+        teamId: match.teamId,
+        match,
+        actorUserId: actor.id,
+        createdAt: existingVotingNotification?.createdAt,
+        updatedAt: now,
+      }),
+    );
+
+    const ratingsNotificationId = buildNotificationId('ratings-opened', match.id);
+    const existingRatingsNotification = findNotificationByIdForTeam(
+      match.teamId,
+      ratingsNotificationId,
+    );
+    upsertNotification(
+      createRatingsOpenedNotification({
+        id: ratingsNotificationId,
+        teamId: match.teamId,
+        match,
+        actorUserId: actor.id,
+        createdAt: existingRatingsNotification?.createdAt,
+        updatedAt: now,
+      }),
+    );
 
     return clone(match);
   },
 
+  async registerFinishedMatch(input: RegisterFinishedMatchInput, actorUserId: string) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+
+    return createFinishedMatchRecord({
+      actorUserId,
+      team: findTeam(activeTeamId),
+      teamPlayers: findTeamPlayers(activeTeamId),
+      values: input,
+    });
+  },
+
+  async previewLegacyMatchImport(
+    payload: ImportedMatchPayloadItem[],
+    actorUserId: string,
+  ): Promise<LegacyMatchImportPreview> {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+
+    return buildLegacyMatchImportPreview({
+      payload,
+      teamPlayers: findTeamPlayers(activeTeamId),
+      existingMatches: database.matches.filter((match) => match.teamId === activeTeamId),
+    });
+  },
+
+  async importLegacyMatches(
+    payload: ImportedMatchPayloadItem[],
+    actorUserId: string,
+  ): Promise<ImportLegacyMatchesResult> {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+    const preview = buildLegacyMatchImportPreview({
+      payload,
+      teamPlayers: findTeamPlayers(activeTeamId),
+      existingMatches: database.matches.filter((match) => match.teamId === activeTeamId),
+    });
+    const team = findTeam(activeTeamId);
+    const teamPlayers = findTeamPlayers(activeTeamId);
+    const createdMatchIds: string[] = [];
+    let skippedDuplicates = 0;
+    let invalidMatches = 0;
+
+    for (const item of preview.items) {
+      if (item.status === 'duplicate') {
+        skippedDuplicates += 1;
+        continue;
+      }
+
+      if (item.status !== 'ready') {
+        invalidMatches += 1;
+        continue;
+      }
+
+      const source = payload[item.sourceIndex];
+      const players = item.players.flatMap<RegisterFinishedMatchPlayerInput>((player) => {
+        if (player.status !== 'matched' || !player.matchedPlayerId) {
+          return [];
+        }
+
+        return [{
+          playerId: player.matchedPlayerId,
+          played: player.played,
+          started: player.started,
+          goals: player.goals,
+          assists: player.assists,
+        }];
+      });
+      const match = createFinishedMatchRecord({
+        actorUserId,
+        team,
+        teamPlayers,
+        values: {
+          seasonId: team.activeSeasonId ?? null,
+          date: source.date,
+          time: source.time ?? '',
+          venue: source.venue ?? null,
+          locationUrl: source.locationUrl ?? null,
+          opponentName: source.opponentName,
+          opponentLogoUrl: source.opponentLogoUrl ?? null,
+          linePlayersCount: source.linePlayersCount ?? null,
+          matchType: source.matchType,
+          notes: source.notes ?? null,
+          teamScore: source.teamScore,
+          opponentScore: source.opponentScore,
+          players,
+        },
+      });
+      createdMatchIds.push(match.id);
+    }
+
+    return {
+      createdMatches: createdMatchIds.length,
+      skippedDuplicates,
+      invalidMatches,
+      createdMatchIds,
+    };
+  },
+
   async submitMvpVote(input: SubmitMvpVoteInput, actorUserId: string) {
-    const match = findMatch(input.matchId);
-    const { actor, player: voter } = requireLinkedPlayer(actorUserId);
+    const { player: voter, activeTeamId } = requireLinkedPlayer(actorUserId);
+    const match = findMatchForTeam(activeTeamId, input.matchId);
     const now = nowIso();
 
-    if (actor.teamId !== match.teamId || match.status !== 'finished') {
+    if (match.status !== 'finished') {
       throw new Error('A votacao de MVP so fica disponivel apos o encerramento da partida.');
     }
 
-    if (!getConfirmedPlayerIds(snapshotFromDatabase(database), match.id).includes(voter.id)) {
+    const eligiblePlayerIds = getConfirmedPlayerIds(
+      snapshotForTeam(activeTeamId),
+      match.id,
+    );
+
+    if (!eligiblePlayerIds.includes(voter.id)) {
       throw new Error('Apenas jogadores confirmados podem votar no MVP.');
     }
 
     const targetPlayer = ensurePlayerBelongsToTeam(input.targetPlayerId, match.teamId);
 
-    if (!getConfirmedPlayerIds(snapshotFromDatabase(database), match.id).includes(targetPlayer.id)) {
+    if (!eligiblePlayerIds.includes(targetPlayer.id)) {
       throw new Error('Nao e possivel votar em quem nao participou da partida.');
     }
 
-    const alreadyVoted = database.mvpVotes.find(
-      (vote) => vote.matchId === match.id && vote.voterPlayerId === voter.id,
+    if (targetPlayer.id === voter.id) {
+      throw new Error('Nao e permitido votar em si mesmo.');
+    }
+
+    const alreadyVoted = findMvpVotesForMatch(activeTeamId, match.id).find(
+      (vote) => vote.voterPlayerId === voter.id,
     );
 
     if (alreadyVoted) {
@@ -1469,7 +2592,7 @@ export const mockRepository: AppRepository = {
     }
 
     const vote: MvpVote = {
-      id: createId('mvp'),
+      id: buildStableDocumentId(match.id, voter.id),
       teamId: match.teamId,
       matchId: match.id,
       voterPlayerId: voter.id,
@@ -1479,21 +2602,27 @@ export const mockRepository: AppRepository = {
     };
 
     database.mvpVotes.push(vote);
-    syncMvpMatchFields(match.id);
+    const { match: syncedMatch, updatedAt } = syncMvpMatchFields(match.id);
+    syncMvpWinnerNotification(syncedMatch, voter.linkedUserId ?? actorUserId, updatedAt);
 
     return clone(vote);
   },
 
   async submitPlayerRating(input: SubmitPlayerRatingInput, actorUserId: string) {
-    const match = findMatch(input.matchId);
-    const { actor, player: rater } = requireLinkedPlayer(actorUserId);
+    const { player: rater, activeTeamId } = requireLinkedPlayer(actorUserId);
+    const match = findMatchForTeam(activeTeamId, input.matchId);
     const now = nowIso();
+    const teamCriteria = syncRatingCriteriaOrder(activeTeamId);
+    const activeCriteria = getActiveRatingCriteria(teamCriteria);
 
-    if (actor.teamId !== match.teamId || match.status !== 'finished') {
+    if (match.status !== 'finished') {
       throw new Error('As avaliacoes so ficam disponiveis apos o encerramento da partida.');
     }
 
-    const eligiblePlayerIds = getConfirmedPlayerIds(snapshotFromDatabase(database), match.id);
+    const eligiblePlayerIds = getConfirmedPlayerIds(
+      snapshotForTeam(activeTeamId),
+      match.id,
+    );
 
     if (!eligiblePlayerIds.includes(rater.id)) {
       throw new Error('Apenas jogadores confirmados podem avaliar a partida.');
@@ -1509,9 +2638,8 @@ export const mockRepository: AppRepository = {
       throw new Error('Nao e permitido avaliar a si mesmo.');
     }
 
-    const duplicate = database.playerRatings.find(
+    const duplicate = findRatingsForMatch(activeTeamId, match.id).find(
       (rating) =>
-        rating.matchId === match.id &&
         rating.raterPlayerId === rater.id &&
         rating.targetPlayerId === targetPlayer.id,
     );
@@ -1520,21 +2648,49 @@ export const mockRepository: AppRepository = {
       throw new Error('Voce ja avaliou este jogador nesta partida.');
     }
 
-    validateRatingCriteria(input.criteria);
+    validateRatingCriteriaInput(teamCriteria, input);
+    const criteriaSnapshot = buildRatingCriteriaSnapshot(activeCriteria);
 
     const rating: PlayerRating = {
-      id: createId('rating'),
+      id: buildStableDocumentId(match.id, rater.id, targetPlayer.id),
       teamId: match.teamId,
       matchId: match.id,
       raterPlayerId: rater.id,
       targetPlayerId: targetPlayer.id,
-      criteria: clone(input.criteria),
-      overall: Number(average(Object.values(input.criteria)).toFixed(1)),
+      criteriaScores: clone(input.criteriaScores),
+      criteriaSnapshot,
+      overall: calculateOverallFromCriteriaScores({
+        criteriaScores: input.criteriaScores,
+        criteriaSnapshot,
+      }),
       createdAt: now,
       updatedAt: now,
     };
 
     database.playerRatings.push(rating);
     return clone(rating);
+  },
+
+  async markNotificationAsRead(notificationId: string, actorUserId: string) {
+    const { actor, activeTeamId } = ensureActiveTeamContext(actorUserId);
+    const notification = findNotificationByIdForTeam(activeTeamId, notificationId);
+
+    if (!notification) {
+      throw new Error('Notificacao nao encontrada.');
+    }
+
+    if (!notification.readByUserIds.includes(actor.id)) {
+      notification.readByUserIds = [...notification.readByUserIds, actor.id];
+    }
+  },
+
+  async markAllNotificationsAsRead(actorUserId: string) {
+    const { actor, activeTeamId } = ensureActiveTeamContext(actorUserId);
+
+    for (const notification of findNotificationsForTeam(activeTeamId)) {
+      if (!notification.readByUserIds.includes(actor.id)) {
+        notification.readByUserIds = [...notification.readByUserIds, actor.id];
+      }
+    }
   },
 };

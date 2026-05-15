@@ -1,10 +1,11 @@
 import type {
   FootPreference,
+  LegacyRatingCriterionId,
   MatchStatus,
   MatchType,
   PlayerStatus,
   Position,
-  RatingCriterion,
+  RatingCriterionType,
 } from '@/types/domain';
 
 export const MATCH_TYPE_LABELS: Record<MatchType, string> = {
@@ -71,29 +72,47 @@ export const PLAYER_STATUS_OPTIONS: PlayerStatus[] = [
 
 export const FOOT_OPTIONS: FootPreference[] = ['right', 'left', 'both'];
 
-export const RATING_CRITERIA_ORDER: RatingCriterion[] = [
-  'marking',
-  'attack',
-  'defense',
-  'stamina',
-  'resistance',
-  'grit',
-  'flair',
-  'passing',
-  'finishing',
+export const RATING_CRITERIA_ORDER: LegacyRatingCriterionId[] = [
+  'dedicacao',
+  'energia',
+  'qualidade',
+  'decisivo',
+  'preciosismo',
+  'reclamacao',
+  'fominha',
+  'marra',
 ];
 
-export const RATING_CRITERIA_LABELS: Record<RatingCriterion, string> = {
-  marking: 'Marcacao',
-  attack: 'Ataque',
-  defense: 'Defesa',
-  stamina: 'Folego',
-  resistance: 'Resistencia',
-  grit: 'Raca',
-  flair: 'Boleragem',
-  passing: 'Passe',
-  finishing: 'Finalizacao',
+export const RATING_CRITERIA_LABELS: Record<LegacyRatingCriterionId, string> = {
+  dedicacao: 'Dedicacao',
+  energia: 'Energia',
+  qualidade: 'Qualidade',
+  decisivo: 'Decisivo',
+  preciosismo: 'Preciosismo',
+  reclamacao: 'Reclamacao',
+  fominha: 'Fominha',
+  marra: 'Marra',
 };
+
+export const RATING_CRITERIA_TYPES: Record<LegacyRatingCriterionId, RatingCriterionType> = {
+  dedicacao: 'positive',
+  energia: 'positive',
+  qualidade: 'positive',
+  decisivo: 'positive',
+  preciosismo: 'negative',
+  reclamacao: 'negative',
+  fominha: 'negative',
+  marra: 'negative',
+};
+
+export const DEFAULT_ACTIVE_RATING_CRITERIA_IDS: LegacyRatingCriterionId[] = [
+  'dedicacao',
+  'energia',
+  'qualidade',
+  'decisivo',
+  'reclamacao',
+  'fominha',
+];
 
 export interface TeamColorPreset {
   id: string;

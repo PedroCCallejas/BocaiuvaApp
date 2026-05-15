@@ -6,9 +6,18 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 interface PillProps {
   label: string;
   color?: string;
+  backgroundColor?: string;
+  borderColor?: string;
+  textColor?: string;
 }
 
-export function Pill({ label, color }: PillProps) {
+export function Pill({
+  label,
+  color,
+  backgroundColor,
+  borderColor,
+  textColor,
+}: PillProps) {
   const theme = useAppTheme();
 
   return (
@@ -16,15 +25,15 @@ export function Pill({ label, color }: PillProps) {
       style={[
         styles.container,
         {
-          backgroundColor: color ? `${color}22` : theme.colors.chip,
-          borderColor: color ? `${color}55` : theme.colors.border,
+          backgroundColor: backgroundColor ?? (color ? `${color}22` : theme.colors.chip),
+          borderColor: borderColor ?? (color ? `${color}55` : theme.colors.border),
         },
       ]}>
       <Text
         style={[
           styles.label,
           {
-            color: color ?? theme.colors.textMuted,
+            color: textColor ?? color ?? theme.colors.textMuted,
           },
         ]}>
         {label}

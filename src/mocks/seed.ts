@@ -1,28 +1,28 @@
-import type { RatingCriterion } from '@/types/domain';
+import { createDefaultTeamRatingCriteria } from '@/lib/rating-criteria';
+import type { LegacyRatingCriterionId } from '@/types/domain';
 import type { MockDatabase } from '@/services/repository/types';
 
-const criteriaKeys: RatingCriterion[] = [
-  'marking',
-  'attack',
-  'defense',
-  'stamina',
-  'resistance',
-  'grit',
-  'flair',
-  'passing',
-  'finishing',
+const criteriaKeys: LegacyRatingCriterionId[] = [
+  'dedicacao',
+  'energia',
+  'qualidade',
+  'decisivo',
+  'preciosismo',
+  'reclamacao',
+  'fominha',
+  'marra',
 ];
 
 const stamp = (value: string) => `${value}T12:00:00.000Z`;
 
 const makeCriteria = (
   base: number,
-  overrides: Partial<Record<RatingCriterion, number>> = {},
+  overrides: Partial<Record<LegacyRatingCriterionId, number>> = {},
 ) =>
-  criteriaKeys.reduce<Record<RatingCriterion, number>>((acc, key) => {
+  criteriaKeys.reduce<Record<LegacyRatingCriterionId, number>>((acc, key) => {
     acc[key] = overrides[key] ?? base;
     return acc;
-  }, {} as Record<RatingCriterion, number>);
+  }, {} as Record<LegacyRatingCriterionId, number>);
 
 export function createSeedDatabase(): MockDatabase {
   return {
@@ -317,6 +317,7 @@ export function createSeedDatabase(): MockDatabase {
         updatedAt: stamp('2026-05-04'),
       },
     ],
+    ratingCriteria: createDefaultTeamRatingCriteria('team-bocaiuva', stamp('2026-03-01')),
     matches: [
       {
         id: 'match-1',
@@ -496,14 +497,77 @@ export function createSeedDatabase(): MockDatabase {
       { id: 'mvp-2-6', teamId: 'team-bocaiuva', matchId: 'match-2', voterPlayerId: 'player-9', targetPlayerId: 'player-3', createdAt: stamp('2026-04-24'), updatedAt: stamp('2026-04-24') },
     ],
     playerRatings: [
-      { id: 'rating-1', teamId: 'team-bocaiuva', matchId: 'match-1', raterPlayerId: 'player-7', targetPlayerId: 'player-9', criteria: makeCriteria(4, { finishing: 5, attack: 5, grit: 5 }), overall: 4.6, createdAt: stamp('2026-04-10'), updatedAt: stamp('2026-04-10') },
-      { id: 'rating-2', teamId: 'team-bocaiuva', matchId: 'match-1', raterPlayerId: 'player-3', targetPlayerId: 'player-8', criteria: makeCriteria(4, { flair: 5, attack: 5, passing: 4.5 }), overall: 4.4, createdAt: stamp('2026-04-10'), updatedAt: stamp('2026-04-10') },
-      { id: 'rating-3', teamId: 'team-bocaiuva', matchId: 'match-1', raterPlayerId: 'player-9', targetPlayerId: 'player-1', criteria: makeCriteria(4, { defense: 5, marking: 5, resistance: 4.5 }), overall: 4.5, createdAt: stamp('2026-04-10'), updatedAt: stamp('2026-04-10') },
-      { id: 'rating-4', teamId: 'team-bocaiuva', matchId: 'match-1', raterPlayerId: 'player-1', targetPlayerId: 'player-7', criteria: makeCriteria(4, { passing: 5, attack: 4.6, flair: 4.8 }), overall: 4.7, createdAt: stamp('2026-04-10'), updatedAt: stamp('2026-04-10') },
-      { id: 'rating-5', teamId: 'team-bocaiuva', matchId: 'match-2', raterPlayerId: 'player-1', targetPlayerId: 'player-7', criteria: makeCriteria(4, { passing: 5, attack: 4.8, flair: 4.8 }), overall: 4.6, createdAt: stamp('2026-04-24'), updatedAt: stamp('2026-04-24') },
-      { id: 'rating-6', teamId: 'team-bocaiuva', matchId: 'match-2', raterPlayerId: 'player-7', targetPlayerId: 'player-9', criteria: makeCriteria(4, { finishing: 4.8, attack: 4.6, grit: 4.6 }), overall: 4.5, createdAt: stamp('2026-04-24'), updatedAt: stamp('2026-04-24') },
-      { id: 'rating-7', teamId: 'team-bocaiuva', matchId: 'match-2', raterPlayerId: 'player-9', targetPlayerId: 'player-3', criteria: makeCriteria(4, { defense: 4.8, marking: 5, grit: 4.5 }), overall: 4.5, createdAt: stamp('2026-04-24'), updatedAt: stamp('2026-04-24') },
-      { id: 'rating-8', teamId: 'team-bocaiuva', matchId: 'match-2', raterPlayerId: 'player-3', targetPlayerId: 'player-10', criteria: makeCriteria(4, { attack: 4.5, flair: 4.4, passing: 4.2 }), overall: 4.2, createdAt: stamp('2026-04-24'), updatedAt: stamp('2026-04-24') },
+      { id: 'rating-1', teamId: 'team-bocaiuva', matchId: 'match-1', raterPlayerId: 'player-7', targetPlayerId: 'player-9', criteria: makeCriteria(4, { decisivo: 5, qualidade: 5, dedicacao: 5 }), overall: 4.6, createdAt: stamp('2026-04-10'), updatedAt: stamp('2026-04-10') },
+      { id: 'rating-2', teamId: 'team-bocaiuva', matchId: 'match-1', raterPlayerId: 'player-3', targetPlayerId: 'player-8', criteria: makeCriteria(4, { marra: 5, qualidade: 5, preciosismo: 4.5 }), overall: 4.4, createdAt: stamp('2026-04-10'), updatedAt: stamp('2026-04-10') },
+      { id: 'rating-3', teamId: 'team-bocaiuva', matchId: 'match-1', raterPlayerId: 'player-9', targetPlayerId: 'player-1', criteria: makeCriteria(4, { dedicacao: 5, energia: 5, qualidade: 4.5 }), overall: 4.5, createdAt: stamp('2026-04-10'), updatedAt: stamp('2026-04-10') },
+      { id: 'rating-4', teamId: 'team-bocaiuva', matchId: 'match-1', raterPlayerId: 'player-1', targetPlayerId: 'player-7', criteria: makeCriteria(4, { preciosismo: 5, qualidade: 4.6, marra: 4.8 }), overall: 4.7, createdAt: stamp('2026-04-10'), updatedAt: stamp('2026-04-10') },
+      { id: 'rating-5', teamId: 'team-bocaiuva', matchId: 'match-2', raterPlayerId: 'player-1', targetPlayerId: 'player-7', criteria: makeCriteria(4, { preciosismo: 5, qualidade: 4.8, marra: 4.8 }), overall: 4.6, createdAt: stamp('2026-04-24'), updatedAt: stamp('2026-04-24') },
+      { id: 'rating-6', teamId: 'team-bocaiuva', matchId: 'match-2', raterPlayerId: 'player-7', targetPlayerId: 'player-9', criteria: makeCriteria(4, { decisivo: 4.8, qualidade: 4.6, dedicacao: 4.6 }), overall: 4.5, createdAt: stamp('2026-04-24'), updatedAt: stamp('2026-04-24') },
+      { id: 'rating-7', teamId: 'team-bocaiuva', matchId: 'match-2', raterPlayerId: 'player-9', targetPlayerId: 'player-3', criteria: makeCriteria(4, { dedicacao: 4.8, energia: 5, qualidade: 4.5 }), overall: 4.5, createdAt: stamp('2026-04-24'), updatedAt: stamp('2026-04-24') },
+      { id: 'rating-8', teamId: 'team-bocaiuva', matchId: 'match-2', raterPlayerId: 'player-3', targetPlayerId: 'player-10', criteria: makeCriteria(4, { qualidade: 4.5, marra: 4.4, preciosismo: 4.2 }), overall: 4.2, createdAt: stamp('2026-04-24'), updatedAt: stamp('2026-04-24') },
+    ],
+    notifications: [
+      {
+        id: 'notification__match-created__match-3',
+        teamId: 'team-bocaiuva',
+        type: 'match-created',
+        title: 'Nova partida marcada',
+        message: 'Galaticos FC em 08/05/2026 20:30 no Arena Bocaiuva.',
+        matchId: 'match-3',
+        actorUserId: 'user-admin',
+        readByUserIds: ['user-admin'],
+        createdAt: stamp('2026-05-01'),
+        updatedAt: stamp('2026-05-01'),
+      },
+      {
+        id: 'notification__lineup-published__match-3',
+        teamId: 'team-bocaiuva',
+        type: 'lineup-published',
+        title: 'Escalacao publicada',
+        message: 'A formacao para Galaticos FC ja esta pronta.',
+        matchId: 'match-3',
+        actorUserId: 'user-admin',
+        readByUserIds: ['user-admin'],
+        createdAt: stamp('2026-05-03'),
+        updatedAt: stamp('2026-05-03'),
+      },
+      {
+        id: 'notification__match-finished__match-2',
+        teamId: 'team-bocaiuva',
+        type: 'match-finished',
+        title: 'Partida encerrada',
+        message: 'Panelinha FC terminou em 2 x 2.',
+        matchId: 'match-2',
+        actorUserId: 'user-admin',
+        readByUserIds: ['user-admin', 'user-striker'],
+        createdAt: stamp('2026-04-24'),
+        updatedAt: stamp('2026-04-24'),
+      },
+      {
+        id: 'notification__mvp-winner__match-2',
+        teamId: 'team-bocaiuva',
+        type: 'mvp-winner',
+        title: 'Capita foi o destaque',
+        message: 'O elenco escolheu Capita como craque contra Panelinha FC.',
+        matchId: 'match-2',
+        playerId: 'player-7',
+        actorUserId: 'user-admin',
+        readByUserIds: ['user-admin'],
+        createdAt: stamp('2026-04-24'),
+        updatedAt: stamp('2026-04-24'),
+      },
+      {
+        id: 'notification__ratings-opened__match-2',
+        teamId: 'team-bocaiuva',
+        type: 'ratings-opened',
+        title: 'Notas do jogo liberadas',
+        message: 'As avaliacoes de Panelinha FC ja estao abertas para quem participou.',
+        matchId: 'match-2',
+        actorUserId: 'user-admin',
+        readByUserIds: [],
+        createdAt: stamp('2026-04-24'),
+        updatedAt: stamp('2026-04-24'),
+      },
     ],
   };
 }

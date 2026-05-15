@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "746181704021",
+    "project_id": "bocaiuva-app",
+    "storage_bucket": "bocaiuva-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:746181704021:android:af3bffa1a80da6ee42d7dc",
+        "android_client_info": {
+          "package_name": "com.seuapp.bocaiuva"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "746181704021-4k1ucmh740bjdqpjq4utfaf9opqbu7th.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDeUXdTdhu0kAoPHPD2zxBZdr2-6sgB2N4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "746181704021-4k1ucmh740bjdqpjq4utfaf9opqbu7th.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

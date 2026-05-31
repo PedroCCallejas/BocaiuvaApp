@@ -8,6 +8,7 @@ export const PUSH_NOTIFICATION_TYPES = [
   'lineup-published',
   'match-finished',
   'mvp-voting-opened',
+  'match-diary-published',
 ] as const;
 
 export type PushNotificationType = (typeof PUSH_NOTIFICATION_TYPES)[number];
@@ -24,6 +25,7 @@ export interface PushDispatchPayload {
     type: PushNotificationType;
     matchId: string | null;
     playerId: string | null;
+    entryId: string | null;
     actorUserId: string | null;
   };
 }
@@ -53,6 +55,7 @@ export function buildPushDispatchPayload(
       type: notification.type,
       matchId: notification.matchId ?? null,
       playerId: notification.playerId ?? null,
+      entryId: notification.entryId ?? null,
       actorUserId: notification.actorUserId ?? null,
     },
   };

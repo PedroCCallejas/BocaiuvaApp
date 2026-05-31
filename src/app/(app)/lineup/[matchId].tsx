@@ -278,8 +278,8 @@ export default function LineupScreen() {
 
   usePreventRemove(hasUnsavedChanges, (event) => {
     Alert.alert(
-      "Escalacao nao salva",
-      "Voce tem alteracoes pendentes na escalacao. Deseja sair sem salvar?",
+      "Escalação não salva",
+      "Você tem alterações pendentes na escalação. Deseja sair sem salvar?",
       [
         { text: "Continuar editando", style: "cancel" },
         {
@@ -360,14 +360,14 @@ export default function LineupScreen() {
       setSaveStatus("saved");
 
       Alert.alert(
-        "Escalacao salva",
+        "Escalação salva",
         "A distribuicao dos jogadores foi atualizada com sucesso.",
       );
     } catch (error) {
       setSaveStatus("dirty");
 
       Alert.alert(
-        "Nao foi possivel salvar",
+        "Não foi possível salvar",
         error instanceof Error ? error.message : "Tente novamente.",
       );
     }
@@ -377,8 +377,8 @@ export default function LineupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Escalacao indisponivel"
-          description="Nao foi possivel encontrar esta partida ou o time ativo."
+          title="Escalação indisponível"
+          description="Não foi possível encontrar esta partida ou o time ativo."
         />
       </Screen>
     );
@@ -389,7 +389,7 @@ export default function LineupScreen() {
       <Screen>
         <EmptyState
           title="Sem formacao disponivel"
-          description="Ainda nao encontramos uma formacao compativel com este tipo de partida."
+          description="Ainda não encontramos uma formação compatível com este tipo de partida."
         />
       </Screen>
     );
@@ -399,8 +399,8 @@ export default function LineupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Escalacao ainda nao publicada"
-          description="O administrador ainda nao salvou a escalacao desta partida."
+          title="Escalação ainda não publicada"
+          description="O administrador ainda não salvou a escalação desta partida."
         />
       </Screen>
     );
@@ -413,7 +413,7 @@ export default function LineupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Escalacao bloqueada"
+          title="Escalação bloqueada"
           description="A escalacao pode ser ajustada apenas antes do encerramento da partida."
         />
       </Screen>
@@ -425,7 +425,7 @@ export default function LineupScreen() {
       <Screen>
         <EmptyState
           title="Sem jogadores confirmados"
-          description="Confirme a presenca do elenco antes de montar a escalacao."
+          description="Confirme a presença do elenco antes de montar a escalação."
         />
       </Screen>
     );
@@ -435,8 +435,8 @@ export default function LineupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Escalacao indisponivel"
-          description="Nao foi possivel carregar a escalacao desta partida."
+          title="Escalação indisponível"
+          description="Não foi possível carregar a escalação desta partida."
         />
       </Screen>
     );
@@ -447,14 +447,14 @@ export default function LineupScreen() {
   return (
     <Screen keyboardAware={false} scrollEnabled={!isDragging}>
       <SectionHeader
-        title="Escalacao visual"
+        title="Escalação visual"
         subtitle={`${currentMatch.opponentName} - ${starterLimit} em campo`}
       />
 
       <Text style={[styles.helper, { color: theme.colors.textMuted }]}>
         {canManage
           ? "Arraste jogadores apenas dentro do campo. O banco usa toque para adicionar/remover, evitando troca automatica."
-          : "Somente visualizacao. Apenas administradores podem alterar a escalacao."}
+          : "Somente visualização. Apenas administradores podem alterar a escalação."}
       </Text>
 
       <View style={styles.metricsRow}>
@@ -497,14 +497,14 @@ export default function LineupScreen() {
       >
         <Text style={[styles.statusTitle, { color: theme.colors.text }]}>
           {!canManage
-            ? "Somente visualizacao"
+            ? "Somente visualização"
             : saveStatus === "saving"
               ? "Salvando..."
               : saveStatus === "saved"
-                ? "Escalacao salva"
+                ? "Escalação salva"
                 : saveStatus === "dirty"
-                  ? "Escalacao nao salva"
-                  : "Escalacao pronta"}
+                  ? "Escalação não salva"
+                  : "Escalação pronta"}
         </Text>
 
         <Text style={[styles.statusText, { color: theme.colors.textMuted }]}>
@@ -515,7 +515,7 @@ export default function LineupScreen() {
               : saveStatus === "saved"
                 ? "As coordenadas atuais ja estao sincronizadas."
                 : saveStatus === "dirty"
-                  ? "Voce tem alteracoes pendentes. So enviamos para o banco ao tocar em salvar."
+                  ? "Você tem alterações pendentes. Só enviamos para o banco ao tocar em salvar."
                   : "Mova jogadores livremente e salve apenas quando terminar."}
         </Text>
       </View>

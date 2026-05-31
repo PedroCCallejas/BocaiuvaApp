@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
 import { PlayerCard } from '@/components/cards/PlayerCard';
@@ -10,11 +10,11 @@ import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { buildTeamPlayerAchievementMap, getTopPlayerAchievements } from '@/lib/player-achievements';
 import { buildPlayerAggregates, buildPlayerStatsLabel } from '@/lib/stats';
 import { useAppStore } from '@/store/app-store';
 import {
   selectCanManagePlayers,
-  selectCurrentPlayer,
   selectCurrentTeam,
   selectIsRefreshingData,
   selectSyncStatusHint,
@@ -31,12 +31,12 @@ const PLAYER_FILTER_LABELS: Record<PlayerRosterFilter, string> = {
 };
 
 export default function PlayersScreen() {
+  const isWeb = Platform.OS === 'web';
   const theme = useAppTheme();
   const snapshot = useAppStore((state) => state.snapshot);
   const team = useAppStore(selectCurrentTeam);
   const players = useAppStore(selectTeamHistoricalPlayers);
   const canManagePlayers = useAppStore(selectCanManagePlayers);
-  const currentPlayer = useAppStore(selectCurrentPlayer);
   const refreshData = useAppStore((state) => state.refreshData);
   const refreshing = useAppStore(selectIsRefreshingData);
   const syncMessage = useAppStore(selectSyncStatusMessage);
@@ -47,7 +47,35 @@ export default function PlayersScreen() {
     return null;
   }
 
-  const stats = buildPlayerAggregates(snapshot, team.id, { playerScope: 'all' });
+  const stats = useMemo(
+    () => buildPlayerAggregates(snapshot, team.id, { playerScope: 'all' }),
+    [snapshot, team.id],
+  );
+  const statsByPlayerId = useMemo(
+    () => new Map(stats.map((entry) => [entry.player.id, entry])),
+    [stats],
+  );
+  const achievementMap = useMemo(
+    () =>
+      buildTeamPlayerAchievementMap({
+        players,
+        matches: snapshot.matches,
+        attendance: snapshot.attendance,
+        matchStats: snapshot.matchStats,
+        mvpVotes: snapshot.mvpVotes,
+        ratings: snapshot.playerRatings,
+        ratingCriteria: snapshot.ratingCriteria,
+      }),
+    [
+      players,
+      snapshot.attendance,
+      snapshot.matchStats,
+      snapshot.matches,
+      snapshot.mvpVotes,
+      snapshot.playerRatings,
+      snapshot.ratingCriteria,
+    ],
+  );
   const activePlayers = players.filter((player) => player.status !== 'inactive' && !player.deletedAt);
   const inactivePlayers = players.filter((player) => player.status === 'inactive' || player.deletedAt);
   const visiblePlayers = useMemo(() => {
@@ -68,16 +96,18 @@ export default function PlayersScreen() {
 
   return (
     <Screen onRefresh={() => void refreshData()} refreshing={refreshing}>
-      <SectionHeader
-        title="Elenco"
-        subtitle={
-          visiblePlayers.length > 0
-            ? `${visiblePlayers.length} jogador(es) em ${PLAYER_FILTER_LABELS[canManagePlayers ? rosterFilter : 'active'].toLowerCase()}`
-            : `Monte o elenco de ${team.name}`
-        }
-        actionLabel={canManagePlayers ? 'Adicionar jogador' : undefined}
-        onAction={canManagePlayers ? () => router.push('/players/create') : undefined}
-      />
+      {!isWeb ? (
+        <SectionHeader
+          title="Elenco"
+          subtitle={
+            visiblePlayers.length > 0
+              ? `${visiblePlayers.length} jogador(es) em ${PLAYER_FILTER_LABELS[canManagePlayers ? rosterFilter : 'active'].toLowerCase()}`
+              : `Monte o elenco de ${team.name}`
+          }
+          actionLabel={canManagePlayers ? 'Adicionar jogador' : undefined}
+          onAction={canManagePlayers ? () => router.push('/players/create') : undefined}
+        />
+      ) : null}
       <SyncStatusCard
         hint={syncHint}
         loading={refreshing}
@@ -106,7 +136,7 @@ export default function PlayersScreen() {
                     {
                       backgroundColor: selected
                         ? theme.colors.primarySoft
-                        : theme.colors.surface,
+                        : theme.colors.backgroundElevated,
                       borderColor: selected ? theme.colors.primary : theme.colors.border,
                     },
                   ]}>
@@ -117,7 +147,9 @@ export default function PlayersScreen() {
               );
             })}
           </View>
-          <AppButton label="Adicionar jogador" onPress={() => router.push('/players/create')} />
+          {!isWeb ? (
+            <AppButton label="Adicionar jogador" onPress={() => router.push('/players/create')} />
+          ) : null}
         </>
       ) : null}
 
@@ -134,7 +166,7 @@ export default function PlayersScreen() {
             players.length === 0
               ? canManagePlayers
                 ? 'Convide seus jogadores para comecar ou cadastre o primeiro nome do elenco.'
-                : 'O administrador ainda nao cadastrou jogadores neste time.'
+                : 'O administrador ainda não cadastrou jogadores neste time.'
               : rosterFilter === 'inactive'
                 ? 'Quando alguem sair do elenco ativo, o cadastro continua aparecendo aqui para reativacao.'
                 : 'Troque o filtro para visualizar outra parte do elenco.'
@@ -151,17 +183,17 @@ export default function PlayersScreen() {
       ) : null}
 
       {visiblePlayers.map((player) => {
-        const item = stats.find((entry) => entry.player.id === player.id);
+        const item = statsByPlayerId.get(player.id);
         const label = item ? buildPlayerStatsLabel(item) : undefined;
-        const canOpen =
-          canManagePlayers || (currentPlayer?.id != null && currentPlayer.id === player.id);
+        const achievements = getTopPlayerAchievements(achievementMap.get(player.id) ?? [], 3);
 
         return (
           <PlayerCard
             key={player.id}
             player={player}
             statsLabel={label}
-            onPress={canOpen ? () => router.push(`/players/${player.id}`) : undefined}
+            achievements={achievements}
+            onPress={() => router.push(`/players/${player.id}`)}
           />
         );
       })}

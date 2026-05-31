@@ -88,7 +88,7 @@ export default function TeamRatingCriteriaScreen() {
       <Screen>
         <EmptyState
           title="Acesso restrito"
-          description="Somente quem administra o time pode configurar os criterios de avaliacao."
+          description="Somente quem administra o time pode configurar os critérios de avaliação."
         />
       </Screen>
     );
@@ -115,12 +115,12 @@ export default function TeamRatingCriteriaScreen() {
     const weight = Number(form.weight.replace(',', '.'));
 
     if (!label) {
-      Alert.alert('Nome obrigatorio', 'Informe um nome curto para o criterio.');
+      Alert.alert('Nome obrigatório', 'Informe um nome curto para o critério.');
       return;
     }
 
     if (!Number.isFinite(weight) || weight <= 0) {
-      Alert.alert('Peso invalido', 'Use um peso maior que zero.');
+      Alert.alert('Peso inválido', 'Use um peso maior que zero.');
       return;
     }
 
@@ -148,7 +148,7 @@ export default function TeamRatingCriteriaScreen() {
       resetForm();
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel salvar',
+        'Não foi possível salvar',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     } finally {
@@ -163,7 +163,7 @@ export default function TeamRatingCriteriaScreen() {
       await updateRatingCriterion(criterion.id, { active: !criterion.active });
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel atualizar',
+        'Não foi possível atualizar',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     } finally {
@@ -186,7 +186,7 @@ export default function TeamRatingCriteriaScreen() {
       await updateRatingCriterion(criterion.id, { order: targetCriterion.order });
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel reordenar',
+        'Não foi possível reordenar',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     } finally {
@@ -196,13 +196,13 @@ export default function TeamRatingCriteriaScreen() {
 
   async function handleDeleteCriterion(criterion: TeamRatingCriterion) {
     const usageCount = usageByCriterionId[criterion.id] ?? 0;
-    const actionLabel = usageCount > 0 ? 'Inativar criterio' : 'Excluir criterio';
+    const actionLabel = usageCount > 0 ? 'Inativar critério' : 'Excluir critério';
     const message =
       usageCount > 0
-        ? 'Este criterio ja aparece em avaliacoes antigas. Vamos apenas inativa-lo para preservar o historico.'
-        : 'Este criterio ainda nao foi usado e sera removido do time.';
+        ? 'Este critério já aparece em avaliações antigas. Vamos apenas inativá-lo para preservar o histórico.'
+        : 'Este critério ainda não foi usado e será removido do time.';
 
-    Alert.alert('Gerenciar criterio', message, [
+    Alert.alert('Gerenciar critério', message, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: actionLabel,
@@ -217,7 +217,7 @@ export default function TeamRatingCriteriaScreen() {
               }
             } catch (error) {
               Alert.alert(
-                'Nao foi possivel concluir',
+                'Não foi possível concluir',
                 error instanceof Error ? error.message : 'Tente novamente.',
               );
             } finally {
@@ -232,7 +232,7 @@ export default function TeamRatingCriteriaScreen() {
   return (
     <Screen formMode>
       <SectionHeader
-        title="Criterios de avaliacao"
+        title="Critérios de avaliação"
         subtitle="Defina como o elenco avalia os jogadores deste time."
       />
 
@@ -246,12 +246,12 @@ export default function TeamRatingCriteriaScreen() {
         ]}>
         <Text style={[styles.summaryTitle, { color: theme.colors.text }]}>Regras do time</Text>
         <Text style={[styles.summaryText, { color: theme.colors.textMuted }]}>
-          Mantenha entre {MIN_ACTIVE_RATING_CRITERIA} e {MAX_ACTIVE_RATING_CRITERIA} criterios
-          ativos. Criticos positivos entram na nota geral normalmente. Criticos negativos entram
-          na composicao como alerta: nota alta pesa contra o jogador.
+          Mantenha entre {MIN_ACTIVE_RATING_CRITERIA} e {MAX_ACTIVE_RATING_CRITERIA} critérios
+          ativos. Critérios positivos entram na nota geral normalmente. Critérios negativos entram
+          na composição como alerta: nota alta pesa contra o jogador.
         </Text>
         <Text style={[styles.summaryCount, { color: theme.colors.secondary }]}>
-          {activeCriteria.length} ativo(s) de {criteria.length} criterio(s)
+          {activeCriteria.length} ativo(s) de {criteria.length} critério(s)
         </Text>
       </View>
 
@@ -277,10 +277,10 @@ export default function TeamRatingCriteriaScreen() {
                     {criterion.label}
                   </Text>
                   <Text style={[styles.criterionMeta, { color: theme.colors.textMuted }]}>
-                    {criterion.type === 'positive' ? 'Positivo' : 'Negativo'} • peso {criterion.weight}
+                    {criterion.type === 'positive' ? 'Positivo' : 'Negativo'} - peso {criterion.weight}
                   </Text>
                   <Text style={[styles.criterionMeta, { color: theme.colors.textMuted }]}>
-                    {criterion.active ? 'Ativo' : 'Inativo'} • {usageCount} avaliacao(oes)
+                    {criterion.active ? 'Ativo' : 'Inativo'} - {usageCount} avaliação(ões)
                   </Text>
                   {criterion.description ? (
                     <Text style={[styles.criterionDescription, { color: theme.colors.textMuted }]}>
@@ -334,16 +334,16 @@ export default function TeamRatingCriteriaScreen() {
           },
         ]}>
         <Text style={[styles.formTitle, { color: theme.colors.text }]}>
-          {editingCriterionId ? 'Editar criterio' : 'Novo criterio'}
+          {editingCriterionId ? 'Editar critério' : 'Novo critério'}
         </Text>
         <AppInput
           label="Nome"
           value={form.label}
           onChangeText={(value) => setForm((current) => ({ ...current, label: value }))}
-          placeholder="Ex.: Marcacao"
+          placeholder="Ex.: Marcação"
         />
         <AppInput
-          label="Descricao opcional"
+          label="Descrição opcional"
           value={form.description}
           multiline
           onChangeText={(value) => setForm((current) => ({ ...current, description: value }))}
@@ -381,7 +381,7 @@ export default function TeamRatingCriteriaScreen() {
           <View style={styles.toggleCopy}>
             <Text style={[styles.fieldLabel, { color: theme.colors.textMuted }]}>Ativo agora</Text>
             <Text style={[styles.toggleHelper, { color: theme.colors.textMuted }]}>
-              Criticos ativos aparecem na tela de avaliacao.
+              Critérios ativos aparecem na tela de avaliação.
             </Text>
           </View>
           <Switch
@@ -392,12 +392,12 @@ export default function TeamRatingCriteriaScreen() {
 
         <View style={styles.cardActions}>
           <AppButton
-            label={editingCriterionId ? 'Salvar criterio' : 'Criar criterio'}
+            label={editingCriterionId ? 'Salvar critério' : 'Criar critério'}
             onPress={() => void handleSubmit()}
             loading={isSubmitting}
           />
           {editingCriterionId ? (
-            <AppButton label="Cancelar edicao" variant="ghost" onPress={resetForm} />
+            <AppButton label="Cancelar edição" variant="ghost" onPress={resetForm} />
           ) : null}
         </View>
       </View>

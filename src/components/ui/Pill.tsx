@@ -25,15 +25,16 @@ export function Pill({
       style={[
         styles.container,
         {
-          backgroundColor: backgroundColor ?? (color ? `${color}22` : theme.colors.chip),
-          borderColor: borderColor ?? (color ? `${color}55` : theme.colors.border),
+          backgroundColor:
+            backgroundColor ?? (color ? `${color}26` : theme.colors.backgroundElevated),
+          borderColor: borderColor ?? (color ? `${color}66` : 'rgba(255,255,255,0.12)'),
         },
       ]}>
       <Text
         style={[
           styles.label,
           {
-            color: textColor ?? color ?? theme.colors.textMuted,
+            color: textColor ?? (color ? theme.colors.text : theme.colors.text),
           },
         ]}>
         {label}
@@ -46,14 +47,12 @@ const styles = StyleSheet.create({
   container: {
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
   },
   label: {
     fontFamily: fonts.heading,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
   },
 });

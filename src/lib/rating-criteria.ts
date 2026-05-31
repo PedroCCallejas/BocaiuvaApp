@@ -29,8 +29,107 @@ const LEGACY_CRITERIA_DESCRIPTIONS: Partial<Record<LegacyRatingCriterionId, stri
   marra: 'Postura que atrapalha o coletivo.',
 };
 
+const LEGACY_ENGLISH_CRITERIA_ALIASES = {
+  attack: {
+    label: 'Ataque',
+    type: 'positive',
+    order: 0,
+  },
+  defense: {
+    label: 'Defesa',
+    type: 'positive',
+    order: 1,
+  },
+  finishing: {
+    label: 'Finalizacao',
+    type: 'positive',
+    order: 2,
+  },
+  passing: {
+    label: 'Passe',
+    type: 'positive',
+    order: 3,
+  },
+  stamina: {
+    label: 'Energia',
+    type: 'positive',
+    order: 4,
+  },
+  resistance: {
+    label: 'Resistencia',
+    type: 'positive',
+    order: 5,
+  },
+  marking: {
+    label: 'Marcacao',
+    type: 'positive',
+    order: 6,
+  },
+  flair: {
+    label: 'Criatividade',
+    type: 'positive',
+    order: 7,
+  },
+  grit: {
+    label: 'Raca',
+    type: 'positive',
+    order: 8,
+  },
+} satisfies Record<string, {
+  label: string;
+  type: RatingCriterionType;
+  order: number;
+}>;
+
+function stripDiacritics(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function resolveLegacyEnglishCriterionAlias(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const normalizedValue = stripDiacritics(value.trim())
+    .toLocaleLowerCase('pt-BR')
+    .replace(/[^a-z0-9]+/g, '-');
+
+  return LEGACY_ENGLISH_CRITERIA_ALIASES[normalizedValue as keyof typeof LEGACY_ENGLISH_CRITERIA_ALIASES] ?? null;
+}
+
 function normalizeCriterionLabel(label: string) {
-  return label.trim().toLocaleLowerCase('pt-BR');
+  const aliasLabel = resolveLegacyEnglishCriterionAlias(label)?.label ?? label;
+  return stripDiacritics(aliasLabel.trim()).toLocaleLowerCase('pt-BR');
+}
+
+function getLegacyCriterionDisplayDefinition(input: {
+  criterionId?: string | null;
+  label?: string | null;
+}) {
+  const byId = resolveLegacyEnglishCriterionAlias(input.criterionId);
+  if (byId) {
+    return byId;
+  }
+
+  return resolveLegacyEnglishCriterionAlias(input.label);
+}
+
+function normalizeCriterionDisplayLabel(input: {
+  criterionId?: string | null;
+  label?: string | null;
+  fallbackLabel?: string | null;
+}) {
+  const alias = getLegacyCriterionDisplayDefinition(input);
+  if (alias) {
+    return alias.label;
+  }
+
+  const trimmedLabel = input.label?.trim();
+  if (trimmedLabel) {
+    return trimmedLabel;
+  }
+
+  return input.fallbackLabel?.trim() || 'Criterio';
 }
 
 function round(value: number, digits = 1) {
@@ -94,15 +193,26 @@ export function normalizeTeamRatingCriterion(
             (item) => normalizeCriterionLabel(item.label) === normalizeCriterionLabel(criterion.label),
           ) ?? null
       : null;
+  const legacyEnglishDefinition = getLegacyCriterionDisplayDefinition({
+    criterionId: criterion.id,
+    label: criterion.label,
+  });
 
   return {
     ...criterion,
-    label: criterion.label.trim() || legacyDefinition?.label || 'Criterio',
+    label: normalizeCriterionDisplayLabel({
+      criterionId: criterion.id,
+      label: criterion.label,
+      fallbackLabel: legacyDefinition?.label ?? legacyEnglishDefinition?.label ?? 'Criterio',
+    }),
     description: criterion.description?.trim() || null,
-    type: criterion.type ?? legacyDefinition?.type ?? 'positive',
+    type: criterion.type ?? legacyDefinition?.type ?? legacyEnglishDefinition?.type ?? 'positive',
     weight: normalizeWeight(criterion.weight),
     active: criterion.active !== false,
-    order: normalizeOrder(criterion.order, legacyDefinition?.order ?? 0),
+    order: normalizeOrder(
+      criterion.order,
+      legacyDefinition?.order ?? legacyEnglishDefinition?.order ?? 0,
+    ),
   };
 }
 
@@ -231,9 +341,27 @@ function fallbackSnapshotItem(
     };
   }
 
+  const legacyEnglishDefinition = getLegacyCriterionDisplayDefinition({
+    criterionId,
+  });
+
+  if (legacyEnglishDefinition) {
+    return {
+      criterionId,
+      label: legacyEnglishDefinition.label,
+      type: legacyEnglishDefinition.type,
+      weight: 1,
+      order: legacyEnglishDefinition.order,
+    };
+  }
+
   return {
     criterionId,
-    label: criterionId,
+    label: normalizeCriterionDisplayLabel({
+      criterionId,
+      label: criterionId,
+      fallbackLabel: criterionId,
+    }),
     type: 'positive',
     weight: 1,
     order: 999,
@@ -248,12 +376,25 @@ export function normalizeRatingCriteriaSnapshot(
   const snapshot = Object.entries(rating.criteriaSnapshot ?? {}).reduce<
     Record<string, PlayerRatingCriteriaSnapshotItem>
   >((acc, [criterionId, item]) => {
+    const fallbackItem = fallbackSnapshotItem(criterionId, currentCriteria);
+    const legacyEnglishDefinition = getLegacyCriterionDisplayDefinition({
+      criterionId,
+      label: item?.label,
+    });
+
     acc[criterionId] = {
       criterionId,
-      label: item?.label?.trim() || fallbackSnapshotItem(criterionId, currentCriteria).label,
-      type: item?.type ?? fallbackSnapshotItem(criterionId, currentCriteria).type,
+      label: normalizeCriterionDisplayLabel({
+        criterionId,
+        label: item?.label,
+        fallbackLabel: fallbackItem.label,
+      }),
+      type: item?.type ?? legacyEnglishDefinition?.type ?? fallbackItem.type,
       weight: normalizeWeight(item?.weight),
-      order: normalizeOrder(item?.order, fallbackSnapshotItem(criterionId, currentCriteria).order),
+      order: normalizeOrder(
+        item?.order,
+        legacyEnglishDefinition?.order ?? fallbackItem.order,
+      ),
     };
     return acc;
   }, {});
@@ -401,11 +542,11 @@ export function validateActiveRatingCriteria(criteria: TeamRatingCriterion[]) {
   const activeCriteria = getActiveRatingCriteria(criteria);
 
   if (activeCriteria.length < MIN_ACTIVE_RATING_CRITERIA) {
-    throw new Error('Mantenha pelo menos um criterio ativo para avaliar o elenco.');
+    throw new Error('Mantenha pelo menos um critério ativo para avaliar o elenco.');
   }
 
   if (activeCriteria.length > MAX_ACTIVE_RATING_CRITERIA) {
-    throw new Error(`Use no maximo ${MAX_ACTIVE_RATING_CRITERIA} criterios ativos por time.`);
+    throw new Error(`Use no máximo ${MAX_ACTIVE_RATING_CRITERIA} critérios ativos por time.`);
   }
 }
 
@@ -421,14 +562,14 @@ export function validateRatingCriteriaSubmission(input: {
   const scoreIds = Object.keys(input.criteriaScores);
 
   if (scoreIds.length !== input.activeCriteria.length) {
-    throw new Error('Envie notas para todos os criterios ativos do time.');
+    throw new Error('Envie notas para todos os critérios ativos do time.');
   }
 
   for (const criterion of input.activeCriteria) {
     const value = input.criteriaScores[criterion.id];
 
     if (typeof value !== 'number' || !Number.isFinite(value)) {
-      throw new Error(`Informe uma nota valida para ${criterion.label}.`);
+      throw new Error(`Informe uma nota válida para ${criterion.label}.`);
     }
 
     if (value < MIN_RATING_SCORE || value > MAX_RATING_SCORE) {
@@ -440,7 +581,7 @@ export function validateRatingCriteriaSubmission(input: {
 
   for (const criterionId of scoreIds) {
     if (!activeCriteriaById.has(criterionId)) {
-      throw new Error('A avaliacao contem um criterio que nao esta mais ativo no time.');
+      throw new Error('A avaliação contém um critério que não está mais ativo no time.');
     }
   }
 }

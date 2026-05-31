@@ -116,7 +116,7 @@ export default function FinishMatchScreen() {
   const resultLabel = useMemo(() => {
     const result = calculateMatchResult(teamScore, opponentScore);
     if (result === 'win') {
-      return 'Vitoria';
+      return 'Vitória';
     }
     if (result === 'loss') {
       return 'Derrota';
@@ -170,7 +170,7 @@ export default function FinishMatchScreen() {
       router.replace(`/matches/${currentMatch.id}`);
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel encerrar',
+        'Não foi possível encerrar',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
@@ -180,7 +180,7 @@ export default function FinishMatchScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Pos-jogo indisponivel"
+          title="Pós-jogo indisponível"
           description="Apenas o administrador do time pode encerrar a partida."
         />
       </Screen>
@@ -192,7 +192,7 @@ export default function FinishMatchScreen() {
       <Screen>
         <EmptyState
           title="Sem jogadores confirmados"
-          description="Confirme a presenca do elenco antes de registrar o pos-jogo."
+          description="Confirme a presença do elenco antes de registrar o pós-jogo."
         />
       </Screen>
     );
@@ -203,24 +203,24 @@ export default function FinishMatchScreen() {
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>
           {currentMatch.status === 'finished'
-            ? 'Editar estatisticas do jogo'
+            ? 'Editar estatísticas do jogo'
             : 'Encerrar partida'}
         </Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
           {currentMatch.status === 'finished'
-            ? 'Ajuste placar, gols, assistencias e gol contra a favor sem apagar MVP ou avaliacoes.'
-            : 'O placar do time e preenchido automaticamente pela soma dos gols dos jogadores e dos gols contra do adversario.'}
+            ? 'Ajuste placar, gols, assistências e gol contra a favor sem apagar MVP ou avaliações.'
+            : 'O placar do time é preenchido automaticamente pela soma dos gols dos jogadores e dos gols contra do adversário.'}
         </Text>
       </View>
 
       <View style={styles.metricsRow}>
         <MetricCard
-          label="Gols lancados"
+          label="Gols lançados"
           value={String(totalPlayerGoals)}
           helper="somados dos jogadores"
         />
         <MetricCard
-          label="Assistencias"
+          label="Assistências"
           value={String(totalAssists)}
           helper="lancadas na partida"
         />
@@ -244,11 +244,11 @@ export default function FinishMatchScreen() {
             Placar diferente da soma dos gols
           </Text>
           <Text style={[styles.noticeText, { color: theme.colors.textMuted }]}>
-            O time esta com {teamScore} gol(s), mas a soma dos gols lancados mais gols contra
+            O time está com {teamScore} gol(s), mas a soma dos gols lançados mais gols contra
             a favor resulta em {totalTeamGoals}.
           </Text>
           <AppButton
-            label="Usar soma automatica"
+            label="Usar soma automática"
             variant="secondary"
             onPress={handleUseAutomaticScore}
           />
@@ -265,10 +265,10 @@ export default function FinishMatchScreen() {
             },
           ]}>
           <Text style={[styles.noticeTitle, { color: theme.colors.text }]}>
-            Confira as assistencias
+            Confira as assistências
           </Text>
           <Text style={[styles.noticeText, { color: theme.colors.textMuted }]}>
-            Existem mais assistencias que gols lancados. Confira se esta correto antes de
+            Existem mais assistências que gols lançados. Confira se está correto antes de
             salvar.
           </Text>
         </View>
@@ -336,7 +336,7 @@ export default function FinishMatchScreen() {
       ))}
 
       <AppButton
-        label={currentMatch.status === 'finished' ? 'Salvar estatisticas' : 'Encerrar jogo'}
+        label={currentMatch.status === 'finished' ? 'Salvar estatísticas' : 'Encerrar jogo'}
         onPress={handleSave}
         fullWidth
       />

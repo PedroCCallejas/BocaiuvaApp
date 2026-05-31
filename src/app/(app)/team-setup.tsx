@@ -26,7 +26,7 @@ import { selectCanCreateTeam, selectCurrentUser } from '@/store/selectors';
 
 const schema = z.object({
   name: z.string().min(3, 'Informe o nome do time.'),
-  coachName: z.string().min(3, 'Informe o responsavel.'),
+  coachName: z.string().min(3, 'Informe o responsável.'),
   paletteId: z.string().min(1, 'Escolha uma paleta.'),
 });
 
@@ -50,7 +50,7 @@ export default function TeamSetupScreen() {
     resolver: zodResolver(schema),
     defaultValues: {
       name: '',
-      coachName: currentUser?.displayName ?? 'Responsavel',
+      coachName: currentUser?.displayName ?? 'Responsável',
       paletteId: TEAM_COLOR_PRESETS[0]?.id ?? '',
     },
   });
@@ -71,7 +71,7 @@ export default function TeamSetupScreen() {
     primaryColor: selectedPalette?.primary ?? '#355067',
     secondaryColor: selectedPalette?.secondary ?? '#DCE5EE',
     accentColor: selectedPalette?.accent ?? null,
-    coachName: watch('coachName') || currentUser?.displayName || 'Responsavel',
+    coachName: watch('coachName') || currentUser?.displayName || 'Responsável',
     adminUserId: currentUser?.id ?? 'preview',
     activeSeasonId: null,
     createdAt: '',
@@ -82,8 +82,8 @@ export default function TeamSetupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Criar time indisponivel"
-          description="Seu acesso ainda nao permite criar um time."
+          title="Criar time indisponível"
+          description="Seu acesso ainda não permite criar um time."
           actionLabel="Voltar"
           onAction={() => router.replace('/team-access' as never)}
         />
@@ -101,7 +101,7 @@ export default function TeamSetupScreen() {
       setPendingLogo(asset);
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel abrir a imagem',
+        'Não foi possível abrir a imagem',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
@@ -157,7 +157,7 @@ export default function TeamSetupScreen() {
     } catch (error) {
       setLogoUploadProgress(null);
       Alert.alert(
-        'Nao foi possivel criar o time',
+        'Não foi possível criar o time',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
@@ -172,7 +172,7 @@ export default function TeamSetupScreen() {
         </Text>
       </View>
 
-      <TeamHeroCard team={previewTeam} modeLabel="Preview do time" />
+      <TeamHeroCard team={previewTeam} modeLabel="Prévia do time" />
 
       <View
         style={[
@@ -200,7 +200,7 @@ export default function TeamSetupScreen() {
           name="coachName"
           render={({ field }) => (
             <AppInput
-              label="Tecnico / responsavel"
+              label="Técnico / responsável"
               value={field.value}
               onBlur={field.onBlur}
               onChangeText={field.onChange}

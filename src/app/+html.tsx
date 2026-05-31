@@ -1,9 +1,9 @@
 import type { PropsWithChildren } from 'react';
 import { ScrollViewStyleReset } from 'expo-router/html';
 
-const APP_NAME = 'Bocaiuva APP';
+const APP_NAME = 'Bocaíuva APP';
 const APP_DESCRIPTION =
-  'Aplicativo para organizar times de futebol amador, jogos, presenca, escalacao e estatisticas.';
+  'Aplicativo para organizar times de futebol amador, jogos, presença, escalação e estatísticas.';
 
 export default function RootHtml({ children }: PropsWithChildren) {
   return (

@@ -27,8 +27,16 @@ export function SectionHeader({
         ) : null}
       </View>
       {actionLabel && onAction ? (
-        <Pressable onPress={onAction}>
-          <Text style={[styles.action, { color: theme.colors.accent ?? theme.colors.secondary }]}>
+        <Pressable
+          onPress={onAction}
+          style={[
+            styles.actionWrap,
+            {
+              backgroundColor: theme.colors.backgroundElevated,
+              borderColor: theme.colors.border,
+            },
+          ]}>
+          <Text style={[styles.action, { color: theme.colors.text }]}>
             {actionLabel}
           </Text>
         </Pressable>
@@ -61,5 +69,11 @@ const styles = StyleSheet.create({
     fontFamily: fonts.heading,
     fontSize: 13,
     fontWeight: '700',
+  },
+  actionWrap: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
 });

@@ -1,13 +1,13 @@
 import {
   MAX_RATING_SCORE,
   normalizePlayerRatingForDisplay,
-  resolveCriterionDisplaySnapshotItem,
 } from '@/lib/rating-criteria';
-import { normalizeManualStats } from '@/lib/team';
+import { createEmptyManualStats, normalizeManualStats } from '@/lib/team';
 import type { AppSnapshot } from '@/services/repository/types';
 import type {
   Match,
   MatchType,
+  ManualPlayerStats,
   MvpVote,
   Player,
   PlayerRating,
@@ -67,6 +67,8 @@ export const PLAYER_STATS_LABELS = {
   presences: 'Presenças',
 } as const;
 
+export type PlayerStatTotals = ManualPlayerStats;
+
 export interface StatsFilters {
   matchType?: MatchType | 'all';
   period?: StatsPeriodPreset;
@@ -121,6 +123,8 @@ export interface PlayerAggregateStats {
   criteriaAdjustedAverages: Record<RatingCriterion, number>;
   criteriaRatingCounts: Record<RatingCriterion, number>;
   criteriaSnapshotById: Record<RatingCriterion, PlayerRatingCriteriaSnapshotItem>;
+  manualHistory: ReturnType<typeof normalizeManualStats>;
+  manualHistoryIncluded: boolean;
   hasHistory: boolean;
   isActive: boolean;
 }
@@ -151,6 +155,17 @@ export interface RatingSummary {
   criteriaSnapshotById: Record<RatingCriterion, PlayerRatingCriteriaSnapshotItem>;
 }
 
+export interface CriteriaSummaryEntry {
+  criterionId: string;
+  label: string;
+  type: PlayerRatingCriteriaSnapshotItem['type'];
+  weight: number;
+  order: number;
+  average: number;
+  adjustedAverage: number;
+  count: number;
+}
+
 function average(numbers: number[]) {
   if (numbers.length === 0) {
     return 0;
@@ -173,6 +188,98 @@ export function formatStatNumber(value: number, digits = 2) {
 
 function round(value: number, digits = 2) {
   return Number(value.toFixed(digits));
+}
+
+function combinePlayerStatTotals(
+  base: PlayerStatTotals,
+  delta: PlayerStatTotals,
+): PlayerStatTotals {
+  return {
+    matches: base.matches + delta.matches,
+    goals: base.goals + delta.goals,
+    assists: base.assists + delta.assists,
+    wins: base.wins + delta.wins,
+    draws: base.draws + delta.draws,
+    losses: base.losses + delta.losses,
+    mvps: round(base.mvps + delta.mvps, 2),
+  };
+}
+
+function buildPlayerComputedStatsFromSource(input: {
+  matches: Match[];
+  playerStats: AppSnapshot['matchStats'];
+  mvpAwards: number;
+}): PlayerStatTotals {
+  const wins = input.playerStats.filter((item) => {
+    const match = input.matches.find((entry) => entry.id === item.matchId);
+    return match?.scoreboard?.result === 'win';
+  }).length;
+  const draws = input.playerStats.filter((item) => {
+    const match = input.matches.find((entry) => entry.id === item.matchId);
+    return match?.scoreboard?.result === 'draw';
+  }).length;
+  const losses = input.playerStats.filter((item) => {
+    const match = input.matches.find((entry) => entry.id === item.matchId);
+    return match?.scoreboard?.result === 'loss';
+  }).length;
+
+  return {
+    matches: input.playerStats.length,
+    goals: input.playerStats.reduce((sum, item) => sum + item.goals, 0),
+    assists: input.playerStats.reduce((sum, item) => sum + item.assists, 0),
+    wins,
+    draws,
+    losses,
+    mvps: round(input.mvpAwards, 2),
+  };
+}
+
+function hasManualStatsField(
+  value: Pick<Player, 'manualStats'> | Partial<ManualPlayerStats>,
+): value is Pick<Player, 'manualStats'> {
+  return 'manualStats' in value;
+}
+
+export function getPlayerManualAdjustments(
+  playerOrStats?: Pick<Player, 'manualStats'> | Partial<ManualPlayerStats> | null,
+) {
+  if (!playerOrStats) {
+    return createEmptyManualStats();
+  }
+
+  if (hasManualStatsField(playerOrStats)) {
+    return normalizeManualStats(playerOrStats.manualStats);
+  }
+
+  return normalizeManualStats(playerOrStats);
+}
+
+export function getDesiredTotalsFromManualAdjustments(
+  computedStats?: Partial<PlayerStatTotals> | null,
+  manualAdjustments?: Partial<PlayerStatTotals> | null,
+) {
+  return combinePlayerStatTotals(
+    normalizeManualStats(computedStats),
+    normalizeManualStats(manualAdjustments),
+  );
+}
+
+export function buildManualAdjustmentsFromDesiredTotals(
+  computedStats?: Partial<PlayerStatTotals> | null,
+  desiredTotals?: Partial<PlayerStatTotals> | null,
+) {
+  const normalizedComputed = normalizeManualStats(computedStats);
+  const normalizedDesired = normalizeManualStats(desiredTotals);
+
+  return normalizeManualStats({
+    matches: normalizedDesired.matches - normalizedComputed.matches,
+    goals: normalizedDesired.goals - normalizedComputed.goals,
+    assists: normalizedDesired.assists - normalizedComputed.assists,
+    wins: normalizedDesired.wins - normalizedComputed.wins,
+    draws: normalizedDesired.draws - normalizedComputed.draws,
+    losses: normalizedDesired.losses - normalizedComputed.losses,
+    mvps: round(normalizedDesired.mvps - normalizedComputed.mvps, 2),
+  });
 }
 
 export function isCriterionMetric(metric: StatsSortMetric): metric is `criterion:${string}` {
@@ -288,6 +395,59 @@ export function filterMatchesForStats(
   );
 }
 
+export function getPlayerComputedStats(
+  snapshot: AppSnapshot,
+  teamId: string,
+  playerId: string,
+  filters?: StatsFilters,
+) {
+  const matches = filterMatchesForStats(snapshot.matches, teamId, filters);
+  const matchIds = new Set(matches.map((match) => match.id));
+  const confirmedIdsByMatch = buildConfirmedIdsByMatch(snapshot, matchIds);
+  const votesByMatch = snapshot.mvpVotes.reduce<Record<string, MvpVote[]>>((acc, vote) => {
+    if (!matchIds.has(vote.matchId)) {
+      return acc;
+    }
+
+    acc[vote.matchId] = [...(acc[vote.matchId] ?? []), vote];
+    return acc;
+  }, {});
+  const mvpAwards = matches.reduce((sum, match) => {
+    const confirmedPlayers = confirmedIdsByMatch[match.id] ?? new Set<string>();
+    const validVotes = (votesByMatch[match.id] ?? []).filter(
+      (vote) =>
+        confirmedPlayers.has(vote.voterPlayerId) &&
+        confirmedPlayers.has(vote.targetPlayerId),
+    );
+    const breakdown = calculateMatchMvpBreakdown({ votes: validVotes });
+    return sum + (breakdown.awardPointsByPlayerId[playerId] ?? 0);
+  }, 0);
+  const playerStats = snapshot.matchStats.filter(
+    (item) =>
+      item.playerId === playerId &&
+      matchIds.has(item.matchId) &&
+      item.played &&
+      confirmedIdsByMatch[item.matchId]?.has(playerId),
+  );
+
+  return buildPlayerComputedStatsFromSource({
+    matches,
+    playerStats,
+    mvpAwards,
+  });
+}
+
+export function getPlayerTotalStats(
+  snapshot: AppSnapshot,
+  player: Player,
+  filters?: StatsFilters,
+) {
+  return getDesiredTotalsFromManualAdjustments(
+    getPlayerComputedStats(snapshot, player.teamId, player.id, filters),
+    getPlayerManualAdjustments(player),
+  );
+}
+
 function buildConfirmedIdsByMatch(snapshot: AppSnapshot, matchIds: Set<string>) {
   return snapshot.attendance.reduce<Record<string, Set<string>>>((acc, item) => {
     if (!matchIds.has(item.matchId) || item.status !== 'confirmed') {
@@ -388,23 +548,26 @@ export function buildRatingSummary(
         continue;
       }
 
-      const resolved = resolveCriterionDisplaySnapshotItem({
-        criterionId,
-        criterionSnapshot: normalizedRating.criteriaSnapshot[criterionId],
-        currentCriteria,
-      });
-      const currentBucket = criteriaValues.get(resolved.displayKey) ?? {
+      const snapshot = normalizedRating.criteriaSnapshot[criterionId];
+
+      if (!snapshot) {
+        continue;
+      }
+
+      // Preserve the original snapshot id so active criteria and historical criteria
+      // never get merged just because they share the same label.
+      const currentBucket = criteriaValues.get(criterionId) ?? {
         rawValues: [],
         adjustedValues: [],
-        snapshot: resolved.snapshot,
+        snapshot,
       };
 
       currentBucket.rawValues.push(value);
       currentBucket.adjustedValues.push(
-        adjustCriterionScore(value, resolved.snapshot.type),
+        adjustCriterionScore(value, snapshot.type),
       );
-      currentBucket.snapshot = resolved.snapshot;
-      criteriaValues.set(resolved.displayKey, currentBucket);
+      currentBucket.snapshot = snapshot;
+      criteriaValues.set(criterionId, currentBucket);
     }
   }
 
@@ -486,18 +649,8 @@ export function buildPlayerAggregates(
   }, {});
 
   return players.flatMap<PlayerAggregateStats>((player) => {
-    const normalizedManualStats = normalizeManualStats(player.manualStats);
-    const manualStats = includeManualStats
-      ? normalizedManualStats
-      : {
-          matches: 0,
-          goals: 0,
-          assists: 0,
-          wins: 0,
-          draws: 0,
-          losses: 0,
-          mvps: 0,
-        };
+    const normalizedManualStats = getPlayerManualAdjustments(player);
+    const manualStats = includeManualStats ? normalizedManualStats : createEmptyManualStats();
     const playerAttendance = snapshot.attendance.filter(
       (item) => item.playerId === player.id && matchIds.has(item.matchId),
     );
@@ -520,7 +673,7 @@ export function buildPlayerAggregates(
       votesReceived: 0,
       awards: 0,
     };
-    const hasManualHistory = Object.values(normalizedManualStats).some((value) => value > 0);
+    const hasManualHistory = Object.values(normalizedManualStats).some((value) => value !== 0);
     const hasFilteredHistory =
       playerAttendance.length > 0 ||
       playerStats.length > 0 ||
@@ -542,28 +695,20 @@ export function buildPlayerAggregates(
       return [];
     }
 
-    const realGames = playerStats.length;
-    const realGoals = playerStats.reduce((sum, item) => sum + item.goals, 0);
-    const realAssists = playerStats.reduce((sum, item) => sum + item.assists, 0);
-    const realWins = playerStats.filter((item) => {
-      const match = matches.find((entry) => entry.id === item.matchId);
-      return match?.scoreboard?.result === 'win';
-    }).length;
-    const realDraws = playerStats.filter((item) => {
-      const match = matches.find((entry) => entry.id === item.matchId);
-      return match?.scoreboard?.result === 'draw';
-    }).length;
-    const realLosses = playerStats.filter((item) => {
-      const match = matches.find((entry) => entry.id === item.matchId);
-      return match?.scoreboard?.result === 'loss';
-    }).length;
-    const games = manualStats.matches + realGames;
-    const goals = manualStats.goals + realGoals;
-    const assists = manualStats.assists + realAssists;
-    const wins = manualStats.wins + realWins;
-    const draws = manualStats.draws + realDraws;
-    const losses = manualStats.losses + realLosses;
-    const mvpAwards = round(manualStats.mvps + mvpStats.awards, 2);
+    const computedStats = buildPlayerComputedStatsFromSource({
+      matches,
+      playerStats,
+      mvpAwards: mvpStats.awards,
+    });
+    const totalStats = getDesiredTotalsFromManualAdjustments(computedStats, manualStats);
+    const games = totalStats.matches;
+    const goals = totalStats.goals;
+    const assists = totalStats.assists;
+    const wins = totalStats.wins;
+    const draws = totalStats.draws;
+    const losses = totalStats.losses;
+    const mvpAwards = round(totalStats.mvps, 2);
+    const manualHistoryIncluded = includeManualStats && hasManualHistory;
 
     return [{
       player,
@@ -594,6 +739,8 @@ export function buildPlayerAggregates(
       criteriaAdjustedAverages: ratingSummary.criteriaAdjustedAverages,
       criteriaRatingCounts: ratingSummary.criteriaCounts,
       criteriaSnapshotById: ratingSummary.criteriaSnapshotById,
+      manualHistory: manualStats,
+      manualHistoryIncluded,
       hasHistory: hasManualHistory || hasFilteredHistory,
       isActive,
     }];
@@ -660,6 +807,7 @@ export function buildPlayerMetricSubtitle(
   metric: StatsSortMetric,
   item: PlayerAggregateStats,
 ) {
+  const manualHistorySuffix = item.manualHistoryIncluded ? ' - inclui correção manual' : '';
   const criterionId = getCriterionIdFromMetric(metric);
 
   if (criterionId) {
@@ -678,25 +826,25 @@ export function buildPlayerMetricSubtitle(
 
   switch (metric) {
     case 'goals':
-      return `${formatPlayerMetricValue('games', item.games)} jogo(s) - ${PLAYER_STATS_LABELS.goalsPerGame} ${formatPlayerMetricValue('goalsPerGame', item.goalsPerGame)}`;
+      return `${formatPlayerMetricValue('games', item.games)} jogo(s) - ${PLAYER_STATS_LABELS.goalsPerGame} ${formatPlayerMetricValue('goalsPerGame', item.goalsPerGame)}${manualHistorySuffix}`;
     case 'assists':
-      return `${formatPlayerMetricValue('games', item.games)} jogo(s) - ${PLAYER_STATS_LABELS.assistsPerGame} ${formatPlayerMetricValue('assistsPerGame', item.assistsPerGame)}`;
+      return `${formatPlayerMetricValue('games', item.games)} jogo(s) - ${PLAYER_STATS_LABELS.assistsPerGame} ${formatPlayerMetricValue('assistsPerGame', item.assistsPerGame)}${manualHistorySuffix}`;
     case 'goalParticipations':
-      return `${formatPlayerMetricValue('goals', item.goals)} ${PLAYER_STATS_LABELS.goals.toLowerCase()} + ${formatPlayerMetricValue('assists', item.assists)} ${PLAYER_STATS_LABELS.assists.toLowerCase()}`;
+      return `${formatPlayerMetricValue('goals', item.goals)} ${PLAYER_STATS_LABELS.goals.toLowerCase()} + ${formatPlayerMetricValue('assists', item.assists)} ${PLAYER_STATS_LABELS.assists.toLowerCase()}${manualHistorySuffix}`;
     case 'participationsPerGame':
-      return `${formatPlayerMetricValue('games', item.games)} jogo(s) - ${PLAYER_STATS_LABELS.participationsPerGame} ${formatPlayerMetricValue('participationsPerGame', item.participationsPerGame)}`;
+      return `${formatPlayerMetricValue('games', item.games)} jogo(s) - ${PLAYER_STATS_LABELS.participationsPerGame} ${formatPlayerMetricValue('participationsPerGame', item.participationsPerGame)}${manualHistorySuffix}`;
     case 'avgRating':
       return `${formatStatNumber(item.totalRatingsReceived, 0)} avaliação(ões)`;
     case 'mvpAwards':
-      return `${formatPlayerMetricValue('mvpVotesReceived', item.mvpVotesReceived)} voto(s) recebidos`;
+      return `${formatPlayerMetricValue('mvpVotesReceived', item.mvpVotesReceived)} voto(s) recebidos${manualHistorySuffix}`;
     case 'mvpVotesReceived':
       return `${formatPlayerMetricValue('mvpAwards', item.mvpAwards)} ${PLAYER_STATS_LABELS.mvpAwards}`;
     case 'games':
       return `${formatPlayerMetricValue('presences', item.presences)} presenças confirmadas`;
     case 'presences':
-      return `${formatPlayerMetricValue('games', item.games)} jogo(s)`;
+      return `${formatPlayerMetricValue('games', item.games)} jogo(s)${manualHistorySuffix}`;
     default:
-      return `${formatPlayerMetricValue('games', item.games)} jogo(s)`;
+      return `${formatPlayerMetricValue('games', item.games)} jogo(s)${manualHistorySuffix}`;
   }
 }
 
@@ -705,16 +853,20 @@ export function buildPlayerStatsLabel(item: PlayerAggregateStats) {
 }
 
 export function buildPlayerProfileMetricCards(item: PlayerAggregateStats) {
+  const totalSourceHelper = item.manualHistoryIncluded
+    ? 'Calculado + correção manual'
+    : 'Só jogos encerrados';
+
   return [
     {
       label: PLAYER_STATS_LABELS.games,
       value: formatPlayerMetricValue('games', item.games),
-      helper: 'Total',
+      helper: totalSourceHelper,
     },
     {
       label: PLAYER_STATS_LABELS.goals,
       value: formatPlayerMetricValue('goals', item.goals),
-      helper: 'Marcados',
+      helper: totalSourceHelper,
     },
     {
       label: PLAYER_STATS_LABELS.assists,
@@ -734,7 +886,9 @@ export function buildPlayerProfileMetricCards(item: PlayerAggregateStats) {
     {
       label: PLAYER_STATS_LABELS.mvpAwards,
       value: formatPlayerMetricValue('mvpAwards', item.mvpAwards),
-      helper: `${formatPlayerMetricValue('mvpVotesReceived', item.mvpVotesReceived)} voto(s) recebidos`,
+      helper: item.manualHistoryIncluded
+        ? 'Calculado + correção manual'
+        : `${formatPlayerMetricValue('mvpVotesReceived', item.mvpVotesReceived)} voto(s) recebidos`,
     },
   ];
 }
@@ -799,6 +953,26 @@ export function getCriteriaSummaryEntries(summary: Pick<
     });
 }
 
+export function splitCriteriaSummaryEntries(
+  summary: Pick<
+    RatingSummary,
+    'criteriaAverages' | 'criteriaAdjustedAverages' | 'criteriaCounts' | 'criteriaSnapshotById'
+  >,
+  activeCriteria: TeamRatingCriterion[],
+) {
+  const activeCriteriaIds = new Set(
+    activeCriteria
+      .filter((criterion) => criterion.active !== false)
+      .map((criterion) => criterion.id),
+  );
+  const entries = getCriteriaSummaryEntries(summary);
+
+  return {
+    active: entries.filter((entry) => activeCriteriaIds.has(entry.criterionId)),
+    legacy: entries.filter((entry) => !activeCriteriaIds.has(entry.criterionId)),
+  };
+}
+
 export function buildRankingByMetric(
   playerStats: PlayerAggregateStats[],
   metric: StatsSortMetric,
@@ -841,14 +1015,10 @@ export function buildTeamAggregates(
     (sum, match) => sum + (match.scoreboard?.opponent ?? 0),
     0,
   );
-  const totalMatches = Math.max(
-    matches.length,
-    ...teamPlayerStats.map((item) => item.wins + item.draws + item.losses),
-    0,
-  );
-  const totalWins = Math.max(wins, ...teamPlayerStats.map((item) => item.wins), 0);
-  const totalDraws = Math.max(draws, ...teamPlayerStats.map((item) => item.draws), 0);
-  const totalLosses = Math.max(losses, ...teamPlayerStats.map((item) => item.losses), 0);
+  const totalMatches = matches.length;
+  const totalWins = wins;
+  const totalDraws = draws;
+  const totalLosses = losses;
 
   const byGoals = sortPlayerAggregatesByMetric(teamPlayerStats, 'goals');
   const byAssists = sortPlayerAggregatesByMetric(teamPlayerStats, 'assists');

@@ -1,37 +1,38 @@
 import { useMemo, useState } from 'react';
-import { Alert, Clipboard, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Clipboard, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { MetricCard } from '@/components/cards/MetricCard';
-import { PlayerCard } from '@/components/cards/PlayerCard';
+import { PlayerCard, type PlayerCardSummaryItem } from '@/components/cards/PlayerCard';
+import { PlayerAchievementBadge } from '@/components/player/PlayerAchievementBadge';
+import { PresentationVideoCard } from '@/components/video/PresentationVideoCard';
 import { AppButton } from '@/components/ui/AppButton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Pill } from '@/components/ui/Pill';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
-import {
-  FOOT_LABELS,
-  PLAYER_STATUS_LABELS,
-  POSITION_LABELS,
-} from '@/constants/options';
+import { FOOT_LABELS, PLAYER_STATUS_LABELS, POSITION_LABELS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatMatchDate, sortMatchesByDate } from '@/lib/date';
+import { buildPlayerAchievements, getTopPlayerAchievements } from '@/lib/player-achievements';
 import {
   buildPlayerAggregates,
   buildPlayerProfileMetricCards,
   buildRatingSummary,
   formatStatNumber,
-  getCriteriaSummaryEntries,
   isDateWithinStatsPeriod,
+  splitCriteriaSummaryEntries,
 } from '@/lib/stats';
 import { useAppStore } from '@/store/app-store';
 import {
-  selectCanManagePlayers,
   findPlayerById,
+  selectActiveTeamRatingCriteria,
+  selectCanManagePlayers,
   selectCanManageTeam,
   selectCurrentPlayer,
   selectCurrentTeam,
+  selectCurrentTeamRatingCriteria,
 } from '@/store/selectors';
 import type { Match, PlayerRating } from '@/types/domain';
 
@@ -94,6 +95,7 @@ function buildPlayerRatingTrend(
     acc[rating.matchId] = [...(acc[rating.matchId] ?? []), rating];
     return acc;
   }, {});
+
   const matchAverages = Object.entries(ratingsByMatchId)
     .map(([matchId, matchRatings]) => {
       const match = matchById.get(matchId);
@@ -128,37 +130,66 @@ function buildPlayerRatingTrend(
   const previousAverage = average(previousSlice.map((item) => item.overall));
   const delta = Number((recentAverage - previousAverage).toFixed(1));
 
-    return {
-      recentAverage: Number(recentAverage.toFixed(1)),
-      previousAverage: Number(previousAverage.toFixed(1)),
-      delta,
-      latestMatchLabel: recentSlice[recentSlice.length - 1]
-        ? formatMatchDate(recentSlice[recentSlice.length - 1].match)
-        : '',
-    };
-  }
+  return {
+    recentAverage: Number(recentAverage.toFixed(1)),
+    previousAverage: Number(previousAverage.toFixed(1)),
+    delta,
+    latestMatchLabel: recentSlice[recentSlice.length - 1]
+      ? formatMatchDate(recentSlice[recentSlice.length - 1].match)
+      : '',
+  };
+}
 
 export default function PlayerDetailsScreen() {
   const { playerId } = useLocalSearchParams<{ playerId: string }>();
+  const isWeb = Platform.OS === 'web';
   const theme = useAppTheme();
   const snapshot = useAppStore((state) => state.snapshot);
   const team = useAppStore(selectCurrentTeam);
   const canManagePlayers = useAppStore(selectCanManagePlayers);
   const canManageTeam = useAppStore(selectCanManageTeam);
   const currentPlayer = useAppStore(selectCurrentPlayer);
+  const teamCriteria = useAppStore(selectCurrentTeamRatingCriteria);
+  const activeTeamCriteria = useAppStore(selectActiveTeamRatingCriteria);
   const player = useAppStore((state) => findPlayerById(state, String(playerId)));
   const removePlayer = useAppStore((state) => state.removePlayer);
   const reactivatePlayer = useAppStore((state) => state.reactivatePlayer);
   const [filterMode, setFilterMode] = useState<RatingFilterMode>('all');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [showLegacyCriteria, setShowLegacyCriteria] = useState(false);
+
+  const playerAchievements = useMemo(
+    () =>
+      team && player
+        ? buildPlayerAchievements({
+            player,
+            matches: snapshot.matches,
+            attendance: snapshot.attendance,
+            matchStats: snapshot.matchStats,
+            mvpVotes: snapshot.mvpVotes,
+            ratings: snapshot.playerRatings,
+            ratingCriteria: teamCriteria,
+          })
+        : [],
+    [
+      player,
+      snapshot.attendance,
+      snapshot.matchStats,
+      snapshot.matches,
+      snapshot.mvpVotes,
+      snapshot.playerRatings,
+      team,
+      teamCriteria,
+    ],
+  );
 
   if (!team || !player) {
     return (
       <Screen>
         <EmptyState
-          title="Jogador nao encontrado"
-          description="O cadastro que voce tentou abrir nao existe mais."
+          title="Jogador não encontrado"
+          description="O cadastro que você tentou abrir não existe mais."
           actionLabel="Voltar"
           onAction={() => router.back()}
         />
@@ -169,49 +200,57 @@ export default function PlayerDetailsScreen() {
   const currentTeam = team;
   const currentPlayerRecord = player;
   const canSelfAccess = currentPlayer?.id === currentPlayerRecord.id;
+  const canEditPlayer = canManagePlayers || canSelfAccess;
 
-  if (!canManagePlayers && !canSelfAccess) {
-    return (
-      <Screen>
-        <EmptyState
-          title="Acesso restrito"
-          description="Voce so pode abrir o proprio perfil de jogador."
-        />
-      </Screen>
-    );
-  }
-
-  const aggregate = buildPlayerAggregates(snapshot, currentTeam.id).find(
-    (item) => item.player.id === currentPlayerRecord.id,
+  const aggregate = useMemo(
+    () =>
+      buildPlayerAggregates(snapshot, currentTeam.id).find(
+        (item) => item.player.id === currentPlayerRecord.id,
+      ) ?? null,
+    [currentPlayerRecord.id, currentTeam.id, snapshot],
   );
-  const teamFinishedMatches = sortMatchesByDate(
-    snapshot.matches.filter(
-      (match) => match.teamId === currentTeam.id && match.status === 'finished',
-    ),
+  const teamFinishedMatches = useMemo(
+    () =>
+      sortMatchesByDate(
+        snapshot.matches.filter(
+          (match) => match.teamId === currentTeam.id && match.status === 'finished',
+        ),
+      ),
+    [currentTeam.id, snapshot.matches],
   );
   const finishedMatchById = new Map(teamFinishedMatches.map((match) => [match.id, match]));
   const allPlayerRatings = snapshot.playerRatings.filter(
     (rating) =>
       rating.targetPlayerId === currentPlayerRecord.id && finishedMatchById.has(rating.matchId),
   );
-  const availableYears = [...new Set(
-    allPlayerRatings.map((rating) => getDateParts(finishedMatchById.get(rating.matchId)?.date ?? '').year),
-  )]
+  const availableYears = [
+    ...new Set(
+      allPlayerRatings.map(
+        (rating) => getDateParts(finishedMatchById.get(rating.matchId)?.date ?? '').year,
+      ),
+    ),
+  ]
     .filter((year) => year > 0)
     .sort((left, right) => right - left);
   const resolvedYear = availableYears.includes(selectedYear)
     ? selectedYear
     : availableYears[0] ?? new Date().getFullYear();
-  const availableMonths = [...new Set(
-    allPlayerRatings
-      .filter((rating) => getDateParts(finishedMatchById.get(rating.matchId)?.date ?? '').year === resolvedYear)
-      .map((rating) => getDateParts(finishedMatchById.get(rating.matchId)?.date ?? '').month),
-  )]
+  const availableMonths = [
+    ...new Set(
+      allPlayerRatings
+        .filter(
+          (rating) =>
+            getDateParts(finishedMatchById.get(rating.matchId)?.date ?? '').year === resolvedYear,
+        )
+        .map((rating) => getDateParts(finishedMatchById.get(rating.matchId)?.date ?? '').month),
+    ),
+  ]
     .filter((month) => month > 0)
     .sort((left, right) => left - right);
   const resolvedMonth = availableMonths.includes(selectedMonth)
     ? selectedMonth
     : availableMonths[0] ?? new Date().getMonth() + 1;
+
   const filteredRatings = allPlayerRatings.filter((rating) => {
     const match = finishedMatchById.get(rating.matchId);
 
@@ -240,16 +279,27 @@ export default function PlayerDetailsScreen() {
         return true;
     }
   });
-  const ratingSummary = buildRatingSummary(filteredRatings, snapshot.ratingCriteria);
+
+  const ratingSummary = buildRatingSummary(filteredRatings, teamCriteria);
   const aggregateMetricCards = aggregate ? buildPlayerProfileMetricCards(aggregate) : [];
-  const criteriaEntries = getCriteriaSummaryEntries(ratingSummary);
-  const bestCriterion = [...criteriaEntries].sort(
-    (left, right) => right.adjustedAverage - left.adjustedAverage,
-  )[0] ?? null;
-  const improvementCriterion = [...criteriaEntries].sort(
-    (left, right) => left.adjustedAverage - right.adjustedAverage,
-  )[0] ?? null;
-  const trend = buildPlayerRatingTrend(filteredRatings, finishedMatchById, snapshot.ratingCriteria);
+  const criteriaSections = splitCriteriaSummaryEntries(ratingSummary, activeTeamCriteria);
+  const activeCriteriaEntries = criteriaSections.active;
+  const legacyCriteriaEntries = criteriaSections.legacy;
+  const bestCriterion =
+    [...activeCriteriaEntries].sort((left, right) => right.adjustedAverage - left.adjustedAverage)[0] ??
+    null;
+  const improvementCriterion =
+    [...activeCriteriaEntries].sort((left, right) => left.adjustedAverage - right.adjustedAverage)[0] ??
+    null;
+  const trend = buildPlayerRatingTrend(filteredRatings, finishedMatchById, teamCriteria);
+  const heroAchievements = getTopPlayerAchievements(playerAchievements, 3);
+  const momentAchievements = getTopPlayerAchievements(playerAchievements, 6);
+  const heroSummaryItems: PlayerCardSummaryItem[] = [
+    { label: 'Gols', value: aggregate ? formatStatNumber(aggregate.goals, 0) : '0' },
+    { label: 'Assist.', value: aggregate ? formatStatNumber(aggregate.assists, 0) : '0' },
+    { label: 'MVPs', value: aggregate ? formatStatNumber(aggregate.mvpAwards, 2) : '0' },
+    { label: 'Média', value: aggregate ? formatStatNumber(aggregate.avgRating, 1) : '0' },
+  ];
   const linkLabel = currentPlayerRecord.linkedUserId
     ? 'Conta vinculada'
     : currentPlayerRecord.linkedEmail
@@ -257,20 +307,20 @@ export default function PlayerDetailsScreen() {
       : 'Sem conta vinculada';
 
   function handleCopyInvite() {
-    Clipboard.setString(
-      `Entre no time ${currentTeam.name} usando o codigo ${currentTeam.inviteCode}.`,
-    );
+    Clipboard.setString(`Entre no time ${currentTeam.name} usando o código ${currentTeam.inviteCode}.`);
     Alert.alert('Convite copiado', 'A mensagem de convite foi copiada para enviar ao jogador.');
   }
 
   function handleRemovePlayer() {
     Alert.alert(
-      'Remover jogador',
-      'Esse jogador vai sair do elenco ativo e nao aparecera mais nas proximas partidas do time.',
+      'Inativar jogador',
+      currentPlayerRecord.linkedUserId
+        ? 'Este jogador não aparecerá como ativo no elenco, mas o histórico será preservado. Se houver conta vinculada, o acesso como jogador sai do elenco ativo; administradores continuam com a gestão.'
+        : 'Este jogador não aparecerá como ativo no elenco, mas o histórico será preservado.',
       [
-        { text: 'Voltar', style: 'cancel' },
+        { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Remover jogador',
+          text: 'Inativar jogador',
           style: 'destructive',
           onPress: () => {
             void (async () => {
@@ -279,7 +329,7 @@ export default function PlayerDetailsScreen() {
                 router.replace('/players');
               } catch (error) {
                 Alert.alert(
-                  'Nao foi possivel remover',
+                  'Não foi possível inativar',
                   error instanceof Error ? error.message : 'Tente novamente.',
                 );
               }
@@ -293,7 +343,7 @@ export default function PlayerDetailsScreen() {
   function handleReactivatePlayer() {
     Alert.alert(
       'Reativar jogador',
-      'Esse cadastro volta ao elenco ativo, recupera o vinculo com a conta quando existir e entra novamente nas partidas abertas.',
+      'Esse cadastro volta ao elenco ativo, preserva o histórico e entra novamente nas partidas abertas do time.',
       [
         { text: 'Voltar', style: 'cancel' },
         {
@@ -305,7 +355,7 @@ export default function PlayerDetailsScreen() {
                 Alert.alert('Jogador reativado', 'O cadastro voltou ao elenco ativo.');
               } catch (error) {
                 Alert.alert(
-                  'Nao foi possivel reativar',
+                  'Não foi possível reativar',
                   error instanceof Error ? error.message : 'Tente novamente.',
                 );
               }
@@ -318,31 +368,77 @@ export default function PlayerDetailsScreen() {
 
   return (
     <Screen>
-      <SectionHeader
-        title={`#${currentPlayerRecord.jerseyNumber} ${currentPlayerRecord.nickname}`}
-        subtitle={currentPlayerRecord.fullName}
-        actionLabel="Editar"
-        onAction={() => router.push(`/players/${currentPlayerRecord.id}/edit`)}
+      {!isWeb ? (
+        <SectionHeader
+          title={`#${currentPlayerRecord.jerseyNumber} ${currentPlayerRecord.nickname}`}
+          subtitle={currentPlayerRecord.fullName}
+          actionLabel={canEditPlayer ? 'Editar' : undefined}
+          onAction={
+            canEditPlayer
+              ? () => router.push(`/players/${currentPlayerRecord.id}/edit`)
+              : undefined
+          }
+        />
+      ) : null}
+
+      <PlayerCard
+        player={currentPlayerRecord}
+        variant="profile"
+        achievements={heroAchievements}
+        summaryItems={heroSummaryItems}
       />
 
-      <PlayerCard player={currentPlayerRecord} />
+      {canManageTeam || canManagePlayers || (!isWeb && canEditPlayer) ? (
+        <View style={styles.buttonRow}>
+          {!isWeb && canEditPlayer ? (
+            <AppButton
+              label={canManagePlayers ? 'Editar jogador' : 'Editar meu perfil'}
+              onPress={() => router.push(`/players/${currentPlayerRecord.id}/edit`)}
+            />
+          ) : null}
+          {canManageTeam ? (
+            <AppButton label="Copiar convite" variant="secondary" onPress={handleCopyInvite} />
+          ) : null}
+          {canManagePlayers ? (
+            currentPlayerRecord.status === 'inactive' || currentPlayerRecord.deletedAt ? (
+              <AppButton label="Reativar jogador" onPress={handleReactivatePlayer} />
+            ) : (
+              <AppButton label="Inativar jogador" variant="danger" onPress={handleRemovePlayer} />
+            )
+          ) : null}
+        </View>
+      ) : null}
 
-      <View style={styles.buttonRow}>
-        <AppButton
-          label={canManagePlayers ? 'Editar jogador' : 'Editar meu perfil'}
-          onPress={() => router.push(`/players/${currentPlayerRecord.id}/edit`)}
+      {currentPlayerRecord.presentationVideoUrl ? (
+        <PresentationVideoCard
+          title="Vídeo de apresentação"
+          description="Um vídeo curto para apresentar o atleta e reforçar a identidade do elenco."
+          videoUrl={currentPlayerRecord.presentationVideoUrl}
+          posterUrl={currentPlayerRecord.photoUrl ?? currentTeam.logoUrl ?? null}
+          accentColors={[currentTeam.primaryColor, currentTeam.secondaryColor]}
         />
-        {canManageTeam ? (
-          <AppButton label="Copiar convite" variant="secondary" onPress={handleCopyInvite} />
-        ) : null}
-        {canManagePlayers ? (
-          currentPlayerRecord.status === 'inactive' || currentPlayerRecord.deletedAt ? (
-            <AppButton label="Reativar jogador" onPress={handleReactivatePlayer} />
-          ) : (
-            <AppButton label="Remover jogador" variant="danger" onPress={handleRemovePlayer} />
-          )
-        ) : null}
-      </View>
+      ) : null}
+
+      {momentAchievements.length > 0 ? (
+        <View
+          style={[
+            styles.infoCard,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.border,
+            },
+          ]}>
+          <SectionHeader
+            title="Momento do jogador"
+            subtitle="Conquistas dinâmicas baseadas no desempenho recente e no compromisso"
+          />
+          <View style={styles.achievementGrid}>
+            {momentAchievements.map((achievement) => (
+              <PlayerAchievementBadge key={achievement.id} achievement={achievement} variant="detail" />
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       <View
         style={[
@@ -352,7 +448,7 @@ export default function PlayerDetailsScreen() {
             borderColor: theme.colors.border,
           },
         ]}>
-        <Text style={[styles.infoTitle, { color: theme.colors.text }]}>Resumo do cadastro</Text>
+        <Text style={[styles.infoTitle, { color: theme.colors.text }]}>Ficha do atleta</Text>
         <View style={styles.pillWrap}>
           <Pill label={PLAYER_STATUS_LABELS[currentPlayerRecord.status]} color={theme.colors.secondary} />
           <Pill label={POSITION_LABELS[currentPlayerRecord.primaryPosition]} color={theme.colors.primary} />
@@ -360,16 +456,18 @@ export default function PlayerDetailsScreen() {
         </View>
         <Text style={[styles.meta, { color: theme.colors.textMuted }]}>{linkLabel}</Text>
         <Text style={[styles.meta, { color: theme.colors.textMuted }]}>
-          Posicoes secundarias:{' '}
+          Também joga:{' '}
           {currentPlayerRecord.secondaryPositions.length > 0
-            ? currentPlayerRecord.secondaryPositions.map((position) => POSITION_LABELS[position]).join(', ')
-            : 'Nao informadas'}
+            ? currentPlayerRecord.secondaryPositions
+                .map((position) => POSITION_LABELS[position])
+                .join(', ')
+            : 'Não informadas'}
         </Text>
         <Text style={[styles.meta, { color: theme.colors.textMuted }]}>
-          Posicao preferida:{' '}
+          Se sente melhor em:{' '}
           {currentPlayerRecord.preferredPosition
             ? POSITION_LABELS[currentPlayerRecord.preferredPosition]
-            : 'Nao informada'}
+            : 'Não informada'}
         </Text>
         {currentPlayerRecord.bio ? (
           <Text style={[styles.bio, { color: theme.colors.textMuted }]}>{currentPlayerRecord.bio}</Text>
@@ -392,12 +490,12 @@ export default function PlayerDetailsScreen() {
           </View>
           <View style={styles.metricsRow}>
             <MetricCard
-              label={aggregateMetricCards[2]?.label ?? 'Assistências'}
+                label={aggregateMetricCards[2]?.label ?? 'Assistências'}
               value={aggregateMetricCards[2]?.value ?? '0'}
               helper={aggregateMetricCards[2]?.helper}
             />
             <MetricCard
-              label={aggregateMetricCards[3]?.label ?? 'Participações em gol'}
+                label={aggregateMetricCards[3]?.label ?? 'Participações em gol'}
               value={aggregateMetricCards[3]?.value ?? '0'}
               helper={aggregateMetricCards[3]?.helper}
             />
@@ -414,6 +512,25 @@ export default function PlayerDetailsScreen() {
               helper={aggregateMetricCards[5]?.helper}
             />
           </View>
+
+          {aggregate.manualHistoryIncluded ? (
+            <View
+              style={[
+                styles.infoCard,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.border,
+                },
+              ]}>
+              <Text style={[styles.infoTitle, { color: theme.colors.text }]}>
+                Correção de estatísticas aplicada
+              </Text>
+              <Text style={[styles.meta, { color: theme.colors.textMuted }]}>
+                Os totais gerais deste jogador consideram correções manuais somadas aos números
+                calculados pelo app. As partidas oficiais continuam intactas.
+              </Text>
+            </View>
+          ) : null}
         </>
       ) : null}
 
@@ -427,16 +544,16 @@ export default function PlayerDetailsScreen() {
         ]}>
         <SectionHeader
           title="Notas recebidas"
-          subtitle="Resumo por criterio no recorte selecionado"
+          subtitle="Resumo por critério no recorte selecionado"
         />
 
         <View style={styles.filterGroup}>
           <View style={styles.filterRow}>
             <FilterChip label="Geral" selected={filterMode === 'all'} onPress={() => setFilterMode('all')} />
             <FilterChip label="Ano" selected={filterMode === 'year'} onPress={() => setFilterMode('year')} />
-            <FilterChip label="Mes" selected={filterMode === 'month'} onPress={() => setFilterMode('month')} />
+            <FilterChip label="Mês" selected={filterMode === 'month'} onPress={() => setFilterMode('month')} />
             <FilterChip
-              label="Ult. 5 jogos"
+              label="Últ. 5 jogos"
               selected={filterMode === 'last-games'}
               onPress={() => setFilterMode('last-games')}
             />
@@ -461,7 +578,7 @@ export default function PlayerDetailsScreen() {
 
         {filterMode === 'month' ? (
           <View style={styles.filterGroup}>
-            <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Mes</Text>
+            <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Mês</Text>
             <View style={styles.filterRow}>
               {availableMonths.map((month) => (
                 <FilterChip
@@ -481,7 +598,7 @@ export default function PlayerDetailsScreen() {
               <MetricCard
                 label="Nota geral"
                 value={formatStatNumber(ratingSummary.overallAverage, 1)}
-                helper="nota geral"
+                helper="média do recorte"
               />
               <MetricCard
                 label="Avaliações"
@@ -499,7 +616,9 @@ export default function PlayerDetailsScreen() {
                     ? `${formatStatNumber(bestCriterion.average, 1)} - ${
                         bestCriterion.type === 'negative' ? 'alerta controlado' : 'destaque'
                       }`
-                    : 'Sem comparativo'
+                    : legacyCriteriaEntries.length > 0
+                      ? 'Use os critérios ativos abaixo'
+                      : 'Sem comparativo'
                 }
               />
               <MetricCard
@@ -512,7 +631,9 @@ export default function PlayerDetailsScreen() {
                           ? 'quanto menor, melhor'
                           : 'pode crescer'
                       }`
-                    : 'Sem comparativo'
+                    : legacyCriteriaEntries.length > 0
+                      ? 'Os critérios antigos ficaram separados'
+                      : 'Sem comparativo'
                 }
               />
             </View>
@@ -527,47 +648,121 @@ export default function PlayerDetailsScreen() {
                       : formatStatNumber(trend.delta, 1)
                     : '-'
                 }
-                helper={
-                  trend
-                    ? `ultimos jogos vs bloco anterior`
-                    : 'Pouco historico para comparar'
-                }
+                helper={trend ? 'últimos jogos vs bloco anterior' : 'Pouco histórico para comparar'}
               />
               <MetricCard
                 label="Último recorte"
                 value={trend ? formatStatNumber(trend.recentAverage, 1) : '-'}
-                helper={trend?.latestMatchLabel ? `até ${trend.latestMatchLabel}` : 'Sem data'}
+                helper={trend?.latestMatchLabel ? `ate ${trend.latestMatchLabel}` : 'Sem data'}
               />
             </View>
 
-            <View style={styles.criteriaGrid}>
-              {criteriaEntries.map((item) => (
-                <View
-                  key={item.criterionId}
+            {activeCriteriaEntries.length > 0 ? (
+              <View style={styles.criteriaSection}>
+                <Text style={[styles.criteriaSectionTitle, { color: theme.colors.text }]}>
+                  Critérios ativos do time
+                </Text>
+                <View style={styles.criteriaGrid}>
+                  {activeCriteriaEntries.map((item) => (
+                    <View
+                      key={item.criterionId}
+                      style={[
+                        styles.criteriaCard,
+                        {
+                          backgroundColor: theme.colors.backgroundElevated,
+                          borderColor: theme.colors.border,
+                        },
+                      ]}>
+                      <Text style={[styles.criteriaLabel, { color: theme.colors.text }]}>
+                        {item.label}
+                      </Text>
+                      <Text style={[styles.criteriaValue, { color: theme.colors.text }]}>
+                        {formatStatNumber(item.average, 1)}
+                      </Text>
+                      <Text style={[styles.criteriaMeta, { color: theme.colors.textMuted }]}>
+                        {item.count} avaliação(ões) -{' '}
+                        {item.type === 'negative' ? 'quanto menor, melhor' : 'quanto maior, melhor'}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : legacyCriteriaEntries.length > 0 ? (
+              <View
+                style={[
+                  styles.criteriaNoticeCard,
+                  {
+                    backgroundColor: theme.colors.backgroundElevated,
+                    borderColor: theme.colors.border,
+                  },
+                ]}>
+                <Text style={[styles.criteriaSectionTitle, { color: theme.colors.text }]}>
+                  Sem critérios ativos neste recorte
+                </Text>
+                <Text style={[styles.criteriaMeta, { color: theme.colors.textMuted }]}>
+                  As notas deste período existem apenas em critérios antigos. Abra o histórico
+                  abaixo para consultar o detalhe sem misturar com os critérios atuais do time.
+                </Text>
+              </View>
+            ) : null}
+
+            {legacyCriteriaEntries.length > 0 ? (
+              <View style={styles.criteriaSection}>
+                <Pressable
+                  onPress={() => setShowLegacyCriteria((current) => !current)}
                   style={[
-                    styles.criteriaCard,
+                    styles.legacyToggle,
                     {
                       backgroundColor: theme.colors.backgroundElevated,
                       borderColor: theme.colors.border,
                     },
                   ]}>
-                  <Text style={[styles.criteriaLabel, { color: theme.colors.text }]}>
-                    {item.label}
+                  <View style={styles.legacyToggleCopy}>
+                    <Text style={[styles.criteriaSectionTitle, { color: theme.colors.text }]}>
+                      Histórico de critérios antigos
+                    </Text>
+                    <Text style={[styles.criteriaMeta, { color: theme.colors.textMuted }]}>
+                      {legacyCriteriaEntries.length} critério(s) fora dos ativos atuais do time.
+                    </Text>
+                  </View>
+                  <Text style={[styles.legacyToggleAction, { color: theme.colors.primary }]}>
+                    {showLegacyCriteria ? 'Ocultar critérios antigos' : 'Ver critérios antigos'}
                   </Text>
-                  <Text style={[styles.criteriaValue, { color: theme.colors.text }]}>
-                    {formatStatNumber(item.average, 1)}
-                  </Text>
-                  <Text style={[styles.criteriaMeta, { color: theme.colors.textMuted }]}>
-                    {item.count} avaliacao(oes) -{' '}
-                    {item.type === 'negative' ? 'quanto menor, melhor' : 'quanto maior, melhor'}
-                  </Text>
-                </View>
-              ))}
-            </View>
+                </Pressable>
+
+                {showLegacyCriteria ? (
+                  <View style={styles.criteriaGrid}>
+                    {legacyCriteriaEntries.map((item) => (
+                      <View
+                        key={item.criterionId}
+                        style={[
+                          styles.criteriaCard,
+                          styles.legacyCriteriaCard,
+                          {
+                            backgroundColor: theme.colors.backgroundElevated,
+                            borderColor: theme.colors.border,
+                          },
+                        ]}>
+                        <Text style={[styles.criteriaLabel, { color: theme.colors.text }]}>
+                          {item.label}
+                        </Text>
+                        <Text style={[styles.criteriaValue, { color: theme.colors.text }]}>
+                          {formatStatNumber(item.average, 1)}
+                        </Text>
+                        <Text style={[styles.criteriaMeta, { color: theme.colors.textMuted }]}>
+                          Critério antigo - {item.count} avaliação(ões) -{' '}
+                          {item.type === 'negative' ? 'quanto menor, melhor' : 'quanto maior, melhor'}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
           </>
         ) : (
           <Text style={[styles.meta, { color: theme.colors.textMuted }]}>
-            Este jogador ainda nao recebeu avaliacoes no recorte selecionado.
+            Este jogador ainda não recebeu avaliações no recorte selecionado.
           </Text>
         )}
       </View>
@@ -618,10 +813,27 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12,
   },
+  achievementGrid: {
+    gap: 12,
+  },
   criteriaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+  },
+  criteriaSection: {
+    gap: 12,
+  },
+  criteriaSectionTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  criteriaNoticeCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    gap: 8,
   },
   criteriaCard: {
     borderWidth: 1,
@@ -629,6 +841,9 @@ const styles = StyleSheet.create({
     padding: 14,
     minWidth: 150,
     gap: 6,
+  },
+  legacyCriteriaCard: {
+    opacity: 0.94,
   },
   criteriaLabel: {
     fontFamily: fonts.heading,
@@ -644,6 +859,20 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 12,
     lineHeight: 18,
+  },
+  legacyToggle: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    gap: 10,
+  },
+  legacyToggleCopy: {
+    gap: 4,
+  },
+  legacyToggleAction: {
+    fontFamily: fonts.heading,
+    fontSize: 13,
+    fontWeight: '700',
   },
   filterGroup: {
     gap: 8,

@@ -26,7 +26,7 @@ export async function openExternalUrl(url: string) {
     const protocol = new URL(browserUrl).protocol;
 
     if (!ALLOWED_PROTOCOLS.has(protocol)) {
-      throw new Error('Esse link nao pode ser aberto no navegador.');
+      throw new Error('Esse link não pode ser aberto no navegador.');
     }
 
     if (typeof window !== 'undefined') {
@@ -38,7 +38,7 @@ export async function openExternalUrl(url: string) {
 
   const supported = await Linking.canOpenURL(normalizedUrl);
   if (!supported) {
-    throw new Error('Esse link nao pode ser aberto neste aparelho.');
+    throw new Error('Esse link não pode ser aberto neste aparelho.');
   }
 
   await Linking.openURL(normalizedUrl);

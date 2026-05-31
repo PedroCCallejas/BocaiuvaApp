@@ -6,7 +6,6 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { fonts } from '@/constants/theme';
 import { setupNotificationHandler } from '@/services/notifications';
 import { useAppStore } from '@/store/app-store';
 
@@ -36,13 +35,7 @@ export default function RootLayout() {
       <StatusBar style="light" />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: '#08150C' },
-          headerTintColor: '#F3F7F3',
-          headerShadowVisible: false,
-          headerTitleStyle: {
-            fontFamily: fonts.heading,
-            fontWeight: '800',
-          },
+          headerShown: false,
           contentStyle: {
             backgroundColor: '#051108',
           },

@@ -31,14 +31,14 @@ export default function TeamInviteScreen() {
 
   async function handleCopyInviteCode() {
     Clipboard.setString(currentTeam.inviteCode);
-    Alert.alert('Codigo copiado', 'O codigo do time foi copiado para a area de transferencia.');
+    Alert.alert('Código copiado', 'O código do time foi copiado para a área de transferência.');
   }
 
   async function handleCopyInviteMessage() {
     Clipboard.setString(
-      `Entre no time ${currentTeam.name} usando o codigo ${currentTeam.inviteCode}.`,
+      `Entre no time ${currentTeam.name} usando o código ${currentTeam.inviteCode}.`,
     );
-    Alert.alert('Mensagem copiada', 'O texto do convite foi copiado para voce enviar ao jogador.');
+    Alert.alert('Mensagem copiada', 'O texto do convite foi copiado para você enviar ao jogador.');
   }
 
   async function handleRegenerateInviteCode() {
@@ -48,12 +48,12 @@ export default function TeamInviteScreen() {
       const nextInviteCode = await regenerateTeamInviteCode(currentTeam.id);
       Clipboard.setString(nextInviteCode);
       Alert.alert(
-        'Novo codigo gerado',
-        'O codigo antigo foi trocado e o novo codigo ja foi copiado.',
+        'Novo código gerado',
+        'O código antigo foi trocado e o novo código já foi copiado.',
       );
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel gerar um novo codigo',
+        'Não foi possível gerar um novo código',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     } finally {
@@ -66,7 +66,7 @@ export default function TeamInviteScreen() {
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Convidar jogadores</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          Compartilhe o codigo do time com o elenco. Se o e-mail do jogador ja estiver reservado, a conta sera vinculada automaticamente.
+          Compartilhe o código do time com o elenco. Se o e-mail do jogador já estiver reservado, a conta será vinculada automaticamente.
         </Text>
       </View>
 
@@ -78,15 +78,15 @@ export default function TeamInviteScreen() {
             borderColor: theme.colors.border,
           },
         ]}>
-        <Text style={[styles.codeLabel, { color: theme.colors.textMuted }]}>Codigo do time</Text>
+        <Text style={[styles.codeLabel, { color: theme.colors.textMuted }]}>Código do time</Text>
         <Text style={[styles.codeValue, { color: theme.colors.text }]}>{currentTeam.inviteCode}</Text>
         <Text style={[styles.codeHint, { color: theme.colors.textMuted }]}>
-          Use esse codigo para colocar novos jogadores dentro de {currentTeam.name}.
+          Use esse código para colocar novos jogadores dentro de {currentTeam.name}.
         </Text>
       </View>
 
       <View style={styles.buttonGroup}>
-        <AppButton label="Copiar codigo" onPress={handleCopyInviteCode} fullWidth />
+        <AppButton label="Copiar código" onPress={handleCopyInviteCode} fullWidth />
         <AppButton
           label="Copiar mensagem"
           variant="secondary"
@@ -94,7 +94,7 @@ export default function TeamInviteScreen() {
           fullWidth
         />
         <AppButton
-          label="Gerar novo codigo"
+          label="Gerar novo código"
           variant="ghost"
           onPress={handleRegenerateInviteCode}
           loading={regenerating}

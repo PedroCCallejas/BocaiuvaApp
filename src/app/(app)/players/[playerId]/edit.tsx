@@ -1,19 +1,28 @@
+import { useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
-import { useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { PlayerForm } from '@/components/forms/PlayerForm';
+import { VideoUploadField } from '@/components/forms/VideoUploadField';
 import { AppButton } from '@/components/ui/AppButton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { getPlayerComputedStats } from '@/lib/stats';
 import { buildPlayerPhotoStoragePath, uploadImage } from '@/lib/uploadImage';
+import {
+  buildPlayerPresentationVideoStoragePath,
+  pickVideo,
+  uploadVideo,
+  type SelectedVideoAsset,
+} from '@/lib/uploadVideo';
 import { useAppStore } from '@/store/app-store';
 import {
   findPlayerById,
   selectCanManagePlayers,
+  selectCanManageTeam,
   selectCurrentPlayer,
   selectCurrentTeam,
 } from '@/store/selectors';
@@ -21,21 +30,28 @@ import {
 export default function EditPlayerScreen() {
   const { playerId } = useLocalSearchParams<{ playerId: string }>();
   const theme = useAppTheme();
+  const snapshot = useAppStore((state) => state.snapshot);
   const team = useAppStore(selectCurrentTeam);
-  const canManage = useAppStore(selectCanManagePlayers);
+  const canManagePlayers = useAppStore(selectCanManagePlayers);
+  const canManageTeam = useAppStore(selectCanManageTeam);
   const currentPlayer = useAppStore(selectCurrentPlayer);
   const player = useAppStore((state) => findPlayerById(state, String(playerId)));
   const updatePlayer = useAppStore((state) => state.updatePlayer);
   const removePlayer = useAppStore((state) => state.removePlayer);
   const reactivatePlayer = useAppStore((state) => state.reactivatePlayer);
   const [photoUploadProgress, setPhotoUploadProgress] = useState<number | null>(null);
+  const [pendingPresentationVideo, setPendingPresentationVideo] =
+    useState<SelectedVideoAsset | null>(null);
+  const [removePresentationVideo, setRemovePresentationVideo] = useState(false);
+  const [presentationVideoUploadProgress, setPresentationVideoUploadProgress] =
+    useState<number | null>(null);
 
   if (!team || !player) {
     return (
       <Screen>
         <EmptyState
-          title="Jogador nao encontrado"
-          description="O cadastro que voce tentou abrir nao existe mais."
+          title="Jogador não encontrado"
+          description="O cadastro que você tentou abrir não existe mais."
           actionLabel="Voltar"
           onAction={() => router.back()}
         />
@@ -44,16 +60,25 @@ export default function EditPlayerScreen() {
   }
 
   const editablePlayer = player;
-
   const canSelfEdit = currentPlayer?.id === editablePlayer.id;
-  const variant = canManage ? 'admin' : canSelfEdit ? 'self' : null;
+  const variant = canManagePlayers ? 'admin' : canSelfEdit ? 'self' : null;
+  const canManagePresentationVideo = variant === 'admin' && canManageTeam;
+  const currentPresentationVideoUrl = removePresentationVideo
+    ? null
+    : editablePlayer.presentationVideoUrl ?? null;
+  const computedStats = useMemo(
+    () => getPlayerComputedStats(snapshot, editablePlayer.teamId, editablePlayer.id),
+    [editablePlayer.id, editablePlayer.teamId, snapshot],
+  );
 
   if (!variant) {
     return (
       <Screen>
         <EmptyState
           title="Acesso restrito"
-          description="Voce so pode editar o proprio perfil de jogador."
+          description="Você não pode editar este perfil de jogador."
+          actionLabel="Voltar ao perfil"
+          onAction={() => router.replace(`/players/${editablePlayer.id}`)}
         />
       </Screen>
     );
@@ -68,20 +93,48 @@ export default function EditPlayerScreen() {
       Alert.alert('Conta desvinculada', 'O jogador voltou a ficar sem conta conectada.');
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel desvincular',
+        'Não foi possível desvincular',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
   }
 
-  function handleRemovePlayer() {
+  async function handlePickPresentationVideo() {
+    try {
+      const asset = await pickVideo();
+      if (!asset) {
+        return;
+      }
+
+      setPendingPresentationVideo(asset);
+      setRemovePresentationVideo(false);
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível abrir o vídeo',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    }
+  }
+
+  function handleClearPresentationVideo() {
+    if (pendingPresentationVideo) {
+      setPendingPresentationVideo(null);
+      return;
+    }
+
+    setRemovePresentationVideo(true);
+  }
+
+  function handleInactivatePlayer() {
     Alert.alert(
-      'Remover jogador',
-      'Esse cadastro vai sair do elenco ativo e nao aparecera mais nas proximas partidas.',
+      'Inativar jogador',
+      editablePlayer.linkedUserId
+        ? 'Este jogador não aparecerá como ativo no elenco, mas o histórico será preservado. Se houver conta vinculada, o acesso como jogador sai do elenco ativo; administradores continuam com a gestão.'
+        : 'Este jogador não aparecerá como ativo no elenco, mas o histórico será preservado.',
       [
-        { text: 'Voltar', style: 'cancel' },
+        { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Remover jogador',
+          text: 'Inativar jogador',
           style: 'destructive',
           onPress: () => {
             void (async () => {
@@ -90,7 +143,7 @@ export default function EditPlayerScreen() {
                 router.replace('/players');
               } catch (error) {
                 Alert.alert(
-                  'Nao foi possivel remover',
+                  'Não foi possível inativar',
                   error instanceof Error ? error.message : 'Tente novamente.',
                 );
               }
@@ -104,9 +157,9 @@ export default function EditPlayerScreen() {
   function handleReactivatePlayer() {
     Alert.alert(
       'Reativar jogador',
-      'Esse cadastro volta ao elenco ativo e o app tenta restaurar o vinculo da conta automaticamente.',
+      'Esse cadastro volta ao elenco ativo, preserva o histórico e entra novamente nas partidas abertas do time.',
       [
-        { text: 'Voltar', style: 'cancel' },
+        { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Reativar jogador',
           onPress: () => {
@@ -116,7 +169,7 @@ export default function EditPlayerScreen() {
                 Alert.alert('Jogador reativado', 'O cadastro voltou ao elenco ativo.');
               } catch (error) {
                 Alert.alert(
-                  'Nao foi possivel reativar',
+                  'Não foi possível reativar',
                   error instanceof Error ? error.message : 'Tente novamente.',
                 );
               }
@@ -135,7 +188,7 @@ export default function EditPlayerScreen() {
         </Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
           {variant === 'admin'
-            ? 'Atualize dados esportivos, vinculo da conta e estatisticas iniciais do jogador.'
+            ? 'Atualize dados esportivos, correções de estatísticas, conta conectada e histórico do atleta.'
             : 'Ajuste os dados pessoais liberados para o seu perfil dentro do time.'}
         </Text>
       </View>
@@ -156,30 +209,49 @@ export default function EditPlayerScreen() {
       ) : null}
 
       {variant === 'admin' && editablePlayer.status !== 'inactive' && !editablePlayer.deletedAt ? (
-        <AppButton
-          label="Remover jogador"
-          variant="danger"
-          onPress={handleRemovePlayer}
-        />
+        <AppButton label="Inativar jogador" variant="danger" onPress={handleInactivatePlayer} />
       ) : null}
 
       {variant === 'admin' && (editablePlayer.status === 'inactive' || editablePlayer.deletedAt) ? (
-        <AppButton
-          label="Reativar jogador"
-          onPress={handleReactivatePlayer}
+        <AppButton label="Reativar jogador" onPress={handleReactivatePlayer} />
+      ) : null}
+
+      {canManagePresentationVideo ? (
+        <VideoUploadField
+          label="Vídeo de apresentação do jogador"
+          hint="Envie um vídeo curto em MP4 para destacar o atleta no perfil."
+          videoUrl={currentPresentationVideoUrl}
+          pendingVideo={pendingPresentationVideo}
+          onPickFromLibrary={() => void handlePickPresentationVideo()}
+          onClear={
+            currentPresentationVideoUrl || pendingPresentationVideo
+              ? handleClearPresentationVideo
+              : undefined
+          }
+          clearLabel={
+            pendingPresentationVideo
+              ? currentPresentationVideoUrl
+                ? 'Cancelar novo vídeo'
+                : 'Remover vídeo'
+              : 'Remover vídeo'
+          }
+          emptyLabel="Sem vídeo de apresentação"
+          progress={presentationVideoUploadProgress}
+          disabled={photoUploadProgress != null || presentationVideoUploadProgress != null}
         />
       ) : null}
 
       <PlayerForm
         variant={variant}
-        submitLabel="Salvar alteracoes"
+        submitLabel="Salvar alterações"
         imageUploadProgress={photoUploadProgress}
+        computedStats={variant === 'admin' ? computedStats : undefined}
         helperText={
           variant === 'self'
             ? 'Os dados administrativos do cadastro continuam sob controle de quem gerencia o elenco.'
             : editablePlayer.linkedUserId
-              ? `Conta conectada: ${editablePlayer.linkedEmail ?? 'vinculada'}`
-              : 'Se voce preencher um e-mail, essa conta pode ser vinculada automaticamente quando o jogador entrar com o codigo do time.'
+              ? `Conta conectada: ${editablePlayer.linkedEmail ?? 'ativa'}`
+              : 'Se você preencher um e-mail, essa conta pode ser vinculada automaticamente quando o jogador entrar com o código do time.'
         }
         defaults={{
           fullName: editablePlayer.fullName,
@@ -195,8 +267,7 @@ export default function EditPlayerScreen() {
           preferredPosition: editablePlayer.preferredPosition ?? null,
           introVideoUrl: editablePlayer.introVideoUrl ?? '',
           celebrationVideoUrl: editablePlayer.celebrationVideoUrl ?? '',
-          allowSelfEditJerseyNumber:
-            editablePlayer.allowSelfEditJerseyNumber ?? false,
+          allowSelfEditJerseyNumber: editablePlayer.allowSelfEditJerseyNumber ?? false,
           manualStats: editablePlayer.manualStats,
         }}
         onSubmit={async (payload) => {
@@ -221,6 +292,13 @@ export default function EditPlayerScreen() {
               allowSelfEditJerseyNumber:
                 playerPayload.allowSelfEditJerseyNumber ?? false,
               manualStats: playerPayload.manualStats,
+              ...(canManagePresentationVideo
+                ? {
+                    presentationVideoUrl: pendingPresentationVideo
+                      ? editablePlayer.presentationVideoUrl ?? null
+                      : currentPresentationVideoUrl,
+                  }
+                : {}),
             });
 
             if (pendingPhoto) {
@@ -236,21 +314,48 @@ export default function EditPlayerScreen() {
                 });
               } catch (error) {
                 Alert.alert(
-                  'Alteracoes salvas sem trocar a foto',
+                  'Alterações salvas sem trocar a foto',
                   error instanceof Error
                     ? error.message
-                    : 'O restante das alteracoes foi salvo, mas o upload da foto falhou.',
+                    : 'O restante das alterações foi salvo, mas o upload da foto falhou.',
                 );
               } finally {
                 setPhotoUploadProgress(null);
               }
             }
 
+            if (canManagePresentationVideo && pendingPresentationVideo) {
+              try {
+                setPresentationVideoUploadProgress(0);
+                const uploadedVideo = await uploadVideo({
+                  asset: pendingPresentationVideo,
+                  storagePath: buildPlayerPresentationVideoStoragePath(
+                    editablePlayer.teamId,
+                    editablePlayer.id,
+                  ),
+                  onProgress: setPresentationVideoUploadProgress,
+                });
+                await updatePlayer(editablePlayer.id, {
+                  presentationVideoUrl: uploadedVideo.downloadUrl,
+                });
+              } catch (error) {
+                Alert.alert(
+                  'Alterações salvas sem trocar o vídeo',
+                  error instanceof Error
+                    ? error.message
+                    : 'O restante das alterações foi salvo, mas o upload do vídeo falhou.',
+                );
+              } finally {
+                setPresentationVideoUploadProgress(null);
+              }
+            }
+
             router.replace(`/players/${editablePlayer.id}`);
           } catch (error) {
             setPhotoUploadProgress(null);
+            setPresentationVideoUploadProgress(null);
             Alert.alert(
-              'Nao foi possivel salvar',
+              'Não foi possível salvar',
               error instanceof Error ? error.message : 'Tente novamente.',
             );
           }

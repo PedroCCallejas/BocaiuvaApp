@@ -7,6 +7,7 @@ import { MetricCard } from '@/components/cards/MetricCard';
 import { NotificationCard } from '@/components/cards/NotificationCard';
 import { SyncStatusCard } from '@/components/cards/SyncStatusCard';
 import { TeamHeroCard } from '@/components/cards/TeamHeroCard';
+import { PresentationVideoCard } from '@/components/video/PresentationVideoCard';
 import { AppButton } from '@/components/ui/AppButton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
@@ -67,7 +68,7 @@ export default function HomeScreen() {
     .map((item) => ({
       id: item.player.id,
       label: item.player.nickname,
-      subtitle: `${item.goalParticipations} participacoes em gol`,
+      subtitle: `${item.goalParticipations} participações em gol`,
       value: item.goals,
     }));
   const previewNotifications = notifications.slice(0, 3);
@@ -86,7 +87,7 @@ export default function HomeScreen() {
       router.push('/notifications' as never);
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel abrir a notificacao',
+        'Não foi possível abrir a notificação',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
@@ -96,8 +97,18 @@ export default function HomeScreen() {
     <Screen onRefresh={() => void refreshData()} refreshing={refreshing}>
       <TeamHeroCard
         team={team}
-        modeLabel={canManageTeam ? 'Perfil administrador' : 'Perfil jogador'}
+        modeLabel={canManageTeam ? 'Comando do time' : 'Vestiário do elenco'}
       />
+
+      {team.presentationVideoUrl ? (
+        <PresentationVideoCard
+          title="Apresentação do time"
+          description="Um vídeo curto para dar o tom da identidade do elenco antes da rodada."
+          videoUrl={team.presentationVideoUrl}
+          posterUrl={team.bannerUrl ?? team.logoUrl ?? null}
+          accentColors={[team.primaryColor, team.secondaryColor]}
+        />
+      ) : null}
 
       <SyncStatusCard
         hint={syncHint}
@@ -108,10 +119,18 @@ export default function HomeScreen() {
 
       <View style={styles.metricsRow}>
         <MetricCard label="Jogos" value={String(teamStats.totalMatches)} helper="encerrados" />
-        <MetricCard label="Vitorias" value={String(teamStats.wins)} helper={`${teamStats.pointsRate}%`} />
+        <MetricCard
+          label="Vitórias"
+          value={String(teamStats.wins)}
+          helper={`${teamStats.pointsRate}%`}
+        />
       </View>
       <View style={styles.metricsRow}>
-        <MetricCard label="Gols pro" value={String(teamStats.goalsFor)} helper={`Media ${teamStats.goalsPerGame}`} />
+        <MetricCard
+          label="Gols pró"
+          value={String(teamStats.goalsFor)}
+          helper={`Média ${teamStats.goalsPerGame}`}
+        />
         <MetricCard label="Saldo" value={String(teamStats.goalDiff)} helper="temporada" />
       </View>
 
@@ -143,11 +162,11 @@ export default function HomeScreen() {
       {nextMatch ? (
         <>
           <SectionHeader
-            title="Proxima partida"
+            title="Próxima partida"
             subtitle="O que o elenco precisa responder agora"
             actionLabel="Ver jogos"
-          onAction={() => router.push('/matches')}
-        />
+            onAction={() => router.push('/matches')}
+          />
           <MatchCard
             match={nextMatch}
             attendance={getAttendanceSummary({ snapshot }, nextMatch.id)}
@@ -159,8 +178,8 @@ export default function HomeScreen() {
           title="Sem jogos futuros"
           description={
             canCreateMatches
-              ? 'Crie a proxima partida para abrir confirmacao de presenca e escalacao.'
-              : 'Essa funcao estara disponivel em breve.'
+              ? 'Crie a próxima partida para abrir confirmação de presença e escalação.'
+              : 'Essa função estará disponível em breve.'
           }
           actionLabel={canCreateMatches ? 'Criar partida' : undefined}
           onAction={canCreateMatches ? () => router.push('/matches/create') : undefined}
@@ -168,7 +187,7 @@ export default function HomeScreen() {
       )}
 
       <SectionHeader
-        title="Notificacoes do time"
+        title="Notificações do time"
         subtitle={
           unreadNotificationsCount > 0
             ? `${unreadNotificationsCount} novidade(s) para acompanhar`
@@ -180,7 +199,7 @@ export default function HomeScreen() {
       {previewNotifications.length === 0 ? (
         <EmptyState
           title="Nada novo por enquanto"
-          description="As movimentacoes do time vao aparecer aqui assim que acontecerem."
+          description="As movimentações do time vão aparecer aqui assim que acontecerem."
         />
       ) : (
         previewNotifications.map((notification) => (
@@ -198,15 +217,15 @@ export default function HomeScreen() {
           title="Nenhum jogador cadastrado ainda"
           description={
             canManageTeam || canManagePlayers
-              ? 'Adicione o primeiro nome do elenco ou convide seus jogadores para comecar.'
-              : 'O administrador ainda esta montando o elenco do time.'
+              ? 'Adicione o primeiro nome do elenco ou convide seus jogadores para começar.'
+              : 'O administrador ainda está montando o elenco do time.'
           }
           actionLabel={canManageTeam ? 'Convidar jogadores' : undefined}
           onAction={canManageTeam ? () => router.push('/team-invite' as never) : undefined}
         />
       ) : topScorers.length === 0 ? (
         <EmptyState
-          title="Os destaques vao aparecer aqui"
+          title="Os destaques vão aparecer aqui"
           description="Assim que as primeiras partidas forem encerradas, a artilharia da temporada ganha vida."
         />
       ) : (

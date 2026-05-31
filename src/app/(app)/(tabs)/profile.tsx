@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { router } from 'expo-router';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { Avatar } from '@/components/ui/Avatar';
+import { Pill } from '@/components/ui/Pill';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { fonts } from '@/constants/theme';
@@ -17,6 +18,7 @@ import {
 } from '@/store/selectors';
 
 export default function ProfileScreen() {
+  const isWeb = Platform.OS === 'web';
   const theme = useAppTheme();
   const user = useAppStore(selectCurrentUser);
   const player = useAppStore(selectCurrentPlayer);
@@ -37,7 +39,7 @@ export default function ProfileScreen() {
       router.replace('/login');
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel sair',
+        'Não foi possível sair',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     } finally {
@@ -47,7 +49,9 @@ export default function ProfileScreen() {
 
   return (
     <Screen>
-      <SectionHeader title="Perfil" subtitle="Sua conta, seu time atual e o papel em campo" />
+      {!isWeb ? (
+        <SectionHeader title="Conta e acesso" subtitle="Seu cadastro dentro do App Bocaíuva" />
+      ) : null}
       <View
         style={[
           styles.card,
@@ -57,29 +61,45 @@ export default function ProfileScreen() {
           },
         ]}>
         <View style={styles.header}>
-          <Avatar name={user.displayName} size={64} />
+          <Avatar name={user.displayName} photoUrl={player?.photoUrl} size={84} />
           <View style={styles.copy}>
             <Text style={[styles.name, { color: theme.colors.text }]}>{user.displayName}</Text>
             <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>{user.email}</Text>
+            <View style={styles.badgeRow}>
+              <Pill
+                label={currentRoleLabel}
+                backgroundColor={theme.colors.backgroundElevated}
+                borderColor={theme.colors.border}
+                textColor={theme.colors.text}
+              />
+              <Pill
+                label={player ? `Atleta: ${player.nickname}` : 'Sem atleta conectado'}
+                color={theme.colors.secondary}
+              />
+            </View>
           </View>
         </View>
-        <Text style={[styles.meta, { color: theme.colors.text }]}>
-          Funcao atual: {currentRoleLabel}
-        </Text>
-        <Text style={[styles.meta, { color: theme.colors.text }]}>
-          Time atual: {team?.name ?? 'Voce ainda nao faz parte de um time'}
-        </Text>
-        <Text style={[styles.meta, { color: theme.colors.text }]}>
-          Perfil em campo: {player?.nickname ?? 'Aguardando vinculacao'}
-        </Text>
-        <Text style={[styles.meta, { color: theme.colors.secondary }]}>Conta conectada</Text>
+        <View style={styles.metaBlock}>
+          <Text style={[styles.metaLabel, { color: theme.colors.textMuted }]}>Time atual</Text>
+          <Text style={[styles.metaValue, { color: theme.colors.text }]}>
+            {team?.name ?? 'Você ainda não faz parte de um time'}
+          </Text>
+        </View>
+        <View style={styles.metaBlock}>
+          <Text style={[styles.metaLabel, { color: theme.colors.textMuted }]}>Perfil no elenco</Text>
+          <Text style={[styles.metaValue, { color: theme.colors.text }]}>
+            {player
+              ? `#${player.jerseyNumber} ${player.nickname}`
+              : 'Sem atleta associado por enquanto'}
+          </Text>
+        </View>
         <Text style={[styles.note, { color: theme.colors.textMuted }]}>
           {team
-            ? 'Seu time esta pronto para jogar.'
-            : 'Use um codigo de convite para entrar em um time ou atualize seu acesso.'}
+            ? 'Seu time está pronto para jogar.'
+            : 'Use um código de convite para entrar em um time ou atualize seu acesso.'}
         </Text>
         <AppButton
-          label={team ? 'Trocar time' : 'Entrar com codigo'}
+          label={team ? 'Trocar time' : 'Entrar com código'}
           variant="secondary"
           onPress={() => router.push('/team-access' as never)}
         />
@@ -126,7 +146,21 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 14,
   },
-  meta: {
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  metaBlock: {
+    gap: 4,
+  },
+  metaLabel: {
+    fontFamily: fonts.heading,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  metaValue: {
     fontFamily: fonts.body,
     fontSize: 14,
   },

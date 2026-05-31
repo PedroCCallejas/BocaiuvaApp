@@ -1,5 +1,5 @@
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useState } from 'react';
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router } from 'expo-router';
@@ -7,6 +7,7 @@ import { z } from 'zod';
 
 import { TeamHeroCard } from '@/components/cards/TeamHeroCard';
 import { ImageUploadField } from '@/components/forms/ImageUploadField';
+import { VideoUploadField } from '@/components/forms/VideoUploadField';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -21,6 +22,12 @@ import {
   type ImagePickerSource,
   type SelectedImageAsset,
 } from '@/lib/uploadImage';
+import {
+  buildTeamPresentationVideoStoragePath,
+  pickVideo,
+  uploadVideo,
+  type SelectedVideoAsset,
+} from '@/lib/uploadVideo';
 import { useAppStore } from '@/store/app-store';
 import {
   selectCanManageTeam,
@@ -30,7 +37,7 @@ import {
 
 const schema = z.object({
   name: z.string().min(3, 'Informe o nome do time.'),
-  coachName: z.string().min(3, 'Informe o responsavel.'),
+  coachName: z.string().min(3, 'Informe o responsável.'),
   slug: z.string().min(3, 'Informe um slug curto para o time.'),
   description: z.string().optional(),
   primaryColor: z.string().min(4),
@@ -41,6 +48,7 @@ const schema = z.object({
 type TeamSettingsValues = z.infer<typeof schema>;
 
 export default function TeamSettingsScreen() {
+  const isWeb = Platform.OS === 'web';
   const theme = useAppTheme();
   const currentUser = useAppStore(selectCurrentUser);
   const team = useAppStore(selectCurrentTeam);
@@ -49,6 +57,11 @@ export default function TeamSettingsScreen() {
   const [pendingLogo, setPendingLogo] = useState<SelectedImageAsset | null>(null);
   const [removeLogo, setRemoveLogo] = useState(false);
   const [logoUploadProgress, setLogoUploadProgress] = useState<number | null>(null);
+  const [pendingPresentationVideo, setPendingPresentationVideo] =
+    useState<SelectedVideoAsset | null>(null);
+  const [removePresentationVideo, setRemovePresentationVideo] = useState(false);
+  const [presentationVideoUploadProgress, setPresentationVideoUploadProgress] =
+    useState<number | null>(null);
 
   const {
     control,
@@ -74,7 +87,7 @@ export default function TeamSettingsScreen() {
       <Screen>
         <EmptyState
           title="Acesso restrito"
-          description="Somente quem administra o time pode alterar essas configuracoes."
+          description="Somente quem administra o time pode alterar essas configurações."
         />
       </Screen>
     );
@@ -82,6 +95,9 @@ export default function TeamSettingsScreen() {
 
   const currentTeam = team;
   const currentLogoUrl = removeLogo ? null : currentTeam.logoUrl ?? null;
+  const currentPresentationVideoUrl = removePresentationVideo
+    ? null
+    : currentTeam.presentationVideoUrl ?? null;
 
   const previewTeam = {
     ...currentTeam,
@@ -106,7 +122,7 @@ export default function TeamSettingsScreen() {
       setRemoveLogo(false);
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel abrir a imagem',
+        'Não foi possível abrir a imagem',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
@@ -121,18 +137,52 @@ export default function TeamSettingsScreen() {
     setRemoveLogo(true);
   }
 
+  async function handlePickPresentationVideo() {
+    try {
+      const asset = await pickVideo();
+      if (!asset) {
+        return;
+      }
+
+      setPendingPresentationVideo(asset);
+      setRemovePresentationVideo(false);
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível abrir o vídeo',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    }
+  }
+
+  function handleClearPresentationVideo() {
+    if (pendingPresentationVideo) {
+      setPendingPresentationVideo(null);
+      return;
+    }
+
+    setRemovePresentationVideo(true);
+  }
+
   async function onSubmit(values: TeamSettingsValues) {
     try {
-      await updateTeam(currentTeam.id, {
+      let resolvedLogoUrl = pendingLogo ? currentTeam.logoUrl ?? null : currentLogoUrl;
+      let resolvedPresentationVideoUrl = pendingPresentationVideo
+        ? currentTeam.presentationVideoUrl ?? null
+        : currentPresentationVideoUrl;
+
+      const buildPayload = (logoUrl: string | null, presentationVideoUrl: string | null) => ({
         name: values.name,
         coachName: values.coachName,
         slug: values.slug,
         description: values.description?.trim() ?? '',
-        logoUrl: pendingLogo ? currentTeam.logoUrl ?? null : currentLogoUrl,
+        logoUrl,
+        presentationVideoUrl,
         primaryColor: values.primaryColor,
         secondaryColor: values.secondaryColor,
         accentColor: values.accentColor?.trim() || null,
       });
+
+      await updateTeam(currentTeam.id, buildPayload(resolvedLogoUrl, resolvedPresentationVideoUrl));
 
       if (pendingLogo) {
         try {
@@ -142,34 +192,56 @@ export default function TeamSettingsScreen() {
             storagePath: buildTeamLogoStoragePath(currentTeam.id),
             onProgress: setLogoUploadProgress,
           });
+          resolvedLogoUrl = uploadedLogo.downloadUrl;
 
-          await updateTeam(currentTeam.id, {
-            name: values.name,
-            coachName: values.coachName,
-            slug: values.slug,
-            description: values.description?.trim() ?? '',
-            logoUrl: uploadedLogo.downloadUrl,
-            primaryColor: values.primaryColor,
-            secondaryColor: values.secondaryColor,
-            accentColor: values.accentColor?.trim() || null,
-          });
+          await updateTeam(
+            currentTeam.id,
+            buildPayload(resolvedLogoUrl, resolvedPresentationVideoUrl),
+          );
         } catch (error) {
           Alert.alert(
-            'Alteracoes salvas sem trocar o escudo',
+            'Alterações salvas sem trocar o escudo',
             error instanceof Error
               ? error.message
-              : 'O restante das alteracoes foi salvo, mas o upload do escudo falhou.',
+              : 'O restante das alterações foi salvo, mas o upload do escudo falhou.',
           );
         } finally {
           setLogoUploadProgress(null);
         }
       }
 
+      if (pendingPresentationVideo) {
+        try {
+          setPresentationVideoUploadProgress(0);
+          const uploadedVideo = await uploadVideo({
+            asset: pendingPresentationVideo,
+            storagePath: buildTeamPresentationVideoStoragePath(currentTeam.id),
+            onProgress: setPresentationVideoUploadProgress,
+          });
+          resolvedPresentationVideoUrl = uploadedVideo.downloadUrl;
+
+          await updateTeam(
+            currentTeam.id,
+            buildPayload(resolvedLogoUrl, resolvedPresentationVideoUrl),
+          );
+        } catch (error) {
+          Alert.alert(
+            'Alterações salvas sem trocar o vídeo',
+            error instanceof Error
+              ? error.message
+              : 'O restante das alterações foi salvo, mas o upload do vídeo falhou.',
+          );
+        } finally {
+          setPresentationVideoUploadProgress(null);
+        }
+      }
+
       router.back();
     } catch (error) {
       setLogoUploadProgress(null);
+      setPresentationVideoUploadProgress(null);
       Alert.alert(
-        'Nao foi possivel salvar o time',
+        'Não foi possível salvar o time',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
@@ -178,13 +250,15 @@ export default function TeamSettingsScreen() {
   return (
     <Screen formMode>
       <View style={styles.hero}>
-        <Text style={[styles.title, { color: theme.colors.text }]}>Editar time</Text>
+        <Text style={[styles.title, { color: theme.colors.text }]}>
+          {isWeb ? 'Identidade do time' : 'Editar time'}
+        </Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          Atualize nome, identidade visual e as informacoes que o elenco vai enxergar no app.
+          Atualize nome, identidade visual e as informações que o elenco vai enxergar no app.
         </Text>
       </View>
 
-      <TeamHeroCard team={previewTeam} modeLabel="Preview do time" />
+      <TeamHeroCard team={previewTeam} modeLabel="Como o time aparece" />
 
       <View
         style={[
@@ -212,7 +286,7 @@ export default function TeamSettingsScreen() {
           name="coachName"
           render={({ field }) => (
             <AppInput
-              label="Tecnico / responsavel"
+              label="Técnico / responsável"
               value={field.value}
               onBlur={field.onBlur}
               onChangeText={field.onChange}
@@ -225,7 +299,7 @@ export default function TeamSettingsScreen() {
           name="slug"
           render={({ field }) => (
             <AppInput
-              label="Slug do time"
+              label="Nome curto do time"
               autoCapitalize="none"
               autoCorrect={false}
               value={field.value}
@@ -240,7 +314,7 @@ export default function TeamSettingsScreen() {
           name="description"
           render={({ field }) => (
             <AppInput
-              label="Descricao curta"
+              label="Descrição curta"
               multiline
               value={field.value ?? ''}
               onBlur={field.onBlur}
@@ -266,6 +340,28 @@ export default function TeamSettingsScreen() {
           }
           emptyLabel="Sem escudo"
           progress={logoUploadProgress}
+          disabled={isSubmitting}
+        />
+        <VideoUploadField
+          label="Vídeo de apresentação do time"
+          hint="Envie um vídeo curto em MP4 para aparecer no início da página do time."
+          videoUrl={currentPresentationVideoUrl}
+          pendingVideo={pendingPresentationVideo}
+          onPickFromLibrary={() => void handlePickPresentationVideo()}
+          onClear={
+            currentPresentationVideoUrl || pendingPresentationVideo
+              ? handleClearPresentationVideo
+              : undefined
+          }
+          clearLabel={
+            pendingPresentationVideo
+              ? currentPresentationVideoUrl
+                ? 'Cancelar novo vídeo'
+                : 'Remover vídeo'
+              : 'Remover vídeo'
+          }
+          emptyLabel="Sem vídeo de apresentação"
+          progress={presentationVideoUploadProgress}
           disabled={isSubmitting}
         />
         <Text style={[styles.paletteLabel, { color: theme.colors.textMuted }]}>
@@ -317,19 +413,19 @@ export default function TeamSettingsScreen() {
             },
           ]}>
           <Text style={[styles.secondaryTitle, { color: theme.colors.text }]}>
-            Criterios de avaliacao
+            Critérios de avaliação
           </Text>
           <Text style={[styles.secondaryText, { color: theme.colors.textMuted }]}>
-            Defina quais notas o elenco usa para avaliar os jogadores do time.
+            Escolha os pontos que o elenco usa para avaliar cada jogador nas partidas.
           </Text>
           <AppButton
-            label="Gerenciar criterios"
+            label="Ajustar critérios"
             variant="secondary"
             onPress={() => router.push('/team-rating-criteria' as never)}
           />
         </View>
         <AppButton
-          label="Salvar alteracoes"
+          label="Salvar alterações"
           onPress={handleSubmit(onSubmit)}
           loading={isSubmitting}
           fullWidth

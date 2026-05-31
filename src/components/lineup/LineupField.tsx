@@ -228,11 +228,11 @@ export function LineupField({
 
   const MAX_FIELD_WIDTH = 560;
 
-const handleLayout = useCallback((width: number) => {
-  const nextWidth = Math.min(Math.max(width - 20, 280), MAX_FIELD_WIDTH);
+  const handleLayout = useCallback((width: number) => {
+    const nextWidth = Math.min(Math.max(width - 20, 280), MAX_FIELD_WIDTH);
 
-  setFieldWidth((current) => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
-}, []);
+    setFieldWidth((current) => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
+  }, []);
 
   const rootSize = useMemo(
     () => ({
@@ -333,7 +333,7 @@ const handleLayout = useCallback((width: number) => {
         <Text style={[styles.benchHint, { color: theme.colors.textMuted }]}>
           {editable
             ? 'Toque em um reserva para adicionar ao campo. Sem drag no banco.'
-            : 'Escalacao em modo visualizacao.'}
+            : 'Escalação em modo visualização.'}
         </Text>
 
         <ScrollView
@@ -344,7 +344,7 @@ const handleLayout = useCallback((width: number) => {
           {benchPlayerIds.length === 0 ? (
             <View style={styles.emptyBench}>
               <Text style={[styles.emptyBenchText, { color: theme.colors.textMuted }]}>
-                Sem reservas nesta escalacao.
+                Sem reservas nesta escalação.
               </Text>
             </View>
           ) : (
@@ -528,8 +528,8 @@ function DraggableFieldToken({
     [containerRef, dragStateRef, editableRef, finishDrag, nodeSizeRef],
   );
 
-  const labelColor = pickContrastText(theme.colors.primary);
   const accentColor = pickContrastText(theme.colors.accent);
+  const hasPhoto = Boolean(player.photoUrl);
 
   return (
     <View
@@ -554,22 +554,58 @@ function DraggableFieldToken({
         },
       ]}
     >
-      <View style={[styles.numberBadge, { backgroundColor: theme.colors.accent }]}>
+      {hasPhoto ? (
+        <Image source={{ uri: player.photoUrl ?? undefined }} style={styles.fieldNodePhoto} />
+      ) : (
+        <LinearGradient
+          colors={[theme.colors.primary, theme.colors.secondary]}
+          start={{ x: 0.1, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+      )}
+
+      <LinearGradient
+        colors={
+          hasPhoto
+            ? ['rgba(6,10,8,0.02)', 'rgba(6,10,8,0.16)', 'rgba(6,10,8,0.92)']
+            : [`${theme.colors.primary}00`, `${theme.colors.primary}CC`, `${theme.colors.primary}F2`]
+        }
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+
+      {!hasPhoto ? (
+        <View style={styles.fieldFallback}>
+          <Avatar
+            name={player.nickname}
+            photoUrl={player.photoUrl}
+            size={nodeSize < 88 ? 40 : 46}
+            accent="rgba(255,255,255,0.16)"
+          />
+        </View>
+      ) : null}
+
+      <View
+        style={[
+          styles.numberBadge,
+          styles.fieldBadge,
+          {
+            backgroundColor: theme.colors.accent,
+            borderColor: 'rgba(255,255,255,0.2)',
+          },
+        ]}>
         <Text style={[styles.numberText, { color: accentColor }]}>
           {player.jerseyNumber}
         </Text>
       </View>
 
-      <Avatar
-        name={player.nickname}
-        photoUrl={player.photoUrl}
-        size={nodeSize < 80 ? 30 : 34}
-        accent={`${theme.colors.secondary}33`}
-      />
-
-      <Text numberOfLines={1} style={[styles.nodeName, { color: labelColor }]}>
-        {label?.trim() || player.nickname}
-      </Text>
+      <View style={styles.nodeNameWrap}>
+        <Text numberOfLines={1} style={styles.nodeName}>
+          {label?.trim() || player.nickname}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -602,7 +638,7 @@ function BenchPlayerCard({
   onPress: () => void;
 }) {
   const theme = useAppTheme();
-  const labelColor = pickContrastText(theme.colors.secondary);
+  const labelColor = theme.colors.text;
 
   return (
     <Pressable
@@ -611,18 +647,28 @@ function BenchPlayerCard({
       style={[
         styles.benchCard,
         {
-          width: Math.max(nodeSize + 24, 112),
-          backgroundColor: theme.colors.secondary,
-          borderColor: `${theme.colors.primary}99`,
+          width: Math.max(nodeSize + 30, 124),
+          backgroundColor: theme.colors.surface,
+          borderColor: `${theme.colors.secondary}55`,
           opacity: editable ? 1 : 0.88,
         },
       ]}
     >
+      <LinearGradient
+        colors={[`${theme.colors.primary}1F`, `${theme.colors.secondary}12`, 'transparent']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.benchGlow}
+      />
+
       <View
         style={[
           styles.numberBadge,
           styles.benchBadge,
-          { backgroundColor: theme.colors.primary },
+          {
+            backgroundColor: theme.colors.primary,
+            borderColor: `${theme.colors.primary}66`,
+          },
         ]}
       >
         <Text style={[styles.numberText, { color: pickContrastText(theme.colors.primary) }]}>
@@ -633,11 +679,11 @@ function BenchPlayerCard({
       <Avatar
         name={player.nickname}
         photoUrl={player.photoUrl}
-        size={nodeSize < 80 ? 28 : 32}
+        size={nodeSize < 84 ? 42 : 48}
         accent={`${theme.colors.primary}22`}
       />
 
-      <Text numberOfLines={1} style={[styles.nodeName, { color: labelColor }]}>
+      <Text numberOfLines={1} style={[styles.benchName, { color: labelColor }]}>
         {player.nickname}
       </Text>
 
@@ -646,9 +692,13 @@ function BenchPlayerCard({
       </Text>
 
       {editable ? (
-        <View style={styles.benchActionWrap}>
-          <Text style={[styles.benchAction, { color: theme.colors.primary }]}>
-            Adicionar ao campo
+        <View
+          style={[
+            styles.benchActionWrap,
+            { backgroundColor: theme.colors.primarySoft, borderColor: `${theme.colors.primary}22` },
+          ]}>
+          <Text style={[styles.benchAction, { color: theme.colors.text }]}>
+            Adicionar
           </Text>
         </View>
       ) : null}
@@ -717,14 +767,14 @@ function resolveFieldHeight(width: number) {
 
 function resolveNodeSize(width: number) {
   if (width <= 340) {
-    return 72;
+    return 80;
   }
 
   if (width <= 390) {
-    return 78;
+    return 88;
   }
 
-  return 86;
+  return 96;
 }
 
 function pickContrastText(color: string) {
@@ -744,15 +794,15 @@ function pickContrastText(color: string) {
 
 const styles = StyleSheet.create({
   shell: {
-  borderWidth: 1,
-  borderRadius: 30,
-  padding: 10,
-  position: 'relative',
-  overflow: 'hidden',
-  width: '100%',
-  maxWidth: 580,
-  alignSelf: 'center',
-},
+    borderWidth: 1,
+    borderRadius: 30,
+    padding: 10,
+    position: 'relative',
+    overflow: 'hidden',
+    width: '100%',
+    maxWidth: 580,
+    alignSelf: 'center',
+  },
   field: {
     borderRadius: 22,
     overflow: 'hidden',
@@ -865,24 +915,42 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderRadius: 24,
     borderWidth: 2,
-    padding: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  fieldNodePhoto: {
+    ...StyleSheet.absoluteFillObject,
+    width: undefined,
+    height: undefined,
   },
   numberBadge: {
     position: 'absolute',
-    top: 4,
-    right: 4,
-    minWidth: 24,
-    height: 24,
-    borderRadius: 12,
+    top: 6,
+    right: 6,
+    minWidth: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  fieldBadge: {
+    zIndex: 3,
   },
   benchBadge: {
     top: 6,
     right: 6,
+  },
+  fieldFallback: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 18,
+  },
+  nodeNameWrap: {
+    paddingHorizontal: 8,
+    paddingTop: 28,
+    paddingBottom: 8,
   },
   numberText: {
     fontFamily: fonts.heading,
@@ -891,25 +959,43 @@ const styles = StyleSheet.create({
   },
   nodeName: {
     fontFamily: fonts.heading,
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
     textAlign: 'center',
+    color: '#F7FBF8',
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   benchSub: {
     fontFamily: fonts.body,
     fontSize: 11,
     textAlign: 'center',
   },
+  benchName: {
+    fontFamily: fonts.heading,
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
   benchCard: {
     borderWidth: 1,
     borderRadius: 20,
-    padding: 10,
+    padding: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 6,
+    overflow: 'hidden',
+  },
+  benchGlow: {
+    ...StyleSheet.absoluteFillObject,
   },
   benchActionWrap: {
-    marginTop: 4,
+    marginTop: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
   },
   benchAction: {
     fontFamily: fonts.heading,

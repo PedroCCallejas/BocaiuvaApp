@@ -56,5 +56,6 @@ const styles = StyleSheet.create({
   helper: {
     fontFamily: fonts.body,
     fontSize: 13,
+    lineHeight: 18,
   },
 });

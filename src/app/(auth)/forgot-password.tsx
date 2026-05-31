@@ -39,7 +39,7 @@ export default function ForgotPasswordScreen() {
       router.back();
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel enviar o link',
+        'Não foi possível enviar o link',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }

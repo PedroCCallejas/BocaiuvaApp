@@ -28,7 +28,9 @@ function buildNotification(params: {
   createdAt?: string;
   matchId?: string | null;
   playerId?: string | null;
+  entryId?: string | null;
   actorUserId?: string | null;
+  targetUserId?: string | null;
 }) {
   return {
     id: params.id,
@@ -38,7 +40,9 @@ function buildNotification(params: {
     message: params.message,
     matchId: params.matchId ?? null,
     playerId: params.playerId ?? null,
+    entryId: params.entryId ?? null,
     actorUserId: params.actorUserId ?? null,
+    targetUserId: params.targetUserId ?? null,
     readByUserIds: uniqueUserIds([params.actorUserId]),
     createdAt: params.createdAt ?? params.updatedAt,
     updatedAt: params.updatedAt,
@@ -104,7 +108,7 @@ export function createMatchUpdatedNotification(params: {
     teamId: params.teamId,
     type: 'match-updated',
     title: 'Partida atualizada',
-    message: `${params.match.opponentName} agora esta marcada para ${matchMoment(params.match)} no ${params.match.venue}.`,
+    message: `${params.match.opponentName} agora está marcada para ${matchMoment(params.match)} no ${params.match.venue}.`,
     matchId: params.match.id,
     actorUserId: params.actorUserId,
     createdAt: params.createdAt,
@@ -129,8 +133,8 @@ export function createAttendanceNotification(params: {
     teamId: params.teamId,
     type: confirmed ? 'attendance-confirmed' : 'attendance-absent',
     title: confirmed
-      ? `${params.player.nickname} confirmou presenca`
-      : `${params.player.nickname} marcou ausencia`,
+      ? `${params.player.nickname} confirmou presença`
+      : `${params.player.nickname} marcou ausência`,
     message: `Resposta para ${params.match.opponentName} em ${matchMoment(params.match)}.`,
     matchId: params.match.id,
     playerId: params.player.id,
@@ -152,8 +156,8 @@ export function createLineupPublishedNotification(params: {
     id: params.id,
     teamId: params.teamId,
     type: 'lineup-published',
-    title: 'Escalacao publicada',
-    message: `A formacao para ${params.match.opponentName} ja esta pronta.`,
+    title: 'Escalação publicada',
+    message: `A formação para ${params.match.opponentName} já está pronta.`,
     matchId: params.match.id,
     actorUserId: params.actorUserId,
     createdAt: params.createdAt,
@@ -200,7 +204,7 @@ export function createMvpVotingOpenedNotification(params: {
     teamId: params.teamId,
     type: 'mvp-voting-opened',
     title: 'Craque da partida liberado',
-    message: `Quem participou de ${params.match.opponentName} ja pode votar no destaque do jogo.`,
+    message: `Quem participou de ${params.match.opponentName} já pode votar no destaque do jogo.`,
     matchId: params.match.id,
     actorUserId: params.actorUserId,
     createdAt: params.createdAt,
@@ -221,7 +225,7 @@ export function createRatingsOpenedNotification(params: {
     teamId: params.teamId,
     type: 'ratings-opened',
     title: 'Notas do jogo liberadas',
-    message: `As avaliacoes de ${params.match.opponentName} ja estao abertas para quem participou.`,
+    message: `As avaliações de ${params.match.opponentName} já estão abertas para quem participou.`,
     matchId: params.match.id,
     actorUserId: params.actorUserId,
     createdAt: params.createdAt,
@@ -247,6 +251,38 @@ export function createMvpWinnerNotification(params: {
     matchId: params.match.id,
     playerId: params.winner.id,
     actorUserId: params.actorUserId,
+    createdAt: params.createdAt,
+    updatedAt: params.updatedAt,
+  });
+}
+
+export function createMatchDiaryPublishedNotification(params: {
+  id: string;
+  teamId: string;
+  match: Match;
+  entryId: string;
+  authorName: string;
+  actorUserId?: string | null;
+  createdAt?: string;
+  updatedAt: string;
+  targetUserId?: string | null;
+  variant?: 'published' | 'team' | 'mentioned';
+}) {
+  return buildNotification({
+    id: params.id,
+    teamId: params.teamId,
+    type: 'match-diary-published',
+    title: 'Nova resenha da partida',
+    message:
+      params.variant === 'mentioned'
+        ? 'Você foi mencionado na resenha da partida.'
+        : params.variant === 'team'
+          ? 'Nova resenha da partida disponível.'
+          : `${params.authorName} publicou no diário da partida.`,
+    matchId: params.match.id,
+    entryId: params.entryId,
+    actorUserId: params.actorUserId,
+    targetUserId: params.targetUserId,
     createdAt: params.createdAt,
     updatedAt: params.updatedAt,
   });

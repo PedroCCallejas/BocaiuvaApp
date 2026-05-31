@@ -3,6 +3,7 @@ import type {
   AttendanceRecord,
   Lineup,
   Match,
+  MatchDiaryEntry,
   MatchStat,
   MvpVote,
   Player,
@@ -23,6 +24,7 @@ export const FIRESTORE_COLLECTIONS = {
   lineups: 'lineups',
   attendance: 'attendance',
   matchStats: 'matchStats',
+  matchDiaryEntries: 'matchDiaryEntries',
   mvpVotes: 'mvpVotes',
   playerRatings: 'playerRatings',
   ratingCriteria: 'ratingCriteria',
@@ -48,6 +50,7 @@ export type FirestoreMatchDocument = Match;
 export type FirestoreLineupDocument = Lineup;
 export type FirestoreAttendanceDocument = AttendanceRecord;
 export type FirestoreMatchStatDocument = MatchStat;
+export type FirestoreMatchDiaryEntryDocument = MatchDiaryEntry;
 export type FirestoreMvpVoteDocument = MvpVote;
 export type FirestorePlayerRatingDocument = PlayerRating;
 export type FirestoreNotificationDocument = AppNotification;

@@ -31,6 +31,7 @@ import {
   selectActiveTeamRatingCriteria,
   selectCanManageTeam,
   selectCurrentPlayer,
+  selectCurrentTeamRatingCriteria,
 } from '@/store/selectors';
 import type {
   PlayerRating,
@@ -79,6 +80,7 @@ export default function MatchRatingsScreen() {
   const match = useAppStore((state) => findMatchById(state, String(matchId)));
   const currentPlayer = useAppStore(selectCurrentPlayer);
   const canManageTeam = useAppStore(selectCanManageTeam);
+  const teamCriteria = useAppStore(selectCurrentTeamRatingCriteria);
   const activeCriteria = useAppStore(selectActiveTeamRatingCriteria);
   const submitPlayerRating = useAppStore((state) => state.submitPlayerRating);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
@@ -102,7 +104,7 @@ export default function MatchRatingsScreen() {
       <Screen>
         <EmptyState
           title="Avaliacoes indisponiveis"
-          description="As notas anonimas so ficam disponiveis apos o encerramento da partida."
+          description="As notas anônimas só ficam disponíveis após o encerramento da partida."
         />
       </Screen>
     );
@@ -112,9 +114,9 @@ export default function MatchRatingsScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Sem criterios ativos"
-          description="O time ainda nao configurou criterios ativos para avaliar os jogadores."
-          actionLabel={canManageTeam ? 'Configurar criterios' : undefined}
+          title="Sem critérios ativos"
+          description="O time ainda não configurou critérios ativos para avaliar os jogadores."
+          actionLabel={canManageTeam ? 'Configurar critérios' : undefined}
           onAction={canManageTeam ? () => router.push('/team-rating-criteria' as never) : undefined}
         />
       </Screen>
@@ -137,7 +139,7 @@ export default function MatchRatingsScreen() {
     return {
       id: item.playerId,
       label: player?.nickname ?? 'Jogador',
-      subtitle: `${item.totalRatings} avaliacao(oes)`,
+      subtitle: `${item.totalRatings} avaliação(ões)`,
       value: item.overallAverage,
       valueLabel: formatStatNumber(item.overallAverage, 1),
     };
@@ -164,12 +166,12 @@ export default function MatchRatingsScreen() {
   const existingRatingEntries = useMemo(
     () =>
       selectedExistingRating
-        ? buildRatingEntries(selectedExistingRating, snapshot.ratingCriteria)
+        ? buildRatingEntries(selectedExistingRating, teamCriteria)
         : [],
-    [selectedExistingRating, snapshot.ratingCriteria],
+    [selectedExistingRating, teamCriteria],
   );
   const selectedExistingRatingOverall = selectedExistingRating
-    ? normalizePlayerRatingForDisplay(selectedExistingRating, snapshot.ratingCriteria).overall
+    ? normalizePlayerRatingForDisplay(selectedExistingRating, teamCriteria).overall
     : null;
   const displayedCriteriaEntries = selectedExistingRating
     ? existingRatingEntries
@@ -193,12 +195,12 @@ export default function MatchRatingsScreen() {
         buildCriteriaState(
           activeCriteria,
           existingRating
-            ? normalizePlayerRatingForDisplay(existingRating, snapshot.ratingCriteria).criteriaScores
+            ? normalizePlayerRatingForDisplay(existingRating, teamCriteria).criteriaScores
             : null,
         ),
       );
     },
-    [activeCriteria, currentMatch.id, currentPlayer?.id, snapshot],
+    [activeCriteria, currentMatch.id, currentPlayer?.id, snapshot, teamCriteria],
   );
 
   async function handleSubmit() {
@@ -216,7 +218,7 @@ export default function MatchRatingsScreen() {
       setCriteriaScores(buildCriteriaState(activeCriteria));
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel salvar',
+        'Não foi possível salvar',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
@@ -225,10 +227,10 @@ export default function MatchRatingsScreen() {
   return (
     <Screen>
       <View style={styles.hero}>
-        <Text style={[styles.title, { color: theme.colors.text }]}>Notas anonimas</Text>
+        <Text style={[styles.title, { color: theme.colors.text }]}>Como funcionam as notas</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          Cada criterio recebe nota de {MIN_RATING_SCORE} a {MAX_RATING_SCORE}. A media geral
-          combina os criterios ativos do time sem revelar quem avaliou quem.
+          Cada critério recebe nota de {MIN_RATING_SCORE} a {MAX_RATING_SCORE}. A média geral
+          combina os critérios ativos do time sem revelar quem avaliou quem.
         </Text>
       </View>
 
@@ -236,7 +238,7 @@ export default function MatchRatingsScreen() {
         <>
           <SectionHeader
             title="Escolha um jogador"
-            subtitle={`${unratedPlayers.length} jogador(es) ainda nao avaliados por voce`}
+            subtitle={`${unratedPlayers.length} jogador(es) ainda não avaliados por você`}
           />
           <View style={styles.targetWrap}>
             {eligibleToRate.map((player) => {
@@ -265,7 +267,7 @@ export default function MatchRatingsScreen() {
                     #{player.jerseyNumber} {player.nickname}
                   </Text>
                   <Text style={[styles.targetSub, { color: theme.colors.textMuted }]}>
-                    {existingRating ? 'Ja avaliado por voce' : 'Pronto para avaliar'}
+                    {existingRating ? 'Já avaliado por você' : 'Pronto para avaliar'}
                   </Text>
                 </Pressable>
               );
@@ -277,7 +279,7 @@ export default function MatchRatingsScreen() {
               <SectionHeader
                 title={
                   selectedExistingRating
-                    ? `Sua avaliacao de ${selectedPlayer.nickname}`
+                    ? `Sua avaliação de ${selectedPlayer.nickname}`
                     : `Avaliando ${selectedPlayer.nickname}`
                 }
                 subtitle={
@@ -308,7 +310,7 @@ export default function MatchRatingsScreen() {
                       <Text style={[styles.criteriaMeta, { color: theme.colors.textMuted }]}>
                         {criterion.type === 'negative'
                           ? 'Comportamento de alerta'
-                          : 'Contribuicao positiva'}
+                          : 'Contribuição positiva'}
                       </Text>
                     </View>
                   );
@@ -325,10 +327,10 @@ export default function MatchRatingsScreen() {
                     },
                   ]}>
                   <Text style={[styles.noticeTitle, { color: theme.colors.text }]}>
-                    Avaliacao ja enviada
+                    Avaliação já enviada
                   </Text>
                   <Text style={[styles.noticeText, { color: theme.colors.textMuted }]}>
-                    Estas sao as notas que voce ja registrou para este jogador nesta partida.
+                    Estas são as notas que você já registrou para este jogador nesta partida.
                   </Text>
                 </View>
               ) : (
@@ -350,7 +352,7 @@ export default function MatchRatingsScreen() {
                       />
                     ))}
                   </View>
-                  <AppButton label="Salvar avaliacao" onPress={handleSubmit} fullWidth />
+                  <AppButton label="Salvar avaliação" onPress={handleSubmit} fullWidth />
                 </>
               )}
 
@@ -364,11 +366,11 @@ export default function MatchRatingsScreen() {
                     },
                   ]}>
                   <Text style={[styles.noticeTitle, { color: theme.colors.text }]}>
-                    Media anonima da partida
+                    Média anônima da partida
                   </Text>
                   <Text style={[styles.noticeText, { color: theme.colors.textMuted }]}>
                     Geral {formatStatNumber(selectedPlayerSummary.overallAverage, 1)} com{' '}
-                    {selectedPlayerSummary.totalRatings} avaliacao(oes).
+                    {selectedPlayerSummary.totalRatings} avaliação(ões).
                   </Text>
                 </View>
               ) : null}
@@ -377,18 +379,18 @@ export default function MatchRatingsScreen() {
         </>
       ) : (
         <EmptyState
-          title={currentPlayer ? 'Somente visualizacao' : 'Conta nao vinculada'}
+          title={currentPlayer ? 'Somente visualização' : 'Conta não vinculada'}
           description={
             currentPlayer
-              ? 'Somente jogadores confirmados podem enviar notas, mas o resumo da partida continua disponivel.'
-              : 'Vincule sua conta a um jogador para avaliar o elenco. Enquanto isso, voce ainda pode ver o resumo anonimo da partida.'
+              ? 'Somente jogadores confirmados podem enviar notas, mas o resumo da partida continua disponível.'
+              : 'Vincule sua conta a um jogador para avaliar o elenco. Enquanto isso, você ainda pode ver o resumo anônimo da partida.'
           }
         />
       )}
 
       {rankingItems.length > 0 ? (
         <>
-          <RankingList title="Media geral da partida" items={rankingItems} />
+          <RankingList title="Média geral da partida" items={rankingItems} />
           <View style={styles.summaryList}>
             {ratingsSummary.map((item) => {
               const player = playerById.get(item.playerId);
@@ -415,7 +417,7 @@ export default function MatchRatingsScreen() {
                         #{player.jerseyNumber} {player.nickname}
                       </Text>
                       <Text style={[styles.summaryMeta, { color: theme.colors.textMuted }]}>
-                        {item.totalRatings} avaliacao(oes) anonimas
+                        {item.totalRatings} avaliação(ões) anônimas
                       </Text>
                     </View>
                     <Text style={[styles.summaryOverall, { color: theme.colors.text }]}>
@@ -453,8 +455,8 @@ export default function MatchRatingsScreen() {
         </>
       ) : canRate ? (
         <EmptyState
-          title="Sem avaliacoes ainda"
-          description="Quando o elenco enviar as notas, a media geral e os criterios por jogador aparecerao aqui."
+          title="Sem avaliações ainda"
+          description="Quando o elenco enviar as notas, a média geral e os critérios por jogador aparecerão aqui."
         />
       ) : null}
     </Screen>

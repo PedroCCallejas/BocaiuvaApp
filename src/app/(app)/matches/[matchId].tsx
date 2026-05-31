@@ -3,6 +3,7 @@ import { Alert, StyleSheet, Text, View, type GestureResponderEvent } from 'react
 import { useLocalSearchParams, router } from 'expo-router';
 
 import { MatchCard } from '@/components/cards/MatchCard';
+import { MatchDiaryEntryCard } from '@/components/matches/MatchDiaryEntryCard';
 import { RankingList } from '@/components/stats/RankingList';
 import { AppButton } from '@/components/ui/AppButton';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -15,6 +16,9 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatMatchDateTime, hasMatchElapsedHours } from '@/lib/date';
 import { openExternalUrl } from '@/lib/external-url';
 import {
+  membershipIndicatesPlayer,
+} from '@/lib/player-linking';
+import {
   getConfirmedPlayers,
   getRatingsSummary,
   hasPlayerVotedMvp,
@@ -26,9 +30,11 @@ import {
   findLineupByMatchId,
   findMatchById,
   getAttendanceBuckets,
+  getMatchDiaryEntriesByMatchId,
   getAttendanceSummary,
   selectCanManageTeam,
   selectCurrentMembership,
+  selectCurrentUser,
   selectCurrentPlayer,
   selectTeamPlayers,
 } from '@/store/selectors';
@@ -50,12 +56,14 @@ export default function MatchDetailsScreen() {
     typeof rawMatchId === 'string' ? rawMatchId : rawMatchId?.[0] ?? '';
   const match = useAppStore((state) => findMatchById(state, resolvedMatchId));
   const lineup = useAppStore((state) => findLineupByMatchId(state, resolvedMatchId));
+  const currentUser = useAppStore(selectCurrentUser);
   const currentMembership = useAppStore(selectCurrentMembership);
   const currentPlayer = useAppStore(selectCurrentPlayer);
   const teamPlayers = useAppStore(selectTeamPlayers);
   const canManage = useAppStore(selectCanManageTeam);
   const setAttendance = useAppStore((state) => state.setAttendance);
   const updateMatch = useAppStore((state) => state.updateMatch);
+  const deleteMatchDiaryEntry = useAppStore((state) => state.deleteMatchDiaryEntry);
   const [navigatingEdit, setNavigatingEdit] = useState(false);
   const navigatingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -71,8 +79,8 @@ export default function MatchDetailsScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Partida nao encontrada"
-          description="A partida pode ter sido removida ou o link ficou invalido."
+          title="Partida não encontrada"
+          description="A partida pode ter sido removida ou o link ficou inválido."
           actionLabel="Voltar"
           onAction={() => router.back()}
         />
@@ -89,7 +97,8 @@ export default function MatchDetailsScreen() {
       .filter((item) => item.matchId === currentMatch.id)
       .map((item) => [item.playerId, item]),
   );
-  const canUsePlayerActions = currentMembership?.roles.includes('player') === true;
+  const canUsePlayerActions =
+    currentPlayer !== null || membershipIndicatesPlayer(currentMembership);
   const myAttendance = currentPlayer ? attendanceByPlayerId.get(currentPlayer.id) ?? null : null;
   const canEditAttendance =
     currentMatch.status !== 'finished' && currentMatch.status !== 'canceled';
@@ -116,6 +125,8 @@ export default function MatchDetailsScreen() {
   const matchStats = snapshot.matchStats
     .filter((item) => item.matchId === currentMatch.id)
     .sort((left, right) => right.goals + right.assists - (left.goals + left.assists));
+  const diaryEntries = getMatchDiaryEntriesByMatchId({ snapshot }, currentMatch.id);
+  const playerById = new Map(snapshot.players.map((player) => [player.id, player]));
 
   async function handleOpenLocation() {
     if (!currentMatch.locationUrl) {
@@ -126,7 +137,7 @@ export default function MatchDetailsScreen() {
       await openExternalUrl(currentMatch.locationUrl);
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel abrir a localizacao',
+        'Não foi possível abrir a localização',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
@@ -137,7 +148,7 @@ export default function MatchDetailsScreen() {
       await setAttendance({ matchId: currentMatch.id, playerId, status });
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel atualizar a presenca',
+        'Não foi possível atualizar a presença',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
@@ -146,7 +157,7 @@ export default function MatchDetailsScreen() {
   async function handleCancelMatch() {
     Alert.alert(
       'Cancelar partida',
-      'Essa partida vai sair do fluxo normal do time. Voce pode editar os detalhes depois se precisar.',
+      'Essa partida vai sair do fluxo normal do time. Você pode editar os detalhes depois se precisar.',
       [
         { text: 'Voltar', style: 'cancel' },
         {
@@ -169,7 +180,7 @@ export default function MatchDetailsScreen() {
                 });
               } catch (error) {
                 Alert.alert(
-                  'Nao foi possivel cancelar',
+                  'Não foi possível cancelar',
                   error instanceof Error ? error.message : 'Tente novamente.',
                 );
               }
@@ -187,9 +198,6 @@ export default function MatchDetailsScreen() {
 
     navigatingTimeoutRef.current = setTimeout(() => {
       setNavigatingEdit(false);
-      console.log('[matches/detail] edit navigation fallback reset', {
-        matchId: currentMatch.id,
-      });
     }, 1500);
   }
 
@@ -197,20 +205,8 @@ export default function MatchDetailsScreen() {
     event?.stopPropagation?.();
 
     const nextMatchId = currentMatch.id?.trim();
-    console.log('[matches/detail] handleEditMatch pressed', {
-      matchId: nextMatchId,
-      ready,
-      canManage,
-      navigatingEdit,
-      status: currentMatch.status,
-    });
 
     if (!nextMatchId || !canEditMatch || navigatingEdit) {
-      console.log('[matches/detail] edit navigation blocked', {
-        matchId: nextMatchId,
-        canEditMatch,
-        navigatingEdit,
-      });
       return;
     }
 
@@ -226,15 +222,51 @@ export default function MatchDetailsScreen() {
         clearTimeout(navigatingTimeoutRef.current);
       }
       setNavigatingEdit(false);
-      console.log('[matches/detail] edit navigation failed', {
-        matchId: nextMatchId,
-        error,
-      });
       Alert.alert(
-        'Nao foi possivel abrir a edicao',
+        'Não foi possível abrir a edição',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
+  }
+
+  function handleOpenDiaryEntry(entryId?: string) {
+    router.push({
+      pathname: '/matches/[matchId]/diary-entry',
+      params: entryId
+        ? {
+            matchId: currentMatch.id,
+            entryId,
+          }
+        : {
+            matchId: currentMatch.id,
+          },
+    });
+  }
+
+  function handleDeleteDiaryEntry(entryId: string) {
+    Alert.alert(
+      'Excluir resenha',
+      'Essa publicação sai do diário da partida e remove as notificações vinculadas.',
+      [
+        { text: 'Voltar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await deleteMatchDiaryEntry(entryId);
+              } catch (error) {
+                Alert.alert(
+                  'Não foi possível excluir a resenha',
+                  error instanceof Error ? error.message : 'Tente novamente.',
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
   }
 
   const mvpRankingItems = mvpBreakdown.results.map((item) => {
@@ -252,7 +284,7 @@ export default function MatchDetailsScreen() {
     return {
       id: item.playerId,
       label: player?.nickname ?? 'Jogador',
-      subtitle: `${item.totalRatings} avaliacao(oes)`,
+      subtitle: `${item.totalRatings} avaliação(ões)`,
       value: item.overallAverage,
     };
   });
@@ -276,14 +308,14 @@ export default function MatchDetailsScreen() {
       <View style={styles.section}>
         <SectionHeader
           title="Local da partida"
-          subtitle={currentMatch.locationUrl ? 'Abra o caminho no seu app de mapas.' : 'Endereco informado para o elenco.'}
+          subtitle={currentMatch.locationUrl ? 'Abra o caminho no seu app de mapas.' : 'Endereço informado para o elenco.'}
         />
         <Text style={[styles.locationText, { color: theme.colors.text }]}>
           {currentMatch.venue}
         </Text>
         {currentMatch.locationUrl ? (
           <AppButton
-            label="Abrir localizacao"
+            label="Abrir localização"
             variant="secondary"
             onPress={() => void handleOpenLocation()}
           />
@@ -313,7 +345,7 @@ export default function MatchDetailsScreen() {
       {currentMatch.status === 'canceled' ? (
         <EmptyState
           title="Partida cancelada"
-          description="Essa partida foi retirada do fluxo normal do time e nao recebe mais presenca nem escalacao."
+          description="Essa partida foi retirada do fluxo normal do time e não recebe mais presença nem escalação."
         />
       ) : null}
 
@@ -327,10 +359,10 @@ export default function MatchDetailsScreen() {
             },
           ]}>
           <Text style={[styles.noticeTitle, { color: theme.colors.text }]}>
-            Esta partida ja aconteceu
+            Esta partida já aconteceu
           </Text>
           <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-            Encerre o jogo para registrar o resultado, as estatisticas e liberar as interacoes de pos-jogo.
+            Encerre o jogo para registrar o resultado, as estatísticas e liberar as interações de pós-jogo.
           </Text>
           <AppButton
             label="Encerrar jogo"
@@ -343,7 +375,7 @@ export default function MatchDetailsScreen() {
       canEditAttendance ? (
         <View style={styles.section}>
           <SectionHeader
-            title="Sua presenca"
+            title="Sua presença"
             subtitle={`Status atual: ${ATTENDANCE_STATUS_LABELS[myAttendance?.status ?? 'pending']}`}
           />
           {currentPlayer ? (
@@ -354,13 +386,13 @@ export default function MatchDetailsScreen() {
                 onPress={() => void respond(currentPlayer.id, 'confirmed')}
               />
               <AppButton
-                label="Nao vou"
+                label="Não vou"
                 variant="danger"
                 disabled={myAttendance?.status === 'absent'}
                 onPress={() => void respond(currentPlayer.id, 'absent')}
               />
               <AppButton
-                label="Limpar presenca"
+                label="Limpar presença"
                 variant="ghost"
                 disabled={myAttendance?.status === 'pending'}
                 onPress={() => void respond(currentPlayer.id, 'pending')}
@@ -368,7 +400,7 @@ export default function MatchDetailsScreen() {
             </View>
           ) : (
             <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-              Estamos preparando sua participacao no elenco para esta partida.
+              Estamos preparando sua participação no elenco para esta partida.
             </Text>
           )}
         </View>
@@ -377,8 +409,8 @@ export default function MatchDetailsScreen() {
       {canManage && canEditAttendance ? (
         <View style={styles.section}>
           <SectionHeader
-            title="Presenca do elenco"
-            subtitle="Como admin, voce pode ajustar a resposta de qualquer jogador."
+            title="Presença do elenco"
+            subtitle="Como admin, você pode ajustar a resposta de qualquer jogador."
           />
           {teamPlayers.map((player) => {
             const attendance = attendanceByPlayerId.get(player.id) ?? null;
@@ -417,13 +449,13 @@ export default function MatchDetailsScreen() {
                     onPress={() => void respond(player.id, 'confirmed')}
                   />
                   <AppButton
-                    label="Nao vou"
+                    label="Não vou"
                     variant="danger"
                     disabled={attendance?.status === 'absent'}
                     onPress={() => void respond(player.id, 'absent')}
                   />
                   <AppButton
-                    label="Limpar presenca"
+                    label="Limpar presença"
                     variant="ghost"
                     disabled={attendance?.status === 'pending'}
                     onPress={() => void respond(player.id, 'pending')}
@@ -438,11 +470,11 @@ export default function MatchDetailsScreen() {
       {currentMatch.status !== 'finished' && currentMatch.status !== 'canceled' ? (
         <View style={styles.section}>
           <SectionHeader
-            title="Escalacao"
-            subtitle={lineup ? 'Escalacao salva para esta partida.' : 'Monte a arte da escalacao do jogo.'}
+            title="Escalação"
+            subtitle={lineup ? 'Escalação salva para esta partida.' : 'Monte a arte da escalação do jogo.'}
           />
           <AppButton
-            label="Abrir escalacao visual"
+            label="Abrir escalação visual"
             variant="secondary"
             onPress={() => router.push(`/lineup/${currentMatch.id}`)}
           />
@@ -452,17 +484,17 @@ export default function MatchDetailsScreen() {
       {canUsePostGame ? (
         <View style={styles.section}>
           <SectionHeader
-            title={currentMatch.status === 'finished' ? 'Editar estatisticas do jogo' : 'Pos-jogo'}
+            title={currentMatch.status === 'finished' ? 'Editar estatísticas do jogo' : 'Pós-jogo'}
             subtitle={
               currentMatch.status === 'finished'
-                ? 'Revisar placar, gols e assistencias'
+                ? 'Revisar placar, gols e assistências'
                 : shouldPromptFinish
-                  ? 'Esta partida ja aconteceu. Encerre o jogo para registrar o resultado.'
-                  : 'Encerrar a partida e registrar estatisticas'
+                  ? 'Esta partida já aconteceu. Encerre o jogo para registrar o resultado.'
+                  : 'Encerrar a partida e registrar estatísticas'
             }
           />
           <AppButton
-            label={currentMatch.status === 'finished' ? 'Editar estatisticas' : 'Encerrar jogo'}
+            label={currentMatch.status === 'finished' ? 'Editar estatísticas' : 'Encerrar jogo'}
             onPress={() => router.push(`/matches/${currentMatch.id}/finish`)}
           />
         </View>
@@ -472,8 +504,8 @@ export default function MatchDetailsScreen() {
         <>
           <View style={styles.section}>
             <SectionHeader
-              title="Interacoes pos-jogo"
-              subtitle="MVP e notas ficam disponiveis para jogadores confirmados"
+              title="Interações pós-jogo"
+              subtitle="MVP e notas ficam disponíveis para jogadores confirmados"
             />
             <View style={styles.buttonRow}>
               <AppButton
@@ -491,7 +523,7 @@ export default function MatchDetailsScreen() {
 
           {matchStats.length > 0 ? (
             <View style={styles.section}>
-              <SectionHeader title="Resumo tecnico" subtitle="Gols e assistencias da partida" />
+              <SectionHeader title="Resumo técnico" subtitle="Gols e assistências da partida" />
               {matchStats.map((stat) => {
                 const player = confirmedPlayers.find((item) => item.id === stat.playerId);
                 if (!player) {
@@ -544,13 +576,54 @@ export default function MatchDetailsScreen() {
               ) : (
                 <EmptyState
                   title="Sem notas ainda"
-                  description="As avaliacoes anonimas vao aparecer aqui assim que forem enviadas."
+                  description="As avaliações anônimas vão aparecer aqui assim que forem enviadas."
                 />
               )}
             </>
           ) : null}
         </>
       ) : null}
+
+      <View style={styles.section}>
+        <SectionHeader
+          title="Diário da partida"
+          subtitle={
+            diaryEntries.length > 0
+              ? `${diaryEntries.length} resenha(s) publicadas para o elenco`
+              : canManage
+                ? 'Conte a história dessa partida para o elenco.'
+                : 'Ainda não há resenha desta partida.'
+          }
+          actionLabel={canManage ? 'Nova resenha' : undefined}
+          onAction={canManage ? () => handleOpenDiaryEntry() : undefined}
+        />
+
+        {diaryEntries.length === 0 ? (
+          <EmptyState
+            title={canManage ? 'Diário vazio por enquanto' : 'Sem resenha publicada'}
+            description={
+              canManage
+                ? 'Publique uma resenha, destaque jogadores e compartilhe o clima da partida com o elenco.'
+                : 'Quando a comissão publicar a resenha, ela vai aparecer aqui.'
+            }
+            actionLabel={canManage ? 'Nova resenha' : undefined}
+            onAction={canManage ? () => handleOpenDiaryEntry() : undefined}
+          />
+        ) : (
+          diaryEntries.map((entry) => (
+            <MatchDiaryEntryCard
+              key={entry.id}
+              entry={entry}
+              mentionedPlayers={entry.mentionedPlayerIds
+                .map((playerId) => playerById.get(playerId))
+                .filter((player): player is Player => Boolean(player))}
+              onPressMention={(playerId) => router.push(`/players/${playerId}`)}
+              onEdit={canManage ? () => handleOpenDiaryEntry(entry.id) : undefined}
+              onDelete={canManage ? () => handleDeleteDiaryEntry(entry.id) : undefined}
+            />
+          ))
+        )}
+      </View>
 
       <AttendanceSection title="Confirmados" players={buckets.confirmed} />
       <AttendanceSection title="Ausentes" players={buckets.absent} />

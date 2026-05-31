@@ -1,4 +1,5 @@
 import { router } from 'expo-router';
+import { Platform } from 'react-native';
 
 import { SyncStatusCard } from '@/components/cards/SyncStatusCard';
 import { MatchCard } from '@/components/cards/MatchCard';
@@ -19,6 +20,7 @@ import {
 } from '@/store/selectors';
 
 export default function MatchesScreen() {
+  const isWeb = Platform.OS === 'web';
   const snapshot = useAppStore((state) => state.snapshot);
   const openMatches = useAppStore(selectOpenMatches);
   const overdueMatches = useAppStore(selectOverdueMatches);
@@ -32,12 +34,14 @@ export default function MatchesScreen() {
 
   return (
     <Screen onRefresh={() => void refreshData()} refreshing={refreshing}>
-      <SectionHeader
-        title="Partidas"
-        subtitle="Agenda, presenca e historico do time"
-        actionLabel={canCreateMatches ? 'Nova partida' : undefined}
-        onAction={canCreateMatches ? () => router.push('/matches/create') : undefined}
-      />
+      {!isWeb ? (
+        <SectionHeader
+          title="Partidas"
+          subtitle="Agenda, presença e histórico do time"
+          actionLabel={canCreateMatches ? 'Nova partida' : undefined}
+          onAction={canCreateMatches ? () => router.push('/matches/create') : undefined}
+        />
+      ) : null}
 
       <SyncStatusCard
         hint={syncHint}
@@ -75,8 +79,8 @@ export default function MatchesScreen() {
           title="Nenhuma partida agendada"
           description={
             canCreateMatches
-              ? 'Crie a primeira partida para abrir presenca e escalacao.'
-              : 'As proximas partidas do time vao aparecer aqui.'
+              ? 'Crie a primeira partida para abrir presença e escalação.'
+              : 'As próximas partidas do time vão aparecer aqui.'
           }
           actionLabel={canCreateMatches ? 'Criar partida' : undefined}
           onAction={canCreateMatches ? () => router.push('/matches/create') : undefined}
@@ -94,7 +98,7 @@ export default function MatchesScreen() {
       <SectionHeader title="Encerradas" subtitle={`${finishedMatches.length} partida(s)`} />
       {finishedMatches.length === 0 ? (
         <EmptyState
-          title="Sem historico por enquanto"
+          title="Sem histórico por enquanto"
           description="Quando as partidas forem encerradas, o resumo aparece aqui."
         />
       ) : null}

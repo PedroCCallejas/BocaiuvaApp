@@ -12,6 +12,7 @@ import { emptySnapshot } from '@/services/repository/types';
 import type {
   AppSnapshot,
   CreateMatchInput,
+  CreateMatchDiaryEntryInput,
   CreatePlayerInput,
   CreateRatingCriterionInput,
   CreateTeamInput,
@@ -24,6 +25,7 @@ import type {
   SubmitMvpVoteInput,
   SubmitPlayerRatingInput,
   UpdateMatchInput,
+  UpdateMatchDiaryEntryInput,
   UpdateRatingCriterionInput,
   UpdateTeamInput,
   UpdateAttendanceInput,
@@ -80,6 +82,12 @@ export interface AppState {
   importLegacyMatches: (
     payload: ImportedMatchPayloadItem[],
   ) => Promise<ImportLegacyMatchesResult>;
+  createMatchDiaryEntry: (input: CreateMatchDiaryEntryInput) => Promise<string>;
+  updateMatchDiaryEntry: (
+    entryId: string,
+    input: UpdateMatchDiaryEntryInput,
+  ) => Promise<void>;
+  deleteMatchDiaryEntry: (entryId: string) => Promise<void>;
   submitMvpVote: (input: SubmitMvpVoteInput) => Promise<void>;
   submitPlayerRating: (input: SubmitPlayerRatingInput) => Promise<void>;
 }
@@ -592,6 +600,37 @@ export const useAppStore = create<AppState>((set, get) => ({
     const result = await repository.importLegacyMatches(payload, userId);
     await refreshCurrentSession(set, get);
     return result;
+  },
+
+  async createMatchDiaryEntry(input) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessao expirada.');
+    }
+
+    const entry = await repository.createMatchDiaryEntry(input, userId);
+    await refreshCurrentSession(set, get);
+    return entry.id;
+  },
+
+  async updateMatchDiaryEntry(entryId, input) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessao expirada.');
+    }
+
+    await repository.updateMatchDiaryEntry(entryId, input, userId);
+    await refreshCurrentSession(set, get);
+  },
+
+  async deleteMatchDiaryEntry(entryId) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessao expirada.');
+    }
+
+    await repository.deleteMatchDiaryEntry(entryId, userId);
+    await refreshCurrentSession(set, get);
   },
 
   async submitMvpVote(input) {

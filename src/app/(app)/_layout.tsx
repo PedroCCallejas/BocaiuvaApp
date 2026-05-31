@@ -1,4 +1,5 @@
 import { Redirect, Stack, useSegments } from 'expo-router';
+import { Platform } from 'react-native';
 
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -23,8 +24,9 @@ export default function AppLayout() {
   }
 
   return (
-      <Stack
+    <Stack
       screenOptions={{
+        headerShown: Platform.OS !== 'web',
         headerStyle: { backgroundColor: theme.colors.backgroundElevated },
         headerTintColor: theme.colors.text,
         headerShadowVisible: false,
@@ -40,9 +42,9 @@ export default function AppLayout() {
       <Stack.Screen name="team-access" options={{ title: 'Meus times' }} />
       <Stack.Screen name="team-setup" options={{ title: 'Criar novo time' }} />
       <Stack.Screen name="team-settings" options={{ title: 'Editar time' }} />
-      <Stack.Screen name="team-rating-criteria" options={{ title: 'Criterios de avaliacao' }} />
+      <Stack.Screen name="team-rating-criteria" options={{ title: 'Critérios de avaliação' }} />
       <Stack.Screen name="team-invite" options={{ title: 'Convidar jogadores' }} />
-      <Stack.Screen name="notifications" options={{ title: 'Notificacoes' }} />
+      <Stack.Screen name="notifications" options={{ title: 'Notificações' }} />
       <Stack.Screen name="players/create" options={{ title: 'Novo jogador' }} />
       <Stack.Screen name="players/[playerId]" options={{ title: 'Jogador' }} />
       <Stack.Screen name="players/[playerId]/edit" options={{ title: 'Editar jogador' }} />
@@ -51,10 +53,11 @@ export default function AppLayout() {
       <Stack.Screen name="matches/import" options={{ title: 'Importar jogos' }} />
       <Stack.Screen name="matches/[matchId]" options={{ title: 'Detalhe da partida' }} />
       <Stack.Screen name="matches/[matchId]/edit" options={{ title: 'Editar partida' }} />
-      <Stack.Screen name="matches/[matchId]/finish" options={{ title: 'Pos-jogo' }} />
-      <Stack.Screen name="matches/[matchId]/mvp" options={{ title: 'Votacao MVP' }} />
-      <Stack.Screen name="matches/[matchId]/ratings" options={{ title: 'Notas anônimas' }} />
-      <Stack.Screen name="lineup/[matchId]" options={{ title: 'Escalacao visual' }} />
+      <Stack.Screen name="matches/[matchId]/finish" options={{ title: 'Pós-jogo' }} />
+      <Stack.Screen name="matches/[matchId]/mvp" options={{ title: 'Votação MVP' }} />
+      <Stack.Screen name="matches/[matchId]/ratings" options={{ title: 'Notas da partida' }} />
+      <Stack.Screen name="matches/[matchId]/diary-entry" options={{ title: 'Diário da partida' }} />
+      <Stack.Screen name="lineup/[matchId]" options={{ title: 'Escalação visual' }} />
     </Stack>
   );
 }

@@ -32,6 +32,8 @@ function iconNameForType(type: NotificationType): keyof typeof Ionicons.glyphMap
       return 'trophy-outline';
     case 'ratings-opened':
       return 'star-outline';
+    case 'match-diary-published':
+      return 'book-outline';
     default:
       return 'notifications-outline';
   }

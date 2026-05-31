@@ -3,13 +3,14 @@ import {
   isMatchInFuture,
   sortMatchesByDate,
 } from '@/lib/date';
+import { membershipIndicatesPlayer, resolvePlayerForUser } from '@/lib/player-linking';
 import { getActiveRatingCriteria, sortRatingCriteria } from '@/lib/rating-criteria';
-import { resolvePlayerForUser } from '@/lib/player-linking';
 import { isNotificationRead, sortNotificationsByDate } from '@/lib/notifications';
 import type { AppState } from '@/store/app-store';
 import type {
   AppNotification,
   Match,
+  MatchDiaryEntry,
   Player,
   Team,
   TeamMember,
@@ -28,6 +29,7 @@ interface DerivedSnapshotSelectors {
   teamPlayers: Player[];
   teamHistoricalPlayers: Player[];
   teamMatches: Match[];
+  teamMatchDiaryEntries: MatchDiaryEntry[];
   teamNotifications: AppNotification[];
   unreadNotifications: AppNotification[];
   upcomingMatches: Match[];
@@ -109,12 +111,16 @@ function resolveCurrentPlayer(
   currentUser: User | null,
   currentMembership: TeamMember | null,
 ) {
-  if (
-    !currentUser ||
-    !currentMembership ||
-    !currentMembership.roles.includes('player')
-  ) {
+  if (!currentUser || !currentMembership) {
     return null;
+  }
+
+  if (!membershipIndicatesPlayer(currentMembership)) {
+    return resolvePlayerForUser({
+      teamPlayers: players,
+      teamId: currentMembership.teamId,
+      user: currentUser,
+    });
   }
 
   return resolvePlayerForUser({
@@ -150,6 +156,21 @@ function buildRoleLabel(membership: TeamMember | null) {
   }
 
   return 'Participante';
+}
+
+function sortMatchDiaryEntries(entries: MatchDiaryEntry[]) {
+  return [...entries].sort((left, right) => {
+    const pinnedOrder = Number(Boolean(right.pinned)) - Number(Boolean(left.pinned));
+
+    if (pinnedOrder !== 0) {
+      return pinnedOrder;
+    }
+
+    return (
+      right.updatedAt.localeCompare(left.updatedAt) ||
+      right.createdAt.localeCompare(left.createdAt)
+    );
+  });
 }
 
 function getDerivedSelectors(state: Slice): DerivedSnapshotSelectors {
@@ -204,10 +225,20 @@ function getDerivedSelectors(state: Slice): DerivedSnapshotSelectors {
         state.snapshot.matches.filter((match) => match.teamId === currentTeam.id),
       )
     : [];
+  const teamMatchDiaryEntries = currentTeam
+    ? sortMatchDiaryEntries(
+        state.snapshot.matchDiaryEntries.filter((entry) => entry.teamId === currentTeam.id),
+      )
+    : [];
   const teamNotifications = currentTeam
     ? sortNotificationsByDate(
         state.snapshot.notifications.filter(
-          (notification) => notification.teamId === currentTeam.id,
+          (notification) =>
+            notification.teamId === currentTeam.id &&
+            (
+              notification.targetUserId == null ||
+              notification.targetUserId === currentUser?.id
+            ),
         ),
       )
     : [];
@@ -250,6 +281,7 @@ function getDerivedSelectors(state: Slice): DerivedSnapshotSelectors {
     teamPlayers,
     teamHistoricalPlayers,
     teamMatches,
+    teamMatchDiaryEntries,
     teamNotifications,
     unreadNotifications,
     upcomingMatches,
@@ -301,6 +333,10 @@ export function selectTeamMatches(state: Slice) {
 
 export function selectTeamNotifications(state: Slice) {
   return getDerivedSelectors(state).teamNotifications;
+}
+
+export function selectTeamMatchDiaryEntries(state: Slice) {
+  return getDerivedSelectors(state).teamMatchDiaryEntries;
 }
 
 export function selectUnreadNotifications(state: Slice) {
@@ -365,6 +401,22 @@ export function findLineupByMatchId(state: Pick<AppState, 'snapshot'>, matchId: 
 
 export function findPlayerById(state: Pick<AppState, 'snapshot'>, playerId: string) {
   return state.snapshot.players.find((player) => player.id === playerId) ?? null;
+}
+
+export function findMatchDiaryEntryById(
+  state: Pick<AppState, 'snapshot'>,
+  entryId: string,
+) {
+  return state.snapshot.matchDiaryEntries.find((entry) => entry.id === entryId) ?? null;
+}
+
+export function getMatchDiaryEntriesByMatchId(
+  state: Pick<AppState, 'snapshot'>,
+  matchId: string,
+) {
+  return sortMatchDiaryEntries(
+    state.snapshot.matchDiaryEntries.filter((entry) => entry.matchId === matchId),
+  );
 }
 
 export function getAttendanceSummary(state: Pick<AppState, 'snapshot'>, matchId: string) {

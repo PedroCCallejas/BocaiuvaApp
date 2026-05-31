@@ -17,7 +17,7 @@ import { selectCanManageTeam, selectCurrentTeam } from '@/store/selectors';
 import type { MatchType } from '@/types/domain';
 
 const schema = z.object({
-  opponentName: z.string().min(3, 'Informe o adversario.'),
+  opponentName: z.string().min(3, 'Informe o adversário.'),
   date: z.string().refine((value) => Boolean(parseDateBRToISO(value)), {
     message: 'Use o formato DD/MM/AAAA.',
   }),
@@ -29,20 +29,20 @@ const schema = z.object({
     .string()
     .optional()
     .refine((value) => !value?.trim() || isValidExternalUrl(value), {
-      message: 'Cole um link valido de mapas.',
+      message: 'Cole um link válido de mapas.',
     }),
   notes: z.string().optional(),
   matchType: z.enum(['society', 'futsal', 'field', 'training']),
   linePlayersCount: z
     .string()
-    .min(1, 'Informe quantos jogadores de linha vao para o jogo.')
+    .min(1, 'Informe quantos jogadores de linha vão para o jogo.')
     .refine((value) => /^\d+$/.test(value.trim()), {
-      message: 'Use apenas numeros inteiros.',
+      message: 'Use apenas números inteiros.',
     })
     .refine((value) => {
       const count = Number(value.trim());
       return count >= 1 && count <= 15;
-    }, 'Escolha um numero entre 1 e 15 jogadores de linha.'),
+    }, 'Escolha um número entre 1 e 15 jogadores de linha.'),
 });
 
 type MatchValues = z.infer<typeof schema>;
@@ -61,7 +61,7 @@ export default function CreateMatchScreen() {
   } = useForm<MatchValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      opponentName: 'Novo adversario',
+      opponentName: 'Novo adversário',
       date: formatDateBR('2026-05-20'),
       time: '20:00',
       venue: 'Campo principal',
@@ -90,7 +90,10 @@ export default function CreateMatchScreen() {
       });
       router.replace(`/matches/${matchId}`);
     } catch (error) {
-      Alert.alert('Nao foi possivel criar a partida', error instanceof Error ? error.message : 'Tente novamente.');
+      Alert.alert(
+        'Não foi possível criar a partida',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
     }
   }
 
@@ -99,7 +102,7 @@ export default function CreateMatchScreen() {
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Criar nova partida</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          A criacao da partida ja gera presenca pendente para todo o elenco do time.
+          A criação da partida já gera presença pendente para todo o elenco do time.
         </Text>
       </View>
 
@@ -116,7 +119,7 @@ export default function CreateMatchScreen() {
           name="opponentName"
           render={({ field }) => (
             <AppInput
-              label="Adversario"
+              label="Adversário"
               value={field.value}
               onBlur={field.onBlur}
               onChangeText={field.onChange}
@@ -142,7 +145,7 @@ export default function CreateMatchScreen() {
           name="locationUrl"
           render={({ field }) => (
             <AppInput
-              label="Link da localizacao"
+              label="Link da localização"
               autoCapitalize="none"
               autoCorrect={false}
               value={field.value ?? ''}
@@ -175,7 +178,7 @@ export default function CreateMatchScreen() {
               name="time"
               render={({ field }) => (
                 <AppInput
-                  label="Horario"
+                  label="Horário"
                   keyboardType="numbers-and-punctuation"
                   value={field.value}
                   onBlur={field.onBlur}
@@ -227,7 +230,7 @@ export default function CreateMatchScreen() {
           name="notes"
           render={({ field }) => (
             <AppInput
-              label="Observacoes"
+              label="Observações"
               multiline
               value={field.value ?? ''}
               onBlur={field.onBlur}

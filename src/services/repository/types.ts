@@ -6,6 +6,8 @@ import type {
   Lineup,
   LineupNode,
   Match,
+  MatchDiaryEntry,
+  MatchDiaryMood,
   MatchStat,
   MatchType,
   MvpVote,
@@ -37,6 +39,7 @@ export interface AppSnapshot {
   lineups: Lineup[];
   attendance: AttendanceRecord[];
   matchStats: MatchStat[];
+  matchDiaryEntries: MatchDiaryEntry[];
   mvpVotes: MvpVote[];
   playerRatings: PlayerRating[];
   ratingCriteria: TeamRatingCriterion[];
@@ -63,6 +66,7 @@ export const emptySnapshot: AppSnapshot = {
   lineups: [],
   attendance: [],
   matchStats: [],
+  matchDiaryEntries: [],
   mvpVotes: [],
   playerRatings: [],
   ratingCriteria: [],
@@ -93,6 +97,8 @@ export interface CreateTeamInput {
   secondaryColor: string;
   accentColor?: string | null;
   logoUrl?: string | null;
+  bannerUrl?: string | null;
+  presentationVideoUrl?: string | null;
   description?: string | null;
 }
 
@@ -104,6 +110,8 @@ export interface UpdateTeamInput {
   secondaryColor: string;
   accentColor?: string | null;
   logoUrl?: string | null;
+  bannerUrl?: string | null;
+  presentationVideoUrl?: string | null;
   description?: string | null;
 }
 
@@ -152,6 +160,7 @@ export interface PlayerDraftInput {
   fullName: string;
   nickname: string;
   photoUrl?: string | null;
+  presentationVideoUrl?: string | null;
   jerseyNumber: number;
   primaryPosition: Position;
   secondaryPositions: Position[];
@@ -229,6 +238,31 @@ export interface SubmitPlayerRatingInput {
   criteriaScores: Record<string, number>;
 }
 
+export interface MatchDiaryEntryDraftInput {
+  title?: string | null;
+  content: string;
+  mentionedPlayerIds?: string[];
+  visibility?: 'team';
+  pinned?: boolean;
+  mood?: MatchDiaryMood | null;
+  emoji?: string | null;
+}
+
+export interface CreateMatchDiaryEntryInput extends MatchDiaryEntryDraftInput {
+  matchId: string;
+  notifyTeam?: boolean;
+}
+
+export interface UpdateMatchDiaryEntryInput {
+  title?: string | null;
+  content?: string;
+  mentionedPlayerIds?: string[];
+  pinned?: boolean;
+  mood?: MatchDiaryMood | null;
+  emoji?: string | null;
+  notifyTeam?: boolean;
+}
+
 export interface CreateRatingCriterionInput {
   label: string;
   description?: string | null;
@@ -297,6 +331,25 @@ export interface AppRepository {
     payload: ImportedMatchPayloadItem[],
     actorUserId: string,
   ): Promise<ImportLegacyMatchesResult>;
+  createMatchDiaryEntry(
+    input: CreateMatchDiaryEntryInput,
+    actorUserId: string,
+  ): Promise<MatchDiaryEntry>;
+  updateMatchDiaryEntry(
+    entryId: string,
+    input: UpdateMatchDiaryEntryInput,
+    actorUserId: string,
+  ): Promise<MatchDiaryEntry>;
+  deleteMatchDiaryEntry(entryId: string, actorUserId: string): Promise<void>;
+  fetchMatchDiaryEntriesByMatchId(
+    matchId: string,
+    actorUserId: string,
+  ): Promise<MatchDiaryEntry[]>;
+  listMatchDiaryEntriesForTeam(
+    teamId: string,
+    actorUserId: string,
+    limit?: number,
+  ): Promise<MatchDiaryEntry[]>;
   submitMvpVote(input: SubmitMvpVoteInput, actorUserId: string): Promise<MvpVote>;
   submitPlayerRating(
     input: SubmitPlayerRatingInput,

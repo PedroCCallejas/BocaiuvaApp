@@ -40,7 +40,7 @@ export default function RegisterScreen() {
       await register(values);
       router.replace('/');
     } catch (error) {
-      Alert.alert('Nao foi possivel criar a conta', error instanceof Error ? error.message : 'Tente novamente.');
+      Alert.alert('Não foi possível criar a conta', error instanceof Error ? error.message : 'Tente novamente.');
     }
   }
 
@@ -110,7 +110,7 @@ export default function RegisterScreen() {
           loading={isSubmitting}
           fullWidth
         />
-        <AppButton label="Voltar para login" variant="ghost" onPress={() => router.back()} />
+        <AppButton label="Voltar para o login" variant="ghost" onPress={() => router.back()} />
       </View>
     </Screen>
   );

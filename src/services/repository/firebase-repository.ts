@@ -25,6 +25,12 @@ import {
   calculateMatchResult,
   getMvpSummary,
 } from '@/lib/match';
+import {
+  normalizeDiaryTitle,
+  resolveDiaryEmoji,
+  sortMatchDiaryEntries,
+  validateDiaryFields,
+} from '@/lib/match-diary';
 import { buildLegacyMatchImportPreview } from '@/lib/match-import';
 import {
   buildRatingCriteriaSnapshot,
@@ -39,12 +45,15 @@ import {
 } from '@/lib/rating-criteria';
 import {
   isPlayerAvailableForLinking,
+  membershipIndicatesPlayer,
   normalizeEmail,
   resolvePlayerForUser,
+  resolvePlayerForUserWithDiagnostics,
 } from '@/lib/player-linking';
 import {
   buildNotificationId,
   createAttendanceNotification,
+  createMatchDiaryPublishedNotification,
   createLineupPublishedNotification,
   createMatchCreatedNotification,
   createMatchFinishedNotification,
@@ -67,6 +76,7 @@ import {
   type FirestoreAttendanceDocument,
   type FirestoreLineupDocument,
   type FirestoreMatchDocument,
+  type FirestoreMatchDiaryEntryDocument,
   type FirestoreMatchStatDocument,
   type FirestoreMvpVoteDocument,
   type FirestoreNotificationDocument,
@@ -85,6 +95,7 @@ import type {
   MatchType,
   Lineup,
   Match,
+  MatchDiaryEntry,
   MatchStat,
   MvpVote,
   Player,
@@ -104,6 +115,7 @@ import {
   type CreateRatingCriterionInput,
   type CreateTeamInput,
   type CreateMatchInput,
+  type CreateMatchDiaryEntryInput,
   type FinishMatchInput,
   type GoogleLoginInput,
   type RegisterFinishedMatchInput,
@@ -113,6 +125,7 @@ import {
   type SnapshotSubscriptionHandlers,
   type UpdateAttendanceInput,
   type UpdateMatchInput,
+  type UpdateMatchDiaryEntryInput,
   type UpdateRatingCriterionInput,
   type UpdateTeamInput,
   type UpdatePlayerInput,
@@ -157,6 +170,7 @@ interface RealtimeSnapshotState {
   lineups: Lineup[];
   attendance: AttendanceRecord[];
   matchStats: MatchStat[];
+  matchDiaryEntries: MatchDiaryEntry[];
   mvpVotes: MvpVote[];
   playerRatings: PlayerRating[];
   notifications: AppNotification[];
@@ -327,6 +341,8 @@ function normalizeTeamDocument(
   return {
     ...team,
     logoUrl: team.logoUrl ?? null,
+    bannerUrl: team.bannerUrl ?? null,
+    presentationVideoUrl: team.presentationVideoUrl ?? null,
     accentColor: team.accentColor ?? null,
     description: team.description ?? '',
     inviteCode: team.inviteCode ?? '',
@@ -343,6 +359,7 @@ function normalizePlayerDocument(
     linkedUserId: player.linkedUserId ?? null,
     linkedEmail: player.linkedEmail ? normalizeEmail(player.linkedEmail) : null,
     photoUrl: player.photoUrl ?? null,
+    presentationVideoUrl: player.presentationVideoUrl ?? null,
     secondaryPositions: player.secondaryPositions ?? [],
     bio: player.bio ?? '',
     preferredPosition: player.preferredPosition ?? null,
@@ -420,6 +437,21 @@ function normalizeMatchStatDocument(
   };
 }
 
+function normalizeMatchDiaryEntryDocument(
+  entry: FirestoreMatchDiaryEntryDocument,
+): FirestoreMatchDiaryEntryDocument {
+  return {
+    ...entry,
+    title: normalizeDiaryTitle(entry.title),
+    content: entry.content.trim(),
+    mentionedPlayerIds: [...new Set(entry.mentionedPlayerIds ?? [])],
+    visibility: 'team',
+    pinned: entry.pinned ?? false,
+    mood: entry.mood ?? null,
+    emoji: resolveDiaryEmoji(entry.mood, entry.emoji),
+  };
+}
+
 function normalizeMvpVoteDocument(
   vote: FirestoreMvpVoteDocument,
 ): FirestoreMvpVoteDocument {
@@ -472,9 +504,18 @@ function normalizeNotificationDocument(
     ...notification,
     matchId: notification.matchId ?? null,
     playerId: notification.playerId ?? null,
+    entryId: notification.entryId ?? null,
     actorUserId: notification.actorUserId ?? null,
+    targetUserId: notification.targetUserId ?? null,
     readByUserIds: [...new Set(notification.readByUserIds ?? [])],
   };
+}
+
+function canAccessNotification(
+  notification: AppNotification,
+  userId: string | null | undefined,
+) {
+  return notification.targetUserId == null || notification.targetUserId === userId;
 }
 
 async function fetchUserById(userId: string) {
@@ -574,6 +615,20 @@ async function fetchTeamMembersByUserId(userId: string) {
     query(
       collection(firestore, FIRESTORE_COLLECTIONS.teamMembers),
       where('userId', '==', userId),
+    ),
+  );
+
+  return snapshot.docs.map((item) =>
+    normalizeTeamMemberDocument(parseDoc<FirestoreTeamMemberDocument>(item)),
+  );
+}
+
+async function fetchTeamMembersByTeamId(teamId: string) {
+  const firestore = requireFirestore();
+  const snapshot = await getDocs(
+    query(
+      collection(firestore, FIRESTORE_COLLECTIONS.teamMembers),
+      where('teamId', '==', teamId),
     ),
   );
 
@@ -714,6 +769,50 @@ async function fetchMatchStatsByMatchIdForTeam(teamId: string, matchId: string) 
   return (await fetchMatchStatsByTeamId(teamId)).filter((item) => item.matchId === matchId);
 }
 
+async function fetchMatchDiaryEntriesByTeamId(teamId: string) {
+  const firestore = requireFirestore();
+  const snapshot = await getDocs(
+    query(
+      collection(firestore, FIRESTORE_COLLECTIONS.matchDiaryEntries),
+      where('teamId', '==', teamId),
+    ),
+  );
+
+  return sortMatchDiaryEntries(
+    snapshot.docs.map((item) =>
+      normalizeMatchDiaryEntryDocument(parseDoc<FirestoreMatchDiaryEntryDocument>(item)),
+    ),
+  );
+}
+
+async function fetchMatchDiaryEntriesByMatchIdForTeam(teamId: string, matchId: string) {
+  return (await fetchMatchDiaryEntriesByTeamId(teamId)).filter((item) => item.matchId === matchId);
+}
+
+async function fetchMatchDiaryEntryByIdForTeam(teamId: string, entryId: string) {
+  const firestore = requireFirestore();
+  const snapshot = await getDoc(
+    doc(firestore, FIRESTORE_COLLECTIONS.matchDiaryEntries, entryId),
+  );
+
+  if (!snapshot.exists()) {
+    return null;
+  }
+
+  const entry = normalizeMatchDiaryEntryDocument(
+    parseDoc<FirestoreMatchDiaryEntryDocument>(snapshot),
+  );
+
+  if (entry.teamId !== teamId) {
+    throw createRepositoryError(
+      'Essa resenha nao pertence ao time atual.',
+      'permission-denied',
+    );
+  }
+
+  return entry;
+}
+
 async function fetchMvpVotesByTeamId(teamId: string) {
   const firestore = requireFirestore();
   const snapshot = await getDocs(
@@ -828,6 +927,80 @@ async function fetchNotificationByIdForTeam(teamId: string, notificationId: stri
   return notification;
 }
 
+function createDiaryNotificationId(
+  entryId: string,
+  targetUserId?: string | null,
+) {
+  return buildNotificationId(
+    'match-diary-published',
+    entryId,
+    targetUserId ? `target-${targetUserId}` : 'team',
+  );
+}
+
+function buildDiaryNotificationDocuments(input: {
+  entry: MatchDiaryEntry;
+  match: Match;
+  actorUserId: string;
+  teamMembers: TeamMember[];
+  existingNotifications: AppNotification[];
+}) {
+  const mentionedPlayerIds = new Set(input.entry.mentionedPlayerIds);
+  const activeTeamMembers = input.teamMembers.filter((member) => member.status === 'active');
+  const mentionedUserIds = new Set(
+    activeTeamMembers
+      .filter((member) => member.playerId && mentionedPlayerIds.has(member.playerId))
+      .map((member) => member.userId),
+  );
+  const documents: FirestoreNotificationDocument[] = [];
+
+  if (mentionedUserIds.size === 0) {
+    const notificationId = createDiaryNotificationId(input.entry.id);
+    const existing = input.existingNotifications.find(
+      (notification) => notification.id === notificationId,
+    );
+    documents.push(
+      createMatchDiaryPublishedNotification({
+        id: notificationId,
+        teamId: input.entry.teamId,
+        match: input.match,
+        entryId: input.entry.id,
+        authorName: input.entry.authorName,
+        actorUserId: input.actorUserId,
+        createdAt: existing?.createdAt,
+        updatedAt: input.entry.updatedAt,
+        variant: 'published',
+      }),
+    );
+    return documents;
+  }
+
+  const recipientUserIds = [...new Set(activeTeamMembers.map((member) => member.userId))];
+
+  for (const userId of recipientUserIds) {
+    const notificationId = createDiaryNotificationId(input.entry.id, userId);
+    const existing = input.existingNotifications.find(
+      (notification) => notification.id === notificationId,
+    );
+    documents.push(
+      createMatchDiaryPublishedNotification({
+        id: notificationId,
+        teamId: input.entry.teamId,
+        match: input.match,
+        entryId: input.entry.id,
+        authorName: input.entry.authorName,
+        actorUserId: input.actorUserId,
+        createdAt: existing?.createdAt,
+        updatedAt: input.entry.updatedAt,
+        targetUserId: userId,
+        variant: mentionedUserIds.has(userId) ? 'mentioned' : 'team',
+      }),
+    );
+  }
+
+  return documents;
+}
+
 async function fetchSeasonsByTeamId(teamId: string) {
   const firestore = requireFirestore();
   const snapshot = await getDocs(
@@ -858,27 +1031,8 @@ async function fetchTeamByInviteCode(inviteCode: string) {
   return normalizeTeamDocument(parseDoc<FirestoreTeamDocument>(teamDocument));
 }
 
-async function ensureTeamRatingCriteria(teamId: string) {
-  const existingCriteria = await fetchRatingCriteriaByTeamId(teamId);
-
-  if (existingCriteria.length > 0) {
-    return existingCriteria;
-  }
-
-  const firestore = requireFirestore();
-  const now = nowIso();
-  const defaultCriteria = createDefaultTeamRatingCriteria(teamId, now);
-  const batch = writeBatch(firestore);
-
-  for (const criterion of defaultCriteria) {
-    batch.set(
-      doc(firestore, FIRESTORE_COLLECTIONS.ratingCriteria, criterion.id),
-      criterion,
-    );
-  }
-
-  await batch.commit();
-  return defaultCriteria;
+async function loadTeamRatingCriteria(teamId: string) {
+  return fetchRatingCriteriaByTeamId(teamId);
 }
 
 async function persistTeamRatingCriteria(
@@ -1295,24 +1449,26 @@ async function buildSnapshotForCurrentUser(): Promise<AppSnapshot> {
     lineups,
     attendance,
     matchStats,
+    matchDiaryEntries,
     mvpVotes,
     playerRatings,
     notifications,
     seasons,
   ] = activeTeamId
     ? await Promise.all([
-        ensureTeamRatingCriteria(activeTeamId),
+        loadTeamRatingCriteria(activeTeamId),
         fetchPlayersByTeamId(activeTeamId),
         fetchMatchesByTeamId(activeTeamId),
         fetchLineupsByTeamId(activeTeamId),
         fetchAttendanceByTeamId(activeTeamId),
         fetchMatchStatsByTeamId(activeTeamId),
+        fetchMatchDiaryEntriesByTeamId(activeTeamId),
         fetchMvpVotesByTeamId(activeTeamId),
         fetchPlayerRatingsByTeamId(activeTeamId),
         fetchNotificationsByTeamId(activeTeamId),
         fetchSeasonsByTeamId(activeTeamId),
       ])
-    : [[], [], [], [], [], [], [], [], [], []];
+    : [[], [], [], [], [], [], [], [], [], [], []];
 
   return {
     ...emptySnapshot,
@@ -1325,9 +1481,10 @@ async function buildSnapshotForCurrentUser(): Promise<AppSnapshot> {
     lineups,
     attendance,
     matchStats,
+    matchDiaryEntries,
     mvpVotes,
     playerRatings,
-    notifications,
+    notifications: notifications.filter((notification) => canAccessNotification(notification, user.id)),
     seasons,
   };
 }
@@ -1354,24 +1511,26 @@ async function buildSnapshotForUserId(userId: string): Promise<AppSnapshot> {
     lineups,
     attendance,
     matchStats,
+    matchDiaryEntries,
     mvpVotes,
     playerRatings,
     notifications,
     seasons,
   ] = activeTeamId
     ? await Promise.all([
-        ensureTeamRatingCriteria(activeTeamId),
+        loadTeamRatingCriteria(activeTeamId),
         fetchPlayersByTeamId(activeTeamId),
         fetchMatchesByTeamId(activeTeamId),
         fetchLineupsByTeamId(activeTeamId),
         fetchAttendanceByTeamId(activeTeamId),
         fetchMatchStatsByTeamId(activeTeamId),
+        fetchMatchDiaryEntriesByTeamId(activeTeamId),
         fetchMvpVotesByTeamId(activeTeamId),
         fetchPlayerRatingsByTeamId(activeTeamId),
         fetchNotificationsByTeamId(activeTeamId),
         fetchSeasonsByTeamId(activeTeamId),
       ])
-    : [[], [], [], [], [], [], [], [], [], []];
+    : [[], [], [], [], [], [], [], [], [], [], []];
 
   return {
     ...emptySnapshot,
@@ -1384,9 +1543,10 @@ async function buildSnapshotForUserId(userId: string): Promise<AppSnapshot> {
     lineups,
     attendance,
     matchStats,
+    matchDiaryEntries,
     mvpVotes,
     playerRatings,
-    notifications,
+    notifications: notifications.filter((notification) => canAccessNotification(notification, user.id)),
     seasons,
   };
 }
@@ -1413,6 +1573,7 @@ function createRealtimeStateFromSnapshot(snapshot: AppSnapshot): RealtimeSnapsho
     lineups: snapshot.lineups,
     attendance: snapshot.attendance,
     matchStats: snapshot.matchStats,
+    matchDiaryEntries: snapshot.matchDiaryEntries,
     mvpVotes: snapshot.mvpVotes,
     playerRatings: snapshot.playerRatings,
     notifications: snapshot.notifications,
@@ -1445,6 +1606,7 @@ function buildSnapshotFromRealtimeState(state: RealtimeSnapshotState): AppSnapsh
     lineups: state.lineups,
     attendance: state.attendance,
     matchStats: state.matchStats,
+    matchDiaryEntries: state.matchDiaryEntries,
     mvpVotes: state.mvpVotes,
     playerRatings: state.playerRatings,
     notifications: state.notifications,
@@ -1533,6 +1695,16 @@ async function assertJerseyAvailable(
 
 async function ensurePlayerBelongsToTeam(playerId: string, teamId: string) {
   return fetchPlayerByIdForTeam(teamId, playerId);
+}
+
+async function sanitizeMentionedPlayerIds(teamId: string, mentionedPlayerIds: string[] = []) {
+  const uniquePlayerIds = [...new Set(mentionedPlayerIds.filter(Boolean))];
+
+  for (const playerId of uniquePlayerIds) {
+    await ensurePlayerBelongsToTeam(playerId, teamId);
+  }
+
+  return uniquePlayerIds;
 }
 
 function validateLineupSlots(input: SaveLineupInput) {
@@ -1848,6 +2020,7 @@ function buildBasicPlayerFromUser(teamId: string, user: User, jerseyNumber: numb
     bio: 'Conta conectada ao time.',
     preferredPosition: 'midfielder',
     allowSelfEditJerseyNumber: false,
+    presentationVideoUrl: null,
     introVideoUrl: null,
     celebrationVideoUrl: null,
     manualStats: createEmptyManualStats(),
@@ -1877,40 +2050,45 @@ async function ensureMembershipPlayerLink(input: {
   membership: TeamMember;
   team: Team;
 }) {
-  if (!input.membership.roles.includes('player')) {
-    return {
-      user: input.user,
-      membership: input.membership,
-      player: null as Player | null,
-    };
-  }
-
   const firestore = requireFirestore();
   const updatedAt = nowIso();
   const normalizedUserEmail = normalizeEmail(input.user.email);
   const teamPlayers = await fetchPlayersByTeamId(input.team.id);
-  let player = resolvePlayerForUser({
+  const resolution = resolvePlayerForUserWithDiagnostics({
     teamPlayers,
     teamId: input.team.id,
     user: input.user,
     membership: input.membership,
   });
+  let player = resolution.player;
+  const shouldAutoCreatePlayer = membershipIndicatesPlayer(input.membership) && !input.membership.playerId;
 
   const batch = writeBatch(firestore);
   let hasChanges = false;
+  let canUpdateLinkedEmail = true;
 
   if (player) {
+    const resolvedPlayer = player;
+    canUpdateLinkedEmail = !teamPlayers.some(
+      (candidate) =>
+        candidate.id !== resolvedPlayer.id &&
+        normalizeEmail(candidate.linkedEmail ?? '') === normalizedUserEmail,
+    );
     const normalizedPlayer = normalizePlayerDocument({
-      ...player,
+      ...resolvedPlayer,
       linkedUserId: input.user.id,
-      linkedEmail: normalizedUserEmail,
+      linkedEmail: canUpdateLinkedEmail
+        ? normalizedUserEmail
+        : resolvedPlayer.linkedEmail
+          ? normalizeEmail(resolvedPlayer.linkedEmail)
+          : null,
       updatedAt,
     });
 
     if (
-      normalizedPlayer.linkedUserId !== player.linkedUserId ||
-      normalizedPlayer.linkedEmail !== player.linkedEmail ||
-      normalizedPlayer.updatedAt !== player.updatedAt
+      normalizedPlayer.linkedUserId !== resolvedPlayer.linkedUserId ||
+      normalizedPlayer.linkedEmail !== resolvedPlayer.linkedEmail ||
+      normalizedPlayer.updatedAt !== resolvedPlayer.updatedAt
     ) {
       batch.set(
         doc(firestore, FIRESTORE_COLLECTIONS.players, normalizedPlayer.id),
@@ -1920,7 +2098,7 @@ async function ensureMembershipPlayerLink(input: {
     }
 
     player = normalizedPlayer;
-  } else {
+  } else if (shouldAutoCreatePlayer) {
     const playerRef = doc(collection(firestore, FIRESTORE_COLLECTIONS.players));
     player = normalizePlayerDocument({
       ...buildBasicPlayerFromUser(
@@ -1937,11 +2115,45 @@ async function ensureMembershipPlayerLink(input: {
     hasChanges = true;
   }
 
+  if (__DEV__ && (resolution.source !== 'membership-player-id' || !player)) {
+    console.log('[player-linking] ensureMembershipPlayerLink', {
+      userId: input.user.id,
+      email: normalizedUserEmail,
+      teamId: input.team.id,
+      membershipId: input.membership.id,
+      membershipPlayerId: input.membership.playerId ?? null,
+      membershipRoles: input.membership.roles,
+      resolvedPlayerId: player?.id ?? null,
+      resolutionSource: resolution.source,
+      failureReason: resolution.failureReason,
+      usedAutoCreate: !resolution.player && Boolean(player) && shouldAutoCreatePlayer,
+      updatedLinkedEmail: player ? canUpdateLinkedEmail : false,
+    });
+  }
+
+  if (!player) {
+    return {
+      user: input.user,
+      membership: input.membership,
+      player: null as Player | null,
+    };
+  }
+
   let membership = input.membership;
-  if (membership.playerId !== player.id) {
+  const nextMembershipRoles: TeamMember['roles'] = membership.roles.includes('player')
+    ? membership.roles
+    : [...membership.roles, 'player'];
+
+  if (
+    membership.playerId !== player.id ||
+    nextMembershipRoles.length !== membership.roles.length
+  ) {
     membership = buildTeamMemberDocument({
       ...membership,
       playerId: player.id,
+      roles: nextMembershipRoles,
+      canManageTeam: membership.canManageTeam,
+      canManagePlayers: membership.canManagePlayers,
       updatedAt,
     });
     batch.set(
@@ -1985,7 +2197,7 @@ async function ensureCurrentUserPlayerForActiveTeam(userId: string) {
   const activeMembership =
     memberships.find((membership) => membership.teamId === user.activeTeamId) ?? null;
 
-  if (!user.activeTeamId || !activeMembership || !activeMembership.roles.includes('player')) {
+  if (!user.activeTeamId || !activeMembership) {
     return null;
   }
 
@@ -2002,7 +2214,7 @@ async function ensureCurrentUserPlayerForActiveTeam(userId: string) {
     team: activeTeam,
   });
 
-  return repaired.player?.id ?? repaired.membership.playerId ?? null;
+  return repaired.player?.id ?? null;
 }
 
 async function ensureActiveTeamContext(userId: string) {
@@ -2032,7 +2244,7 @@ async function ensureActiveTeamContext(userId: string) {
   const activeTeam =
     teams.find((team) => team.id === activeTeamId) ?? null;
 
-  if (activeTeam && membership.roles.includes('player')) {
+  if (activeTeam) {
     const repaired = await ensureMembershipPlayerLink({
       user,
       membership,
@@ -2344,6 +2556,7 @@ export const firebaseRepository: AppRepository = {
       state.lineups = [];
       state.attendance = [];
       state.matchStats = [];
+      state.matchDiaryEntries = [];
       state.mvpVotes = [];
       state.playerRatings = [];
       state.notifications = [];
@@ -2487,6 +2700,14 @@ export const firebaseRepository: AppRepository = {
           state.matchStats = items;
         },
       );
+      listenToTeamCollection<FirestoreMatchDiaryEntryDocument>(
+        'matchDiaryEntries',
+        FIRESTORE_COLLECTIONS.matchDiaryEntries,
+        normalizeMatchDiaryEntryDocument,
+        (items) => {
+          state.matchDiaryEntries = sortMatchDiaryEntries(items);
+        },
+      );
       listenToTeamCollection<FirestoreMvpVoteDocument>(
         'mvpVotes',
         FIRESTORE_COLLECTIONS.mvpVotes,
@@ -2508,7 +2729,9 @@ export const firebaseRepository: AppRepository = {
         FIRESTORE_COLLECTIONS.notifications,
         normalizeNotificationDocument,
         (items) => {
-          state.notifications = items;
+          state.notifications = items.filter((notification) =>
+            canAccessNotification(notification, currentUserId),
+          );
         },
       );
       listenToTeamCollection<FirestoreSeasonDocument>(
@@ -2664,6 +2887,8 @@ export const firebaseRepository: AppRepository = {
         name: input.name.trim(),
         slug: slugifyTeamName(input.name),
         logoUrl: input.logoUrl?.trim() || null,
+        bannerUrl: input.bannerUrl?.trim() || null,
+        presentationVideoUrl: input.presentationVideoUrl?.trim() || null,
         primaryColor: input.primaryColor,
         secondaryColor: input.secondaryColor,
         accentColor: input.accentColor ?? null,
@@ -2742,6 +2967,14 @@ export const firebaseRepository: AppRepository = {
         coachName: input.coachName.trim(),
         slug: slugifyTeamName(input.slug.trim() || input.name),
         logoUrl: input.logoUrl?.trim() || null,
+        bannerUrl:
+          input.bannerUrl !== undefined
+            ? input.bannerUrl?.trim() || null
+            : currentTeam.bannerUrl ?? null,
+        presentationVideoUrl:
+          input.presentationVideoUrl !== undefined
+            ? input.presentationVideoUrl?.trim() || null
+            : currentTeam.presentationVideoUrl ?? null,
         primaryColor: input.primaryColor,
         secondaryColor: input.secondaryColor,
         accentColor: input.accentColor ?? null,
@@ -2789,7 +3022,7 @@ export const firebaseRepository: AppRepository = {
       const { activeTeamId } = await ensureActiveTeamContext(actorUserId);
       await ensureTeamAdmin(actorUserId, activeTeamId);
       const now = nowIso();
-      const existingCriteria = await ensureTeamRatingCriteria(activeTeamId);
+      const existingCriteria = await loadTeamRatingCriteria(activeTeamId);
       const activeCount = getActiveRatingCriteria(existingCriteria).length;
       const shouldActivate = input.active !== false;
 
@@ -2844,7 +3077,7 @@ export const firebaseRepository: AppRepository = {
         );
       }
 
-      const nextCriteria = (await ensureTeamRatingCriteria(activeTeamId)).map((item) =>
+      const nextCriteria = (await loadTeamRatingCriteria(activeTeamId)).map((item) =>
         item.id === criterion.id
           ? normalizeTeamRatingCriterion({
               ...item,
@@ -2891,7 +3124,7 @@ export const firebaseRepository: AppRepository = {
         );
       }
 
-      const teamCriteria = await ensureTeamRatingCriteria(activeTeamId);
+      const teamCriteria = await loadTeamRatingCriteria(activeTeamId);
       const ratings = await fetchPlayerRatingsByTeamId(activeTeamId);
       const usedCount = countRatingCriterionUsage(ratings, criterion.id);
 
@@ -3110,6 +3343,7 @@ export const firebaseRepository: AppRepository = {
         fullName: input.fullName.trim(),
         nickname: input.nickname.trim(),
         photoUrl: input.photoUrl ?? null,
+        presentationVideoUrl: input.presentationVideoUrl ?? null,
         jerseyNumber: input.jerseyNumber,
         primaryPosition: input.primaryPosition,
         secondaryPositions: sanitizeSecondaryPositions(
@@ -3214,6 +3448,10 @@ export const firebaseRepository: AppRepository = {
             input.photoUrl !== undefined
               ? input.photoUrl
               : currentPlayer.photoUrl ?? null,
+          presentationVideoUrl:
+            input.presentationVideoUrl !== undefined
+              ? input.presentationVideoUrl
+              : currentPlayer.presentationVideoUrl ?? null,
           jerseyNumber:
             typeof input.jerseyNumber === 'number'
               ? input.jerseyNumber
@@ -3308,6 +3546,10 @@ export const firebaseRepository: AppRepository = {
           input.photoUrl !== undefined
             ? input.photoUrl
             : currentPlayer.photoUrl ?? null,
+        presentationVideoUrl:
+          input.presentationVideoUrl !== undefined
+            ? input.presentationVideoUrl
+            : currentPlayer.presentationVideoUrl ?? null,
         bio:
           input.bio !== undefined
             ? input.bio?.trim() ?? ''
@@ -3356,14 +3598,14 @@ export const firebaseRepository: AppRepository = {
       const currentTeam = await fetchTeamById(currentPlayer.teamId);
       if (!membership.canManagePlayers) {
         throw createRepositoryError(
-          'Apenas quem gerencia o elenco pode fazer essa acao.',
+          'Apenas quem gerencia o elenco pode inativar um jogador.',
           'permission-denied',
         );
       }
 
       if (currentPlayer.deletedAt || currentPlayer.status === 'inactive') {
         throw createRepositoryError(
-          'Esse jogador ja foi removido do elenco ativo.',
+          'Esse jogador já está fora do elenco ativo.',
           'failed-precondition',
         );
       }
@@ -3486,7 +3728,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel remover o jogador agora.',
+        'Não foi possível inativar o jogador agora.',
       );
     }
   },
@@ -4252,6 +4494,255 @@ export const firebaseRepository: AppRepository = {
     }
   },
 
+  async createMatchDiaryEntry(
+    input: CreateMatchDiaryEntryInput,
+    actorUserId: string,
+  ) {
+    try {
+      const firestore = requireFirestore();
+      const { actor, membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      if (!membership.canManageTeam) {
+        throw createRepositoryError(
+          'Apenas o administrador do time pode publicar uma resenha.',
+          'permission-denied',
+        );
+      }
+
+      const match = await fetchMatchByIdForTeam(activeTeamId, input.matchId);
+      const validated = validateDiaryFields({
+        title: input.title,
+        content: input.content,
+      });
+      const mentionedPlayerIds = await sanitizeMentionedPlayerIds(
+        activeTeamId,
+        input.mentionedPlayerIds,
+      );
+      const updatedAt = nowIso();
+      const entryRef = doc(collection(firestore, FIRESTORE_COLLECTIONS.matchDiaryEntries));
+      const entry = normalizeMatchDiaryEntryDocument({
+        id: entryRef.id,
+        teamId: activeTeamId,
+        matchId: match.id,
+        authorUserId: actor.id,
+        authorName: actor.displayName,
+        title: validated.title,
+        content: validated.content,
+        mentionedPlayerIds,
+        visibility: 'team',
+        pinned: input.pinned ?? false,
+        mood: input.mood ?? null,
+        emoji: resolveDiaryEmoji(input.mood, input.emoji),
+        createdAt: updatedAt,
+        updatedAt,
+      });
+
+      const batch = writeBatch(firestore);
+      batch.set(
+        doc(firestore, FIRESTORE_COLLECTIONS.matchDiaryEntries, entry.id),
+        entry,
+      );
+
+      if (input.notifyTeam) {
+        const [teamMembers, existingNotifications] = await Promise.all([
+          fetchTeamMembersByTeamId(activeTeamId),
+          fetchNotificationsByTeamId(activeTeamId),
+        ]);
+        const notificationDocuments = buildDiaryNotificationDocuments({
+          entry,
+          match,
+          actorUserId: actor.id,
+          teamMembers,
+          existingNotifications,
+        });
+
+        for (const notification of notificationDocuments) {
+          batch.set(
+            doc(firestore, FIRESTORE_COLLECTIONS.notifications, notification.id),
+            notification,
+          );
+        }
+      }
+
+      await batch.commit();
+      return entry;
+    } catch (error) {
+      throw toFriendlyFirestoreError(
+        error,
+        'Nao foi possivel publicar a resenha agora.',
+      );
+    }
+  },
+
+  async updateMatchDiaryEntry(
+    entryId: string,
+    input: UpdateMatchDiaryEntryInput,
+    actorUserId: string,
+  ) {
+    try {
+      const firestore = requireFirestore();
+      const { actor, membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      if (!membership.canManageTeam) {
+        throw createRepositoryError(
+          'Apenas o administrador do time pode editar a resenha.',
+          'permission-denied',
+        );
+      }
+
+      const existingEntry = await fetchMatchDiaryEntryByIdForTeam(activeTeamId, entryId);
+      if (!existingEntry) {
+        throw createRepositoryError('Resenha da partida nao encontrada.', 'not-found');
+      }
+
+      const match = await fetchMatchByIdForTeam(activeTeamId, existingEntry.matchId);
+      const nextTitle = input.title !== undefined ? input.title : existingEntry.title;
+      const nextContent = input.content !== undefined ? input.content : existingEntry.content;
+      const validated = validateDiaryFields({
+        title: nextTitle,
+        content: nextContent,
+      });
+      const mentionedPlayerIds =
+        input.mentionedPlayerIds !== undefined
+          ? await sanitizeMentionedPlayerIds(activeTeamId, input.mentionedPlayerIds)
+          : existingEntry.mentionedPlayerIds;
+      const updatedAt = nowIso();
+      const updatedEntry = normalizeMatchDiaryEntryDocument({
+        ...existingEntry,
+        title: normalizeDiaryTitle(validated.title),
+        content: validated.content,
+        mentionedPlayerIds,
+        pinned: input.pinned ?? existingEntry.pinned ?? false,
+        mood: input.mood !== undefined ? input.mood : existingEntry.mood ?? null,
+        emoji:
+          input.emoji !== undefined || input.mood !== undefined
+            ? resolveDiaryEmoji(
+                input.mood !== undefined ? input.mood : existingEntry.mood ?? null,
+                input.emoji ?? existingEntry.emoji,
+              )
+            : existingEntry.emoji ?? null,
+        updatedAt,
+      });
+
+      const batch = writeBatch(firestore);
+      batch.set(
+        doc(firestore, FIRESTORE_COLLECTIONS.matchDiaryEntries, updatedEntry.id),
+        updatedEntry,
+      );
+
+      if (input.notifyTeam) {
+        const [teamMembers, existingNotifications] = await Promise.all([
+          fetchTeamMembersByTeamId(activeTeamId),
+          fetchNotificationsByTeamId(activeTeamId),
+        ]);
+        const existingDiaryNotifications = existingNotifications.filter(
+          (notification) =>
+            notification.type === 'match-diary-published' &&
+            notification.entryId === updatedEntry.id,
+        );
+        const nextNotificationDocuments = buildDiaryNotificationDocuments({
+          entry: updatedEntry,
+          match,
+          actorUserId: actor.id,
+          teamMembers,
+          existingNotifications,
+        });
+        const nextNotificationIds = new Set(
+          nextNotificationDocuments.map((notification) => notification.id),
+        );
+
+        for (const notification of existingDiaryNotifications) {
+          if (!nextNotificationIds.has(notification.id)) {
+            batch.delete(
+              doc(firestore, FIRESTORE_COLLECTIONS.notifications, notification.id),
+            );
+          }
+        }
+
+        for (const notification of nextNotificationDocuments) {
+          batch.set(
+            doc(firestore, FIRESTORE_COLLECTIONS.notifications, notification.id),
+            notification,
+          );
+        }
+      }
+
+      await batch.commit();
+      return updatedEntry;
+    } catch (error) {
+      throw toFriendlyFirestoreError(
+        error,
+        'Nao foi possivel atualizar a resenha agora.',
+      );
+    }
+  },
+
+  async deleteMatchDiaryEntry(entryId: string, actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      const { membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      if (!membership.canManageTeam) {
+        throw createRepositoryError(
+          'Apenas o administrador do time pode excluir a resenha.',
+          'permission-denied',
+        );
+      }
+
+      const entry = await fetchMatchDiaryEntryByIdForTeam(activeTeamId, entryId);
+      if (!entry) {
+        throw createRepositoryError('Resenha da partida nao encontrada.', 'not-found');
+      }
+
+      const notifications = await fetchNotificationsByTeamId(activeTeamId);
+      const batch = writeBatch(firestore);
+      batch.delete(doc(firestore, FIRESTORE_COLLECTIONS.matchDiaryEntries, entry.id));
+
+      for (const notification of notifications.filter(
+        (item) => item.type === 'match-diary-published' && item.entryId === entry.id,
+      )) {
+        batch.delete(doc(firestore, FIRESTORE_COLLECTIONS.notifications, notification.id));
+      }
+
+      await batch.commit();
+    } catch (error) {
+      throw toFriendlyFirestoreError(
+        error,
+        'Nao foi possivel excluir a resenha agora.',
+      );
+    }
+  },
+
+  async fetchMatchDiaryEntriesByMatchId(matchId: string, actorUserId: string) {
+    try {
+      const { activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      await fetchMatchByIdForTeam(activeTeamId, matchId);
+      return await fetchMatchDiaryEntriesByMatchIdForTeam(activeTeamId, matchId);
+    } catch (error) {
+      throw toFriendlyFirestoreError(
+        error,
+        'Nao foi possivel carregar as resenhas desta partida.',
+      );
+    }
+  },
+
+  async listMatchDiaryEntriesForTeam(teamId: string, actorUserId: string, limit?: number) {
+    try {
+      const { activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      if (activeTeamId !== teamId) {
+        throw createRepositoryError(
+          'Troque para o time atual antes de continuar.',
+          'permission-denied',
+        );
+      }
+
+      const entries = await fetchMatchDiaryEntriesByTeamId(teamId);
+      return limit != null ? entries.slice(0, limit) : entries;
+    } catch (error) {
+      throw toFriendlyFirestoreError(
+        error,
+        'Nao foi possivel carregar o diario do time agora.',
+      );
+    }
+  },
+
   async submitMvpVote(input: SubmitMvpVoteInput, actorUserId: string) {
     try {
       const firestore = requireFirestore();
@@ -4421,7 +4912,7 @@ export const firebaseRepository: AppRepository = {
       }
 
       const attendance = await fetchAttendanceByMatchIdForTeam(activeTeamId, currentMatch.id);
-      const teamCriteria = await ensureTeamRatingCriteria(activeTeamId);
+      const teamCriteria = await loadTeamRatingCriteria(activeTeamId);
       const activeCriteria = getActiveRatingCriteria(teamCriteria);
       const confirmedPlayerIds = new Set(
         attendance
@@ -4514,6 +5005,13 @@ export const firebaseRepository: AppRepository = {
         );
       }
 
+      if (!canAccessNotification(notification, actor.id)) {
+        throw createRepositoryError(
+          'Voce nao pode abrir esta notificacao.',
+          'permission-denied',
+        );
+      }
+
       if (notification.readByUserIds.includes(actor.id)) {
         return;
       }
@@ -4537,7 +5035,9 @@ export const firebaseRepository: AppRepository = {
     try {
       const firestore = requireFirestore();
       const { actor, activeTeamId } = await ensureActiveTeamContext(actorUserId);
-      const notifications = await fetchNotificationsByTeamId(activeTeamId);
+      const notifications = (await fetchNotificationsByTeamId(activeTeamId)).filter(
+        (notification) => canAccessNotification(notification, actor.id),
+      );
       const unreadNotifications = notifications.filter(
         (notification) => !notification.readByUserIds.includes(actor.id),
       );

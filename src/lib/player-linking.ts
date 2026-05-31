@@ -4,6 +4,27 @@ export function normalizeEmail(email?: string | null) {
   return email?.trim().toLowerCase() ?? '';
 }
 
+export type PlayerResolutionSource =
+  | 'membership-player-id'
+  | 'linked-user-id'
+  | 'linked-email'
+  | 'unresolved';
+
+export type PlayerResolutionFailureReason =
+  | 'missing-user'
+  | 'membership-player-not-found'
+  | 'membership-player-unavailable'
+  | 'membership-player-linked-to-other-user'
+  | 'linked-user-id-not-found'
+  | 'linked-email-not-found'
+  | 'no-matching-player';
+
+export function membershipIndicatesPlayer(
+  membership?: Pick<TeamMember, 'playerId' | 'roles'> | null,
+) {
+  return Boolean(membership && (membership.roles.includes('player') || membership.playerId));
+}
+
 export function isPlayerAvailableForLinking(
   player: Player | null | undefined,
 ) {
@@ -22,48 +43,104 @@ export function canReuseMembershipPlayerForUser(
     return player.linkedUserId === user.id;
   }
 
-  const normalizedLinkedEmail = normalizeEmail(player.linkedEmail);
-  if (!normalizedLinkedEmail) {
-    return true;
-  }
-
-  return normalizedLinkedEmail === normalizeEmail(user.email);
+  return true;
 }
 
-export function resolvePlayerForUser(input: {
+export function resolvePlayerForUserWithDiagnostics(input: {
   teamPlayers: Player[];
-  user: Pick<User, 'id' | 'email'>;
-  membership?: Pick<TeamMember, 'playerId'> | null;
+  user: Pick<User, 'id' | 'email'> | null;
+  membership?: Pick<TeamMember, 'playerId' | 'roles'> | null;
   teamId?: string | null;
 }) {
   const scopedPlayers = input.teamId
     ? input.teamPlayers.filter((player) => player.teamId === input.teamId)
     : input.teamPlayers;
-  const normalizedUserEmail = normalizeEmail(input.user.email);
-  const membershipPlayer =
-    input.membership?.playerId != null
-      ? scopedPlayers.find((player) => player.id === input.membership?.playerId) ?? null
-      : null;
 
-  if (
-    membershipPlayer &&
-    canReuseMembershipPlayerForUser(membershipPlayer, input.user)
-  ) {
-    return membershipPlayer;
+  if (!input.user) {
+    return {
+      player: null as Player | null,
+      source: 'unresolved' as const,
+      failureReason: 'missing-user' as const,
+    };
   }
 
-  return (
+  const normalizedUserEmail = normalizeEmail(input.user.email);
+  const membershipPlayerId = input.membership?.playerId ?? null;
+  const membershipPlayer =
+    membershipPlayerId != null
+      ? scopedPlayers.find((player) => player.id === membershipPlayerId) ?? null
+      : null;
+
+  let failureReason: PlayerResolutionFailureReason | null = null;
+
+  if (input.membership?.playerId) {
+    if (!membershipPlayer) {
+      failureReason = 'membership-player-not-found';
+    } else if (!isPlayerAvailableForLinking(membershipPlayer)) {
+      failureReason = 'membership-player-unavailable';
+    } else if (
+      membershipPlayer.linkedUserId &&
+      membershipPlayer.linkedUserId !== input.user.id
+    ) {
+      failureReason = 'membership-player-linked-to-other-user';
+    } else {
+      return {
+        player: membershipPlayer,
+        source: 'membership-player-id' as const,
+        failureReason: null,
+      };
+    }
+  }
+
+  const linkedUserPlayer =
     scopedPlayers.find(
       (player) =>
         isPlayerAvailableForLinking(player) &&
-        player.linkedUserId === input.user.id,
-    ) ??
+        player.linkedUserId === input.user?.id,
+    ) ?? null;
+
+  if (linkedUserPlayer) {
+    return {
+      player: linkedUserPlayer,
+      source: 'linked-user-id' as const,
+      failureReason,
+    };
+  }
+
+  if (!failureReason) {
+    failureReason = 'linked-user-id-not-found';
+  }
+
+  const linkedEmailPlayer =
     scopedPlayers.find(
       (player) =>
         isPlayerAvailableForLinking(player) &&
         !player.linkedUserId &&
         normalizeEmail(player.linkedEmail) === normalizedUserEmail,
-    ) ??
-    null
-  );
+    ) ?? null;
+
+  if (linkedEmailPlayer) {
+    return {
+      player: linkedEmailPlayer,
+      source: 'linked-email' as const,
+      failureReason,
+    };
+  }
+
+  return {
+    player: null as Player | null,
+    source: 'unresolved' as const,
+    failureReason:
+      failureReason ??
+      (normalizedUserEmail ? 'linked-email-not-found' : 'no-matching-player'),
+  };
+}
+
+export function resolvePlayerForUser(input: {
+  teamPlayers: Player[];
+  user: Pick<User, 'id' | 'email'>;
+  membership?: Pick<TeamMember, 'playerId' | 'roles'> | null;
+  teamId?: string | null;
+}) {
+  return resolvePlayerForUserWithDiagnostics(input).player;
 }

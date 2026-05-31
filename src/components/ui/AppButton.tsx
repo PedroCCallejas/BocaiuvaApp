@@ -57,16 +57,16 @@ export function AppButton({
             {
               backgroundColor:
                 variant === 'danger'
-                  ? `${theme.colors.danger}22`
+                  ? `${theme.colors.danger}20`
                   : variant === 'secondary'
-                    ? theme.colors.surfaceMuted
-                    : 'transparent',
+                    ? theme.colors.backgroundElevated
+                    : theme.colors.backgroundElevated,
               borderColor:
                 variant === 'danger'
-                  ? `${theme.colors.danger}55`
+                  ? `${theme.colors.danger}66`
                   : variant === 'ghost'
-                    ? theme.colors.border
-                    : theme.colors.border,
+                    ? 'rgba(255,255,255,0.14)'
+                    : 'rgba(255,255,255,0.14)',
             },
           ]}>
           <ButtonLabel

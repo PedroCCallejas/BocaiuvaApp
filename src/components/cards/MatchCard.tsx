@@ -26,7 +26,7 @@ export function MatchCard({ match, attendance, onPress }: MatchCardProps) {
           <Text style={[styles.title, { color: theme.colors.text }]}>
             {match.opponentName}
           </Text>
-          <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>
+          <Text numberOfLines={2} style={[styles.subtitle, { color: theme.colors.textMuted }]}>
             {formatMatchDateTime(match)} - {match.venue}
           </Text>
         </View>
@@ -99,6 +99,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontFamily: fonts.body,
     fontSize: 13,
+    lineHeight: 18,
   },
   tags: {
     flexDirection: "row",
@@ -113,6 +114,7 @@ const styles = StyleSheet.create({
   attendance: {
     fontFamily: fonts.body,
     fontSize: 13,
+    lineHeight: 18,
   },
   pill: {
     alignSelf: "flex-start",

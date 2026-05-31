@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { RankingList } from '@/components/stats/RankingList';
 import { AppButton } from '@/components/ui/AppButton';
@@ -12,18 +12,18 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   applyPlayerStatsFilters,
   buildCriterionSortMetric,
-  buildPlayerMetricSubtitle,
   buildPlayerAggregates,
+  buildPlayerMetricSubtitle,
   buildRankingByMetric,
   calculateRankingMetric,
   filterMatchesForStats,
+  formatPlayerMetricValue,
   formatStatNumber,
-  getCriterionIdFromMetric,
   getAvailableStatsMonths,
   getAvailableStatsYears,
+  getCriterionIdFromMetric,
   isCriterionMetric,
   PLAYER_STATS_LABELS,
-  formatPlayerMetricValue,
   type StatsFilters,
   type StatsPeriodPreset,
   type StatsPlayerScope,
@@ -39,11 +39,11 @@ const PERIOD_FILTERS: Array<{ id: StatsPeriodPreset; label: string }> = [
   { id: 'all', label: 'Geral' },
   { id: 'current-year', label: 'Ano atual' },
   { id: 'year', label: 'Ano' },
-  { id: 'current-month', label: 'Mes atual' },
-  { id: 'month', label: 'Mes/Ano' },
+  { id: 'current-month', label: 'Mês atual' },
+  { id: 'month', label: 'Mês/Ano' },
 ];
 const PLAYER_SCOPE_FILTERS: Array<{ id: StatsPlayerScope; label: string }> = [
-  { id: 'active', label: 'So ativos' },
+  { id: 'active', label: 'Só ativos' },
   { id: 'with-history', label: 'Incluir inativos' },
   { id: 'all', label: 'Todos' },
 ];
@@ -79,7 +79,7 @@ function FilterChip({
       style={[
         styles.filterChip,
         {
-          backgroundColor: selected ? theme.colors.secondarySoft : theme.colors.surface,
+          backgroundColor: selected ? theme.colors.secondarySoft : theme.colors.backgroundElevated,
           borderColor: selected ? theme.colors.secondary : theme.colors.border,
         },
       ]}>
@@ -103,6 +103,7 @@ function rankingValueLabel(
 }
 
 export default function RankingsScreen() {
+  const isWeb = Platform.OS === 'web';
   const theme = useAppTheme();
   const snapshot = useAppStore((state) => state.snapshot);
   const team = useAppStore(selectCurrentTeam);
@@ -139,14 +140,14 @@ export default function RankingsScreen() {
     playerScope: selectedPlayerScope,
     minGames,
   };
-  const playerStats = applyPlayerStatsFilters(
-    buildPlayerAggregates(snapshot, team.id, filters),
-    { minGames },
-  );
+  const playerStats = applyPlayerStatsFilters(buildPlayerAggregates(snapshot, team.id, filters), {
+    minGames,
+  });
   const ranking = buildRankingByMetric(playerStats, selectedMetric, {
     limit: showFullRanking ? undefined : 5,
     minGames,
   });
+  const hasManualHistoryInRanking = playerStats.some((item) => item.manualHistoryIncluded);
   const selectedCriterionId = getCriterionIdFromMetric(selectedMetric);
   const selectedCriterion =
     activeCriteria.find((criterion) => criterion.id === selectedCriterionId) ?? null;
@@ -154,7 +155,9 @@ export default function RankingsScreen() {
 
   return (
     <Screen>
-      <SectionHeader title="Rankings" subtitle="Ordene por gols, media, MVP e participacao" />
+      {!isWeb ? (
+        <SectionHeader title="Rankings" subtitle="Ordene por gols, média, MVP e participação" />
+      ) : null}
 
       <View
         style={[
@@ -167,7 +170,7 @@ export default function RankingsScreen() {
         <Text style={[styles.filterTitle, { color: theme.colors.text }]}>Filtros</Text>
 
         <View style={styles.filterGroup}>
-          <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Periodo</Text>
+          <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Período</Text>
           <View style={styles.filterRow}>
             {PERIOD_FILTERS.map((filter) => (
               <FilterChip
@@ -198,7 +201,7 @@ export default function RankingsScreen() {
 
         {selectedPeriod === 'month' ? (
           <View style={styles.filterGroup}>
-            <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Mes</Text>
+            <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Mês</Text>
             <View style={styles.filterRow}>
               {availableMonths.map((month) => (
                 <FilterChip
@@ -241,7 +244,7 @@ export default function RankingsScreen() {
         </View>
 
         <View style={styles.filterGroup}>
-          <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Minimo de jogos</Text>
+          <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Mínimo de jogos</Text>
           <View style={styles.filterRow}>
             {MIN_GAMES_FILTERS.map((value) => (
               <FilterChip
@@ -254,6 +257,25 @@ export default function RankingsScreen() {
           </View>
         </View>
       </View>
+
+      {hasManualHistoryInRanking ? (
+        <View
+          style={[
+            styles.noticeCard,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.border,
+            },
+          ]}>
+          <Text style={[styles.noticeTitle, { color: theme.colors.text }]}>
+            Correção manual aplicada
+          </Text>
+          <Text style={[styles.noticeText, { color: theme.colors.textMuted }]}>
+            No recorte geral, o ranking pode incluir correções manuais somadas aos números das
+            partidas. Jogos, MVPs e avaliações oficiais continuam preservados.
+          </Text>
+        </View>
+      ) : null}
 
       <SectionHeader
         title="Ordenar por"
@@ -297,7 +319,7 @@ export default function RankingsScreen() {
       {ranking.length === 0 ? (
         <EmptyState
           title="Sem ranking para este recorte"
-          description="Reduza o minimo de jogos ou escolha outro periodo para mostrar jogadores."
+          description="Reduza o mínimo de jogos ou escolha outro período para mostrar jogadores."
         />
       ) : (
         <>
@@ -315,7 +337,7 @@ export default function RankingsScreen() {
             })}
           />
           <AppButton
-            label={showFullRanking ? 'Mostrar so top 5' : 'Ver ranking completo'}
+            label={showFullRanking ? 'Mostrar só top 5' : 'Ver ranking completo'}
             variant="secondary"
             onPress={() => setShowFullRanking((current) => !current)}
           />
@@ -356,6 +378,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
+  },
+  noticeCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 16,
+    gap: 8,
+  },
+  noticeTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  noticeText: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
   },
   filterChip: {
     borderWidth: 1,

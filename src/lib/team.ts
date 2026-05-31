@@ -43,13 +43,13 @@ export function normalizeManualStats(
   const fallback = createEmptyManualStats();
 
   return {
-    matches: clampNonNegativeInteger(stats?.matches ?? fallback.matches),
-    goals: clampNonNegativeInteger(stats?.goals ?? fallback.goals),
-    assists: clampNonNegativeInteger(stats?.assists ?? fallback.assists),
-    wins: clampNonNegativeInteger(stats?.wins ?? fallback.wins),
-    draws: clampNonNegativeInteger(stats?.draws ?? fallback.draws),
-    losses: clampNonNegativeInteger(stats?.losses ?? fallback.losses),
-    mvps: clampNonNegativeInteger(stats?.mvps ?? fallback.mvps),
+    matches: normalizeWholeNumber(stats?.matches ?? fallback.matches),
+    goals: normalizeWholeNumber(stats?.goals ?? fallback.goals),
+    assists: normalizeWholeNumber(stats?.assists ?? fallback.assists),
+    wins: normalizeWholeNumber(stats?.wins ?? fallback.wins),
+    draws: normalizeWholeNumber(stats?.draws ?? fallback.draws),
+    losses: normalizeWholeNumber(stats?.losses ?? fallback.losses),
+    mvps: normalizeDecimalNumber(stats?.mvps ?? fallback.mvps),
   };
 }
 
@@ -63,10 +63,18 @@ export function deriveNickname(name: string, email: string) {
   return firstChunk.slice(0, 18);
 }
 
-function clampNonNegativeInteger(value: number) {
-  if (!Number.isFinite(value) || value < 0) {
+function normalizeWholeNumber(value: number) {
+  if (!Number.isFinite(value)) {
     return 0;
   }
 
-  return Math.floor(value);
+  return value < 0 ? Math.ceil(value) : Math.floor(value);
+}
+
+function normalizeDecimalNumber(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Number(value.toFixed(2));
 }

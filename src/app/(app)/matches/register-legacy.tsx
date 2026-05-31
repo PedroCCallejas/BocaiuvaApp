@@ -128,7 +128,7 @@ export default function RegisterLegacyMatchScreen() {
     if (totalGoals > teamScore) {
       Alert.alert(
         'Placar inconsistente',
-        'A soma de gols dos jogadores nao pode ultrapassar o placar do time.',
+        'A soma de gols dos jogadores não pode ultrapassar o placar do time.',
       );
       return;
     }
@@ -155,7 +155,7 @@ export default function RegisterLegacyMatchScreen() {
       router.replace(`/matches/${matchId}`);
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel registrar o jogo',
+        'Não foi possível registrar o jogo',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }

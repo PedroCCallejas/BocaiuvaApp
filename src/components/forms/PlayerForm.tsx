@@ -17,6 +17,11 @@ import {
 } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import {
+  buildManualAdjustmentsFromDesiredTotals,
+  formatStatNumber,
+  getDesiredTotalsFromManualAdjustments,
+} from '@/lib/stats';
 import { pickImage, type ImagePickerSource, type SelectedImageAsset } from '@/lib/uploadImage';
 import type {
   FootPreference,
@@ -39,13 +44,13 @@ type PlayerFormState = {
   introVideoUrl?: string;
   celebrationVideoUrl?: string;
   allowSelfEditJerseyNumber: boolean;
-  manualMatches: string;
-  manualGoals: string;
-  manualAssists: string;
-  manualWins: string;
-  manualDraws: string;
-  manualLosses: string;
-  manualMvps: string;
+  desiredMatches: string;
+  desiredGoals: string;
+  desiredAssists: string;
+  desiredWins: string;
+  desiredDraws: string;
+  desiredLosses: string;
+  desiredMvps: string;
 };
 
 function createPlayerSchema(variant: 'admin' | 'self') {
@@ -58,19 +63,19 @@ function createPlayerSchema(variant: 'admin' | 'self') {
       secondaryPositions: z.array(z.string()),
       dominantFoot: z.string(),
       status: z.string(),
-      linkedEmail: z.string().email('Informe um e-mail valido.').or(z.literal('')).optional(),
+      linkedEmail: z.string().email('Informe um e-mail válido.').or(z.literal('')).optional(),
       bio: z.string().optional(),
       preferredPosition: z.string().optional(),
-      introVideoUrl: z.string().url('Informe uma URL valida.').or(z.literal('')).optional(),
-      celebrationVideoUrl: z.string().url('Informe uma URL valida.').or(z.literal('')).optional(),
+      introVideoUrl: z.string().url('Informe uma URL válida.').or(z.literal('')).optional(),
+      celebrationVideoUrl: z.string().url('Informe uma URL válida.').or(z.literal('')).optional(),
       allowSelfEditJerseyNumber: z.boolean(),
-      manualMatches: z.string(),
-      manualGoals: z.string(),
-      manualAssists: z.string(),
-      manualWins: z.string(),
-      manualDraws: z.string(),
-      manualLosses: z.string(),
-      manualMvps: z.string(),
+      desiredMatches: z.string(),
+      desiredGoals: z.string(),
+      desiredAssists: z.string(),
+      desiredWins: z.string(),
+      desiredDraws: z.string(),
+      desiredLosses: z.string(),
+      desiredMvps: z.string(),
     })
     .superRefine((values, ctx) => {
       if (variant !== 'admin') {
@@ -89,7 +94,7 @@ function createPlayerSchema(variant: 'admin' | 'self') {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['jerseyNumber'],
-          message: 'Informe o numero da camisa.',
+          message: 'Informe o número da camisa.',
         });
       } else if (Number(values.jerseyNumber) <= 0) {
         ctx.addIssue({
@@ -103,7 +108,7 @@ function createPlayerSchema(variant: 'admin' | 'self') {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['primaryPosition'],
-          message: 'Escolha a posicao principal.',
+          message: 'Escolha a posição principal.',
         });
       }
 
@@ -111,7 +116,7 @@ function createPlayerSchema(variant: 'admin' | 'self') {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['dominantFoot'],
-          message: 'Escolha o pe dominante.',
+          message: 'Escolha o pé dominante.',
         });
       }
 
@@ -124,13 +129,12 @@ function createPlayerSchema(variant: 'admin' | 'self') {
       }
 
       for (const field of [
-        'manualMatches',
-        'manualGoals',
-        'manualAssists',
-        'manualWins',
-        'manualDraws',
-        'manualLosses',
-        'manualMvps',
+        'desiredMatches',
+        'desiredGoals',
+        'desiredAssists',
+        'desiredWins',
+        'desiredDraws',
+        'desiredLosses',
       ] as const) {
         const value = values[field].trim();
         if (value.length === 0) {
@@ -141,9 +145,18 @@ function createPlayerSchema(variant: 'admin' | 'self') {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: [field],
-            message: 'Use apenas numeros inteiros a partir de zero.',
+            message: 'Informe um total inteiro a partir de zero.',
           });
         }
+      }
+
+      const desiredMvps = values.desiredMvps.trim();
+      if (desiredMvps.length > 0 && !/^\d+(?:[.,]\d{1,2})?$/.test(desiredMvps)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['desiredMvps'],
+          message: 'Informe um total válido para MVPs.',
+        });
       }
     });
 }
@@ -176,6 +189,7 @@ interface PlayerFormProps {
   loading?: boolean;
   helperText?: string;
   imageUploadProgress?: number | null;
+  computedStats?: ManualPlayerStats;
   onSubmit: (payload: PlayerFormPayload) => Promise<void> | void;
 }
 
@@ -186,12 +200,34 @@ export function PlayerForm({
   loading,
   helperText,
   imageUploadProgress,
+  computedStats,
   onSubmit,
 }: PlayerFormProps) {
   const theme = useAppTheme();
   const schema = useMemo(() => createPlayerSchema(variant), [variant]);
   const [pendingPhoto, setPendingPhoto] = useState<SelectedImageAsset | null>(null);
   const [removePhoto, setRemovePhoto] = useState(false);
+  const normalizedComputedStats = useMemo(
+    () =>
+      getDesiredTotalsFromManualAdjustments(
+        computedStats ?? {
+          matches: 0,
+          goals: 0,
+          assists: 0,
+          wins: 0,
+          draws: 0,
+          losses: 0,
+          mvps: 0,
+        },
+        null,
+      ),
+    [computedStats],
+  );
+  const desiredTotalsDefaults = useMemo(
+    () =>
+      getDesiredTotalsFromManualAdjustments(normalizedComputedStats, defaults.manualStats),
+    [defaults.manualStats, normalizedComputedStats],
+  );
   const canSelfEditJerseyNumber =
     variant === 'self' &&
     (defaults.allowSelfEditJerseyNumber === true || defaults.jerseyNumber <= 0);
@@ -217,13 +253,13 @@ export function PlayerForm({
       introVideoUrl: defaults.introVideoUrl ?? '',
       celebrationVideoUrl: defaults.celebrationVideoUrl ?? '',
       allowSelfEditJerseyNumber: defaults.allowSelfEditJerseyNumber ?? false,
-      manualMatches: String(defaults.manualStats?.matches ?? 0),
-      manualGoals: String(defaults.manualStats?.goals ?? 0),
-      manualAssists: String(defaults.manualStats?.assists ?? 0),
-      manualWins: String(defaults.manualStats?.wins ?? 0),
-      manualDraws: String(defaults.manualStats?.draws ?? 0),
-      manualLosses: String(defaults.manualStats?.losses ?? 0),
-      manualMvps: String(defaults.manualStats?.mvps ?? 0),
+      desiredMatches: formatStatNumber(desiredTotalsDefaults.matches, 0),
+      desiredGoals: formatStatNumber(desiredTotalsDefaults.goals, 0),
+      desiredAssists: formatStatNumber(desiredTotalsDefaults.assists, 0),
+      desiredWins: formatStatNumber(desiredTotalsDefaults.wins, 0),
+      desiredDraws: formatStatNumber(desiredTotalsDefaults.draws, 0),
+      desiredLosses: formatStatNumber(desiredTotalsDefaults.losses, 0),
+      desiredMvps: formatStatNumber(desiredTotalsDefaults.mvps, 2),
     },
   });
 
@@ -231,6 +267,19 @@ export function PlayerForm({
   const secondaryPositions = (watch('secondaryPositions') || []) as Position[];
   const preferredPosition = watch('preferredPosition') || '';
   const currentPhotoUrl = removePhoto ? null : defaults.photoUrl ?? null;
+  const desiredTotalsLive = {
+    matches: parseWholeNumberField(watch('desiredMatches')),
+    goals: parseWholeNumberField(watch('desiredGoals')),
+    assists: parseWholeNumberField(watch('desiredAssists')),
+    wins: parseWholeNumberField(watch('desiredWins')),
+    draws: parseWholeNumberField(watch('desiredDraws')),
+    losses: parseWholeNumberField(watch('desiredLosses')),
+    mvps: parseDecimalField(watch('desiredMvps')),
+  } satisfies ManualPlayerStats;
+  const liveManualAdjustments = buildManualAdjustmentsFromDesiredTotals(
+    normalizedComputedStats,
+    desiredTotalsLive,
+  );
 
   async function handlePickPhoto(source: ImagePickerSource) {
     try {
@@ -243,7 +292,7 @@ export function PlayerForm({
       setRemovePhoto(false);
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel abrir a imagem',
+        'Não foi possível abrir a imagem',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
@@ -259,6 +308,16 @@ export function PlayerForm({
   }
 
   async function submit(values: PlayerFormState) {
+    const desiredTotals = {
+      matches: parseWholeNumberField(values.desiredMatches),
+      goals: parseWholeNumberField(values.desiredGoals),
+      assists: parseWholeNumberField(values.desiredAssists),
+      wins: parseWholeNumberField(values.desiredWins),
+      draws: parseWholeNumberField(values.desiredDraws),
+      losses: parseWholeNumberField(values.desiredLosses),
+      mvps: parseDecimalField(values.desiredMvps),
+    } satisfies ManualPlayerStats;
+
     const payload: PlayerFormPayload = {
       fullName: variant === 'admin' ? values.fullName.trim() : defaults.fullName,
       nickname: values.nickname.trim(),
@@ -295,15 +354,10 @@ export function PlayerForm({
           : defaults.allowSelfEditJerseyNumber ?? false,
       manualStats:
         variant === 'admin'
-          ? {
-              matches: parseStatField(values.manualMatches),
-              goals: parseStatField(values.manualGoals),
-              assists: parseStatField(values.manualAssists),
-              wins: parseStatField(values.manualWins),
-              draws: parseStatField(values.manualDraws),
-              losses: parseStatField(values.manualLosses),
-              mvps: parseStatField(values.manualMvps),
-            }
+          ? buildManualAdjustmentsFromDesiredTotals(
+              normalizedComputedStats,
+              desiredTotals,
+            )
           : defaults.manualStats,
     };
 
@@ -348,7 +402,7 @@ export function PlayerForm({
 
       <ImageUploadField
         label="Foto do jogador"
-        hint="A imagem sera comprimida e enviada ao Storage quando voce salvar."
+        hint="A imagem será comprimida e enviada ao Storage quando você salvar."
         imageUrl={currentPhotoUrl}
         pendingImage={pendingPhoto}
         onPickFromLibrary={() => void handlePickPhoto('library')}
@@ -373,7 +427,7 @@ export function PlayerForm({
           name="linkedEmail"
           render={({ field }) => (
             <AppInput
-              label="E-mail reservado para vinculacao"
+              label="E-mail reservado para vinculação"
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="email-address"
@@ -392,7 +446,7 @@ export function PlayerForm({
           name="jerseyNumber"
           render={({ field }) => (
             <AppInput
-              label="Numero da camisa"
+              label="Número da camisa"
               keyboardType="number-pad"
               value={field.value}
               onBlur={field.onBlur}
@@ -421,7 +475,7 @@ export function PlayerForm({
 
       {variant === 'admin' ? (
         <ChoiceSection
-          title="Posicao principal"
+          title="Posição principal"
           options={POSITION_OPTIONS}
           selected={[primaryPosition]}
           labelFor={(item) => POSITION_LABELS[item]}
@@ -437,7 +491,7 @@ export function PlayerForm({
       ) : null}
 
       <ChoiceSection
-        title="Posicoes secundarias"
+        title="Posições secundárias"
         options={POSITION_OPTIONS.filter((item) => item !== primaryPosition)}
         selected={secondaryPositions}
         labelFor={(item) => POSITION_LABELS[item]}
@@ -450,7 +504,7 @@ export function PlayerForm({
       />
 
       <ChoiceSection
-        title="Posicao preferida"
+        title="Posição preferida"
         options={POSITION_OPTIONS}
         selected={preferredPosition ? [preferredPosition as Position] : []}
         labelFor={(item) => POSITION_LABELS[item]}
@@ -461,7 +515,7 @@ export function PlayerForm({
       />
 
       <ChoiceSection
-        title="Pe dominante"
+        title="Pé dominante"
         options={FOOT_OPTIONS}
         selected={[watch('dominantFoot') as FootPreference]}
         labelFor={(item) => FOOT_LABELS[item]}
@@ -474,7 +528,7 @@ export function PlayerForm({
         name="introVideoUrl"
         render={({ field }) => (
           <AppInput
-            label="Video de apresentacao (URL opcional)"
+            label="Vídeo de apresentação (URL opcional)"
             autoCapitalize="none"
             autoCorrect={false}
             value={field.value ?? ''}
@@ -490,7 +544,7 @@ export function PlayerForm({
         name="celebrationVideoUrl"
         render={({ field }) => (
           <AppInput
-            label="Video de comemoracao (URL opcional)"
+            label="Vídeo de comemoração (URL opcional)"
             autoCapitalize="none"
             autoCorrect={false}
             value={field.value ?? ''}
@@ -512,7 +566,7 @@ export function PlayerForm({
             single
           />
           <ChoiceSection
-            title="Camisa editavel pelo jogador"
+            title="Camisa editável pelo jogador"
             options={['allowed', 'locked']}
             selected={[watch('allowSelfEditJerseyNumber') ? 'allowed' : 'locked']}
             labelFor={(item) =>
@@ -525,108 +579,80 @@ export function PlayerForm({
             }
             single
           />
+
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.colors.textMuted }]}>
-              Estatisticas iniciais
+              Correção de estatísticas
             </Text>
+            <Text style={[styles.sectionHelper, { color: theme.colors.textMuted }]}>
+              Informe o total correto do jogador. O app calcula automaticamente a diferença entre
+              o total informado e o que já foi registrado nas partidas.
+            </Text>
+
             <View style={styles.statsGrid}>
-              <Controller
-                control={control}
-                name="manualMatches"
-                render={({ field }) => (
-                  <AppInput
-                    label="Jogos"
-                    keyboardType="number-pad"
-                    value={field.value}
-                    onBlur={field.onBlur}
-                    onChangeText={field.onChange}
-                    error={errors.manualMatches?.message}
-                  />
-                )}
+              <StatsCorrectionField
+                label="Jogos"
+                computedValue={normalizedComputedStats.matches}
+                adjustmentValue={liveManualAdjustments.matches}
+                inputValue={watch('desiredMatches')}
+                error={errors.desiredMatches?.message}
+                keyboardType="number-pad"
+                onChangeText={(value) => setValue('desiredMatches', value)}
               />
-              <Controller
-                control={control}
-                name="manualGoals"
-                render={({ field }) => (
-                  <AppInput
-                    label="Gols"
-                    keyboardType="number-pad"
-                    value={field.value}
-                    onBlur={field.onBlur}
-                    onChangeText={field.onChange}
-                    error={errors.manualGoals?.message}
-                  />
-                )}
+              <StatsCorrectionField
+                label="Gols"
+                computedValue={normalizedComputedStats.goals}
+                adjustmentValue={liveManualAdjustments.goals}
+                inputValue={watch('desiredGoals')}
+                error={errors.desiredGoals?.message}
+                keyboardType="number-pad"
+                onChangeText={(value) => setValue('desiredGoals', value)}
               />
-              <Controller
-                control={control}
-                name="manualAssists"
-                render={({ field }) => (
-                  <AppInput
-                    label="Assistencias"
-                    keyboardType="number-pad"
-                    value={field.value}
-                    onBlur={field.onBlur}
-                    onChangeText={field.onChange}
-                    error={errors.manualAssists?.message}
-                  />
-                )}
+              <StatsCorrectionField
+                label="Assistências"
+                computedValue={normalizedComputedStats.assists}
+                adjustmentValue={liveManualAdjustments.assists}
+                inputValue={watch('desiredAssists')}
+                error={errors.desiredAssists?.message}
+                keyboardType="number-pad"
+                onChangeText={(value) => setValue('desiredAssists', value)}
               />
-              <Controller
-                control={control}
-                name="manualMvps"
-                render={({ field }) => (
-                  <AppInput
-                    label="MVPs"
-                    keyboardType="number-pad"
-                    value={field.value}
-                    onBlur={field.onBlur}
-                    onChangeText={field.onChange}
-                    error={errors.manualMvps?.message}
-                  />
-                )}
+              <StatsCorrectionField
+                label="MVPs"
+                computedValue={normalizedComputedStats.mvps}
+                adjustmentValue={liveManualAdjustments.mvps}
+                inputValue={watch('desiredMvps')}
+                error={errors.desiredMvps?.message}
+                keyboardType="decimal-pad"
+                allowDecimal
+                onChangeText={(value) => setValue('desiredMvps', value)}
               />
-              <Controller
-                control={control}
-                name="manualWins"
-                render={({ field }) => (
-                  <AppInput
-                    label="Vitorias"
-                    keyboardType="number-pad"
-                    value={field.value}
-                    onBlur={field.onBlur}
-                    onChangeText={field.onChange}
-                    error={errors.manualWins?.message}
-                  />
-                )}
+              <StatsCorrectionField
+                label="Vitórias"
+                computedValue={normalizedComputedStats.wins}
+                adjustmentValue={liveManualAdjustments.wins}
+                inputValue={watch('desiredWins')}
+                error={errors.desiredWins?.message}
+                keyboardType="number-pad"
+                onChangeText={(value) => setValue('desiredWins', value)}
               />
-              <Controller
-                control={control}
-                name="manualDraws"
-                render={({ field }) => (
-                  <AppInput
-                    label="Empates"
-                    keyboardType="number-pad"
-                    value={field.value}
-                    onBlur={field.onBlur}
-                    onChangeText={field.onChange}
-                    error={errors.manualDraws?.message}
-                  />
-                )}
+              <StatsCorrectionField
+                label="Empates"
+                computedValue={normalizedComputedStats.draws}
+                adjustmentValue={liveManualAdjustments.draws}
+                inputValue={watch('desiredDraws')}
+                error={errors.desiredDraws?.message}
+                keyboardType="number-pad"
+                onChangeText={(value) => setValue('desiredDraws', value)}
               />
-              <Controller
-                control={control}
-                name="manualLosses"
-                render={({ field }) => (
-                  <AppInput
-                    label="Derrotas"
-                    keyboardType="number-pad"
-                    value={field.value}
-                    onBlur={field.onBlur}
-                    onChangeText={field.onChange}
-                    error={errors.manualLosses?.message}
-                  />
-                )}
+              <StatsCorrectionField
+                label="Derrotas"
+                computedValue={normalizedComputedStats.losses}
+                adjustmentValue={liveManualAdjustments.losses}
+                inputValue={watch('desiredLosses')}
+                error={errors.desiredLosses?.message}
+                keyboardType="number-pad"
+                onChangeText={(value) => setValue('desiredLosses', value)}
               />
             </View>
           </View>
@@ -643,14 +669,97 @@ export function PlayerForm({
   );
 }
 
-function parseStatField(value: string) {
-  const sanitized = value.trim();
+function parseWholeNumberField(value?: string) {
+  const sanitized = value?.trim() ?? '';
+
+  if (!sanitized || !/^\d+$/.test(sanitized)) {
+    return 0;
+  }
+
+  return Number(sanitized);
+}
+
+function parseDecimalField(value?: string) {
+  const sanitized = (value?.trim() ?? '').replace(',', '.');
 
   if (!sanitized || Number.isNaN(Number(sanitized))) {
     return 0;
   }
 
-  return Math.max(0, Math.floor(Number(sanitized)));
+  return Number(Number(sanitized).toFixed(2));
+}
+
+function formatAdjustment(value: number, digits = 0) {
+  const normalized = formatStatNumber(value, digits);
+
+  if (value > 0) {
+    return `+${normalized}`;
+  }
+
+  return normalized;
+}
+
+function StatsCorrectionField({
+  label,
+  computedValue,
+  adjustmentValue,
+  inputValue,
+  onChangeText,
+  error,
+  keyboardType,
+  allowDecimal,
+}: {
+  label: string;
+  computedValue: number;
+  adjustmentValue: number;
+  inputValue?: string;
+  onChangeText: (value: string) => void;
+  error?: string;
+  keyboardType: 'number-pad' | 'decimal-pad';
+  allowDecimal?: boolean;
+}) {
+  const theme = useAppTheme();
+  const digits = allowDecimal ? 2 : 0;
+  const adjustmentPositive = adjustmentValue > 0;
+  const adjustmentNegative = adjustmentValue < 0;
+
+  return (
+    <View
+      style={[
+        styles.statCard,
+        {
+          backgroundColor: theme.colors.backgroundElevated,
+          borderColor: theme.colors.border,
+        },
+      ]}>
+      <View style={styles.statHeader}>
+        <Text style={[styles.statTitle, { color: theme.colors.text }]}>{label}</Text>
+        <Text
+          style={[
+            styles.statAdjustment,
+            {
+              color: adjustmentPositive
+                ? theme.colors.success
+                : adjustmentNegative
+                  ? theme.colors.warning
+                  : theme.colors.textMuted,
+            },
+          ]}>
+          Ajuste aplicado: {formatAdjustment(adjustmentValue, digits)}
+        </Text>
+      </View>
+      <Text style={[styles.statMeta, { color: theme.colors.textMuted }]}>
+        Calculado pelo app: {formatStatNumber(computedValue, digits)}
+      </Text>
+      <AppInput
+        label="Total correto"
+        keyboardType={keyboardType}
+        value={inputValue ?? ''}
+        onChangeText={onChangeText}
+        error={error}
+      />
+    </View>
+  );
 }
 
 function ChoiceSection<T extends string>({
@@ -724,13 +833,42 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.4,
   },
+  sectionHelper: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
+  },
   chipWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
   },
   statsGrid: {
+    gap: 12,
+  },
+  statCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
     gap: 10,
+  },
+  statHeader: {
+    gap: 4,
+  },
+  statTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  statMeta: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  statAdjustment: {
+    fontFamily: fonts.heading,
+    fontSize: 12,
+    fontWeight: '700',
   },
   chip: {
     borderWidth: 1,

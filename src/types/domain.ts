@@ -43,6 +43,13 @@ export type LegacyRatingCriterionId =
 
 export type RatingCriterion = string;
 export type RatingCriterionType = 'positive' | 'negative';
+export type MatchDiaryVisibility = 'team';
+export type MatchDiaryMood =
+  | 'funny'
+  | 'highlight'
+  | 'warning'
+  | 'praise'
+  | 'neutral';
 
 export type NotificationType =
   | 'match-created'
@@ -53,7 +60,8 @@ export type NotificationType =
   | 'match-finished'
   | 'mvp-voting-opened'
   | 'mvp-winner'
-  | 'ratings-opened';
+  | 'ratings-opened'
+  | 'match-diary-published';
 
 export interface BaseEntity {
   id: string;
@@ -98,6 +106,8 @@ export interface Team extends BaseEntity {
   name: string;
   slug: string;
   logoUrl?: string | null;
+  bannerUrl?: string | null;
+  presentationVideoUrl?: string | null;
   primaryColor: string;
   secondaryColor: string;
   accentColor?: string | null;
@@ -126,6 +136,7 @@ export interface Player extends BaseEntity {
   fullName: string;
   nickname: string;
   photoUrl?: string | null;
+  presentationVideoUrl?: string | null;
   jerseyNumber: number;
   primaryPosition: Position;
   secondaryPositions: Position[];
@@ -231,6 +242,20 @@ export interface PlayerRating extends BaseEntity {
   overall: number;
 }
 
+export interface MatchDiaryEntry extends BaseEntity {
+  teamId: string;
+  matchId: string;
+  authorUserId: string;
+  authorName: string;
+  title?: string | null;
+  content: string;
+  mentionedPlayerIds: string[];
+  visibility: MatchDiaryVisibility;
+  pinned?: boolean;
+  mood?: MatchDiaryMood | null;
+  emoji?: string | null;
+}
+
 export interface AppNotification extends BaseEntity {
   teamId: string;
   type: NotificationType;
@@ -238,7 +263,9 @@ export interface AppNotification extends BaseEntity {
   message: string;
   matchId?: string | null;
   playerId?: string | null;
+  entryId?: string | null;
   actorUserId?: string | null;
+  targetUserId?: string | null;
   readByUserIds: string[];
 }
 

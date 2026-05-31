@@ -1,4 +1,10 @@
 import { calculateMatchResult, getConfirmedPlayerIds, getMvpSummary } from '@/lib/match';
+import {
+  normalizeDiaryTitle,
+  resolveDiaryEmoji,
+  sortMatchDiaryEntries,
+  validateDiaryFields,
+} from '@/lib/match-diary';
 import { buildLegacyMatchImportPreview } from '@/lib/match-import';
 import {
   buildRatingCriteriaSnapshot,
@@ -22,6 +28,7 @@ import {
   createLineupPublishedNotification,
   createMatchCreatedNotification,
   createMatchFinishedNotification,
+  createMatchDiaryPublishedNotification,
   createMatchUpdatedNotification,
   createMvpVotingOpenedNotification,
   createMvpWinnerNotification,
@@ -40,6 +47,7 @@ import type {
   AppNotification,
   AttendanceRecord,
   Match,
+  MatchDiaryEntry,
   MatchType,
   MatchStat,
   MvpVote,
@@ -56,6 +64,7 @@ import type {
   AppRepository,
   AppSnapshot,
   CreateMatchInput,
+  CreateMatchDiaryEntryInput,
   CreatePlayerInput,
   CreateRatingCriterionInput,
   CreateTeamInput,
@@ -69,6 +78,7 @@ import type {
   SubmitMvpVoteInput,
   SubmitPlayerRatingInput,
   UpdateMatchInput,
+  UpdateMatchDiaryEntryInput,
   UpdateRatingCriterionInput,
   UpdateTeamInput,
   UpdateAttendanceInput,
@@ -91,6 +101,13 @@ export function resetMockRepositorySession() {
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function canAccessNotification(
+  notification: AppNotification,
+  userId: string | null | undefined,
+) {
+  return notification.targetUserId == null || notification.targetUserId === userId;
 }
 
 function snapshotFromDatabase(source: MockDatabase, currentUserId: string | null): AppSnapshot {
@@ -135,6 +152,11 @@ function snapshotFromDatabase(source: MockDatabase, currentUserId: string | null
     matchStats: activeTeamId
       ? source.matchStats.filter((stat) => stat.teamId === activeTeamId)
       : [],
+    matchDiaryEntries: activeTeamId
+      ? sortMatchDiaryEntries(
+          source.matchDiaryEntries.filter((entry) => entry.teamId === activeTeamId),
+        )
+      : [],
     mvpVotes: activeTeamId
       ? source.mvpVotes.filter((vote) => vote.teamId === activeTeamId)
       : [],
@@ -142,7 +164,11 @@ function snapshotFromDatabase(source: MockDatabase, currentUserId: string | null
       ? source.playerRatings.filter((rating) => rating.teamId === activeTeamId)
       : [],
     notifications: activeTeamId
-      ? source.notifications.filter((notification) => notification.teamId === activeTeamId)
+      ? source.notifications.filter(
+          (notification) =>
+            notification.teamId === activeTeamId &&
+            canAccessNotification(notification, currentUser.id),
+        )
       : [],
     seasons: activeTeamId
       ? source.seasons.filter((season) => season.teamId === activeTeamId)
@@ -159,6 +185,9 @@ function snapshotForTeam(teamId: string): AppSnapshot {
     lineups: database.lineups.filter((lineup) => lineup.teamId === teamId),
     attendance: database.attendance.filter((record) => record.teamId === teamId),
     matchStats: database.matchStats.filter((stat) => stat.teamId === teamId),
+    matchDiaryEntries: sortMatchDiaryEntries(
+      database.matchDiaryEntries.filter((entry) => entry.teamId === teamId),
+    ),
     mvpVotes: database.mvpVotes.filter((vote) => vote.teamId === teamId),
     playerRatings: database.playerRatings.filter((rating) => rating.teamId === teamId),
     notifications: database.notifications.filter((notification) => notification.teamId === teamId),
@@ -531,6 +560,24 @@ function findRatingsForMatch(teamId: string, matchId: string) {
   );
 }
 
+function findMatchDiaryEntriesForTeam(teamId: string) {
+  return sortMatchDiaryEntries(
+    database.matchDiaryEntries.filter((item) => item.teamId === teamId),
+  );
+}
+
+function findMatchDiaryEntriesForMatch(teamId: string, matchId: string) {
+  return findMatchDiaryEntriesForTeam(teamId).filter((item) => item.matchId === matchId);
+}
+
+function findMatchDiaryEntryForTeam(teamId: string, entryId: string) {
+  return (
+    database.matchDiaryEntries.find(
+      (item) => item.teamId === teamId && item.id === entryId,
+    ) ?? null
+  );
+}
+
 function findNotificationsForTeam(teamId: string) {
   return database.notifications.filter((item) => item.teamId === teamId);
 }
@@ -559,6 +606,81 @@ function upsertNotification(notification: AppNotification) {
 function removeNotification(notificationId: string) {
   database.notifications = database.notifications.filter(
     (item) => item.id !== notificationId,
+  );
+}
+
+function createDiaryNotificationId(
+  entryId: string,
+  targetUserId?: string | null,
+) {
+  return buildNotificationId(
+    'match-diary-published',
+    entryId,
+    targetUserId ? `target-${targetUserId}` : 'team',
+  );
+}
+
+function publishMatchDiaryNotifications(input: {
+  entry: MatchDiaryEntry;
+  match: Match;
+  actorUserId: string;
+  teamMembers: TeamMember[];
+  mentionedPlayerIds: string[];
+}) {
+  const teamMembers = input.teamMembers.filter((member) => member.status === 'active');
+  const mentionedPlayerIds = new Set(input.mentionedPlayerIds);
+  const mentionedUserIds = new Set(
+    teamMembers
+      .filter((member) => member.playerId && mentionedPlayerIds.has(member.playerId))
+      .map((member) => member.userId),
+  );
+
+  if (mentionedUserIds.size === 0) {
+    const notificationId = createDiaryNotificationId(input.entry.id);
+    const existing = findNotificationByIdForTeam(input.entry.teamId, notificationId);
+    upsertNotification(
+      createMatchDiaryPublishedNotification({
+        id: notificationId,
+        teamId: input.entry.teamId,
+        match: input.match,
+        entryId: input.entry.id,
+        authorName: input.entry.authorName,
+        actorUserId: input.actorUserId,
+        createdAt: existing?.createdAt,
+        updatedAt: input.entry.updatedAt,
+        variant: 'published',
+      }),
+    );
+    return;
+  }
+
+  const recipientUserIds = [...new Set(teamMembers.map((member) => member.userId))];
+
+  for (const userId of recipientUserIds) {
+    const notificationId = createDiaryNotificationId(input.entry.id, userId);
+    const existing = findNotificationByIdForTeam(input.entry.teamId, notificationId);
+    upsertNotification(
+      createMatchDiaryPublishedNotification({
+        id: notificationId,
+        teamId: input.entry.teamId,
+        match: input.match,
+        entryId: input.entry.id,
+        authorName: input.entry.authorName,
+        actorUserId: input.actorUserId,
+        createdAt: existing?.createdAt,
+        updatedAt: input.entry.updatedAt,
+        targetUserId: userId,
+        variant: mentionedUserIds.has(userId) ? 'mentioned' : 'team',
+      }),
+    );
+  }
+}
+
+function removeDiaryNotifications(entryId: string) {
+  database.notifications = database.notifications.filter(
+    (item) =>
+      item.type !== 'match-diary-published' ||
+      item.entryId !== entryId,
   );
 }
 
@@ -905,6 +1027,16 @@ function ensurePlayerBelongsToTeam(playerId: string, teamId: string) {
   return player;
 }
 
+function sanitizeMentionedPlayerIds(teamId: string, mentionedPlayerIds: string[] = []) {
+  const uniquePlayerIds = [...new Set(mentionedPlayerIds.filter(Boolean))];
+
+  for (const playerId of uniquePlayerIds) {
+    ensurePlayerBelongsToTeam(playerId, teamId);
+  }
+
+  return uniquePlayerIds;
+}
+
 function validateLinkedEmailAvailability(
   teamId: string,
   linkedEmail?: string | null,
@@ -1038,6 +1170,7 @@ function createBasicPlayer(teamId: string, user: User) {
     fullName: user.displayName.trim() || displayNameFromEmail(user.email),
     nickname: deriveNickname(user.displayName, user.email),
     photoUrl: null,
+    presentationVideoUrl: null,
     jerseyNumber: nextJerseyNumber(teamId),
     primaryPosition: 'midfielder' as const,
     secondaryPositions: [],
@@ -1464,6 +1597,8 @@ export const mockRepository: AppRepository = {
       name: input.name.trim(),
       slug: slugifyTeamName(input.name),
       logoUrl: input.logoUrl?.trim() || null,
+      bannerUrl: input.bannerUrl?.trim() || null,
+      presentationVideoUrl: input.presentationVideoUrl?.trim() || null,
       primaryColor: input.primaryColor,
       secondaryColor: input.secondaryColor,
       accentColor: input.accentColor ?? null,
@@ -1543,6 +1678,12 @@ export const mockRepository: AppRepository = {
     team.coachName = input.coachName.trim();
     team.slug = slugifyTeamName(input.slug.trim() || input.name);
     team.logoUrl = input.logoUrl?.trim() || null;
+    team.bannerUrl =
+      input.bannerUrl !== undefined ? input.bannerUrl?.trim() || null : team.bannerUrl ?? null;
+    team.presentationVideoUrl =
+      input.presentationVideoUrl !== undefined
+        ? input.presentationVideoUrl?.trim() || null
+        : team.presentationVideoUrl ?? null;
     team.primaryColor = input.primaryColor;
     team.secondaryColor = input.secondaryColor;
     team.accentColor = input.accentColor ?? null;
@@ -1774,6 +1915,7 @@ export const mockRepository: AppRepository = {
       fullName: input.fullName.trim(),
       nickname: input.nickname.trim(),
       photoUrl: input.photoUrl ?? null,
+      presentationVideoUrl: input.presentationVideoUrl ?? null,
       jerseyNumber: input.jerseyNumber,
       primaryPosition: input.primaryPosition,
       secondaryPositions: sanitizeSecondaryPositions(
@@ -1864,6 +2006,9 @@ export const mockRepository: AppRepository = {
       if (input.photoUrl !== undefined) {
         player.photoUrl = input.photoUrl;
       }
+      if (input.presentationVideoUrl !== undefined) {
+        player.presentationVideoUrl = input.presentationVideoUrl;
+      }
       if (typeof input.jerseyNumber === 'number') {
         player.jerseyNumber = input.jerseyNumber;
       }
@@ -1920,6 +2065,9 @@ export const mockRepository: AppRepository = {
       if (input.photoUrl !== undefined) {
         player.photoUrl = input.photoUrl;
       }
+      if (input.presentationVideoUrl !== undefined) {
+        player.presentationVideoUrl = input.presentationVideoUrl;
+      }
       if (input.bio !== undefined) {
         player.bio = input.bio?.trim() ?? '';
       }
@@ -1962,7 +2110,7 @@ export const mockRepository: AppRepository = {
     requirePlayerManager(actorUserId, player.teamId);
 
     if (player.deletedAt || player.status === 'inactive') {
-      throw new Error('Esse jogador ja foi removido do elenco ativo.');
+      throw new Error('Esse jogador já está fora do elenco ativo.');
     }
 
     const updatedAt = nowIso();
@@ -2555,6 +2703,130 @@ export const mockRepository: AppRepository = {
     };
   },
 
+  async createMatchDiaryEntry(
+    input: CreateMatchDiaryEntryInput,
+    actorUserId: string,
+  ) {
+    const { actor, activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+    const match = findMatchForTeam(activeTeamId, input.matchId);
+    const teamMembers = database.teamMembers.filter((member) => member.teamId === activeTeamId);
+    const validated = validateDiaryFields({
+      title: input.title,
+      content: input.content,
+    });
+    const now = nowIso();
+    const entry: MatchDiaryEntry = {
+      id: createId('diary'),
+      teamId: activeTeamId,
+      matchId: match.id,
+      authorUserId: actor.id,
+      authorName: actor.displayName,
+      title: validated.title,
+      content: validated.content,
+      mentionedPlayerIds: sanitizeMentionedPlayerIds(activeTeamId, input.mentionedPlayerIds),
+      visibility: 'team',
+      pinned: input.pinned ?? false,
+      mood: input.mood ?? null,
+      emoji: resolveDiaryEmoji(input.mood, input.emoji),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    database.matchDiaryEntries.push(entry);
+
+    if (input.notifyTeam) {
+      publishMatchDiaryNotifications({
+        entry,
+        match,
+        actorUserId: actor.id,
+        teamMembers,
+        mentionedPlayerIds: entry.mentionedPlayerIds,
+      });
+    }
+
+    return clone(entry);
+  },
+
+  async updateMatchDiaryEntry(
+    entryId: string,
+    input: UpdateMatchDiaryEntryInput,
+    actorUserId: string,
+  ) {
+    const { actor, activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+    const entry = findMatchDiaryEntryForTeam(activeTeamId, entryId);
+
+    if (!entry) {
+      throw new Error('Resenha da partida nao encontrada.');
+    }
+
+    const match = findMatchForTeam(activeTeamId, entry.matchId);
+    const nextTitle = input.title !== undefined ? input.title : entry.title;
+    const nextContent = input.content !== undefined ? input.content : entry.content;
+    const validated = validateDiaryFields({
+      title: nextTitle,
+      content: nextContent,
+    });
+
+    entry.title = normalizeDiaryTitle(validated.title);
+    entry.content = validated.content;
+    entry.mentionedPlayerIds =
+      input.mentionedPlayerIds !== undefined
+        ? sanitizeMentionedPlayerIds(activeTeamId, input.mentionedPlayerIds)
+        : entry.mentionedPlayerIds;
+    entry.pinned = input.pinned ?? entry.pinned ?? false;
+    entry.mood = input.mood !== undefined ? input.mood : entry.mood ?? null;
+    entry.emoji =
+      input.emoji !== undefined || input.mood !== undefined
+        ? resolveDiaryEmoji(entry.mood, input.emoji ?? entry.emoji)
+        : entry.emoji ?? null;
+    entry.updatedAt = nowIso();
+
+    if (input.notifyTeam) {
+      removeDiaryNotifications(entry.id);
+      publishMatchDiaryNotifications({
+        entry,
+        match,
+        actorUserId: actor.id,
+        teamMembers: database.teamMembers.filter((member) => member.teamId === activeTeamId),
+        mentionedPlayerIds: entry.mentionedPlayerIds,
+      });
+    }
+
+    return clone(entry);
+  },
+
+  async deleteMatchDiaryEntry(entryId: string, actorUserId: string) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+    const entry = findMatchDiaryEntryForTeam(activeTeamId, entryId);
+
+    if (!entry) {
+      throw new Error('Resenha da partida nao encontrada.');
+    }
+
+    database.matchDiaryEntries = database.matchDiaryEntries.filter((item) => item.id !== entryId);
+    removeDiaryNotifications(entryId);
+  },
+
+  async fetchMatchDiaryEntriesByMatchId(matchId: string, actorUserId: string) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    findMatchForTeam(activeTeamId, matchId);
+    return clone(findMatchDiaryEntriesForMatch(activeTeamId, matchId));
+  },
+
+  async listMatchDiaryEntriesForTeam(teamId: string, actorUserId: string, limit?: number) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+
+    if (activeTeamId !== teamId) {
+      throw new Error('Troque para o time atual antes de continuar.');
+    }
+
+    const entries = findMatchDiaryEntriesForTeam(teamId);
+    return clone(limit != null ? entries.slice(0, limit) : entries);
+  },
+
   async submitMvpVote(input: SubmitMvpVoteInput, actorUserId: string) {
     const { player: voter, activeTeamId } = requireLinkedPlayer(actorUserId);
     const match = findMatchForTeam(activeTeamId, input.matchId);
@@ -2679,6 +2951,10 @@ export const mockRepository: AppRepository = {
       throw new Error('Notificacao nao encontrada.');
     }
 
+    if (!canAccessNotification(notification, actor.id)) {
+      throw new Error('Voce nao pode abrir esta notificacao.');
+    }
+
     if (!notification.readByUserIds.includes(actor.id)) {
       notification.readByUserIds = [...notification.readByUserIds, actor.id];
     }
@@ -2688,6 +2964,10 @@ export const mockRepository: AppRepository = {
     const { actor, activeTeamId } = ensureActiveTeamContext(actorUserId);
 
     for (const notification of findNotificationsForTeam(activeTeamId)) {
+      if (!canAccessNotification(notification, actor.id)) {
+        continue;
+      }
+
       if (!notification.readByUserIds.includes(actor.id)) {
         notification.readByUserIds = [...notification.readByUserIds, actor.id];
       }

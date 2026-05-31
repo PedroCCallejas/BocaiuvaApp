@@ -275,7 +275,7 @@ function resolveImportedPlayer(
     sourceIndex,
     player,
     'unmatched',
-    'Nao foi possivel localizar este jogador no time ativo.',
+    'Não foi possível localizar este jogador no time ativo.',
   );
 }
 
@@ -370,14 +370,14 @@ export function buildLegacyMatchImportPreview(params: {
     }
 
     if (totalGoals > entry.teamScore) {
-      errors.push('A soma de gols dos jogadores nao pode ultrapassar o placar do time.');
+      errors.push('A soma de gols dos jogadores não pode ultrapassar o placar do time.');
     } else if (totalGoals !== entry.teamScore) {
       warnings.push('A soma de gols dos jogadores esta diferente do placar informado.');
     }
 
     for (const player of players) {
       if (!player.played && (player.goals > 0 || player.assists > 0)) {
-        errors.push(`O jogador ${player.lookupLabel} tem estatisticas, mas foi marcado como nao participante.`);
+        errors.push(`O jogador ${player.lookupLabel} tem estatísticas, mas foi marcado como não participante.`);
       }
     }
 
@@ -400,7 +400,7 @@ export function buildLegacyMatchImportPreview(params: {
     const conflictCount = players.filter((player) => player.status === 'conflict').length;
 
     if (unresolvedPlayerCount > 0) {
-      errors.push('Existem jogadores nao encontrados para esta partida.');
+      errors.push('Existem jogadores não encontrados para esta partida.');
     }
 
     if (conflictCount > 0) {
@@ -424,7 +424,7 @@ export function buildLegacyMatchImportPreview(params: {
       date: entry.date,
       time: normalizeOptionalTime(entry.time),
       opponentName: entry.opponentName.trim(),
-      venue: normalizeOptionalString(entry.venue) ?? 'Nao informado',
+      venue: normalizeOptionalString(entry.venue) ?? 'Não informado',
       matchType: entry.matchType,
       teamScore: entry.teamScore,
       opponentScore: entry.opponentScore,

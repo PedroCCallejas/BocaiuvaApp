@@ -125,8 +125,8 @@ export default function EditMatchScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Partida nao encontrada"
-          description="Nao conseguimos localizar esta partida no snapshot atual."
+          title="Partida não encontrada"
+          description="Não conseguimos localizar esta partida no snapshot atual."
           actionLabel="Voltar"
           onAction={() => router.back()}
         />
@@ -138,7 +138,7 @@ export default function EditMatchScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Partida indisponivel"
+          title="Partida indisponível"
           description="Somente quem administra o time pode editar esta partida."
           actionLabel="Voltar"
           onAction={() => router.back()}
@@ -167,7 +167,7 @@ export default function EditMatchScreen() {
       router.replace(`/matches/${currentMatch.id}`);
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel salvar a partida',
+        'Não foi possível salvar a partida',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }

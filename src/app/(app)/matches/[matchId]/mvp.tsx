@@ -35,8 +35,8 @@ export default function MatchMvpScreen() {
     return (
       <Screen>
         <EmptyState
-          title="MVP indisponivel"
-          description="A votacao so aparece depois que a partida e encerrada."
+          title="MVP indisponível"
+          description="A votação só aparece depois que a partida é encerrada."
         />
       </Screen>
     );
@@ -69,7 +69,7 @@ export default function MatchMvpScreen() {
       await submitMvpVote({ matchId: currentMatch.id, targetPlayerId });
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel votar',
+        'Não foi possível votar',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
@@ -112,20 +112,20 @@ export default function MatchMvpScreen() {
                 ? 'Seu voto ja foi registrado'
                 : currentPlayerConfirmed
                   ? 'Aguardando seu voto'
-                  : 'Voce nao estava confirmado para votar'}
+                  : 'Você não estava confirmado para votar'}
           </Text>
           <Text style={[styles.infoText, { color: theme.colors.textMuted }]}>
             {currentPlayer == null
-              ? 'Mesmo sem estar vinculado a um jogador, voce pode acompanhar o resultado anonimo da votacao.'
+              ? 'Mesmo sem estar vinculado a um jogador, você pode acompanhar o resultado anônimo da votação.'
               : hasAlreadyVoted
-                ? 'Seu voto entrou no placar e o resultado abaixo continua anonimo para todo mundo.'
+                ? 'Seu voto entrou no placar e o resultado abaixo continua anônimo para todo mundo.'
                 : currentPlayerConfirmed
                   ? 'Escolha um companheiro confirmado para liberar seu voto.'
                   : 'O resultado continua visivel, mas apenas jogadores confirmados podem votar.'}
           </Text>
           {canManage ? (
             <Text style={[styles.infoText, { color: theme.colors.secondary }]}>
-              Como admin, voce acompanha o resumo completo sem expor votantes.
+              Como admin, você acompanha o resumo completo sem expor votantes.
             </Text>
           ) : null}
         </View>
@@ -140,7 +140,7 @@ export default function MatchMvpScreen() {
         />
       </View>
       <View style={styles.metricsRow}>
-        <MetricCard label="Lider atual" value={leaderLabel} helper={breakdown.hasTie ? 'empate no topo' : 'maior votacao'} />
+        <MetricCard label="Líder atual" value={leaderLabel} helper={breakdown.hasTie ? 'empate no topo' : 'maior votação'} />
         <MetricCard
           label="Pontos de MVP"
           value={breakdown.totalVotes > 0 ? formatStatNumber(breakdown.awardPointsEach, 2) : '0'}
@@ -200,7 +200,7 @@ export default function MatchMvpScreen() {
       ) : (
         <EmptyState
           title="Sem votos ainda"
-          description="Quando os jogadores confirmados votarem, o ranking anonimo aparece aqui."
+          description="Quando os jogadores confirmados votarem, o ranking anônimo aparece aqui."
         />
       )}
     </Screen>

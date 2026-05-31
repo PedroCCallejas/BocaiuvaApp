@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Platform } from 'react-native';
 
 import { NotificationCard } from '@/components/cards/NotificationCard';
 import { SyncStatusCard } from '@/components/cards/SyncStatusCard';
@@ -22,6 +22,7 @@ import {
 import type { AppNotification } from '@/types/domain';
 
 export default function NotificationsScreen() {
+  const isWeb = Platform.OS === 'web';
   const team = useAppStore(selectCurrentTeam);
   const currentUser = useAppStore(selectCurrentUser);
   const notifications = useAppStore(selectTeamNotifications);
@@ -51,7 +52,7 @@ export default function NotificationsScreen() {
       await markNotificationAsRead(notificationId);
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel atualizar a notificacao',
+        'Não foi possível atualizar a notificação',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     } finally {
@@ -71,7 +72,7 @@ export default function NotificationsScreen() {
       }
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel abrir a notificacao',
+        'Não foi possível abrir a notificação',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     } finally {
@@ -85,7 +86,7 @@ export default function NotificationsScreen() {
       await markAllNotificationsAsRead();
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel atualizar as notificacoes',
+        'Não foi possível atualizar as notificações',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     } finally {
@@ -95,14 +96,16 @@ export default function NotificationsScreen() {
 
   return (
     <Screen onRefresh={() => void refreshData()} refreshing={refreshing}>
-      <SectionHeader
-        title="Notificacoes"
-        subtitle={
-          unreadCount > 0
-            ? `${unreadCount} novidade(s) no ${team.name}`
-            : `Tudo em dia no ${team.name}`
-        }
-      />
+      {!isWeb ? (
+        <SectionHeader
+          title="Notificações"
+          subtitle={
+            unreadCount > 0
+              ? `${unreadCount} novidade(s) no ${team.name}`
+              : `Tudo em dia no ${team.name}`
+          }
+        />
+      ) : null}
 
       <SyncStatusCard
         hint={syncHint}
@@ -122,8 +125,8 @@ export default function NotificationsScreen() {
 
       {notifications.length === 0 ? (
         <EmptyState
-          title="Sem notificacoes por enquanto"
-          description="As movimentacoes importantes do time vao aparecer aqui."
+          title="Sem notificações por enquanto"
+          description="As movimentações importantes do time vão aparecer aqui."
         />
       ) : null}
 

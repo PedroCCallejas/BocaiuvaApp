@@ -21,7 +21,7 @@ import {
 } from '@/store/selectors';
 
 const schema = z.object({
-  inviteCode: z.string().min(4, 'Informe o codigo do time.'),
+  inviteCode: z.string().min(4, 'Informe o código do time.'),
 });
 
 type JoinTeamValues = z.infer<typeof schema>;
@@ -97,13 +97,13 @@ export default function TeamAccessScreen() {
       if (result.alreadyMember) {
         Alert.alert(
           'Time atualizado',
-          'Voce ja fazia parte desse time. Ele agora esta selecionado para o seu app.',
+          'Você já fazia parte desse time. Ele agora está selecionado para o seu app.',
         );
       }
       router.replace('/home');
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel entrar no time',
+        'Não foi possível entrar no time',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     } finally {
@@ -119,7 +119,7 @@ export default function TeamAccessScreen() {
       router.replace('/home');
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel abrir esse time',
+        'Não foi possível abrir esse time',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     } finally {
@@ -134,11 +134,11 @@ export default function TeamAccessScreen() {
       await refreshAccess();
       Alert.alert(
         'Acesso atualizado',
-        'Se sua liberacao ja foi feita, a opcao de criar um novo time aparece aqui.',
+        'Se sua liberação já foi feita, a opção de criar um novo time aparece aqui.',
       );
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel atualizar o acesso',
+        'Não foi possível atualizar o acesso',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     } finally {
@@ -154,7 +154,7 @@ export default function TeamAccessScreen() {
       router.replace('/login');
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel sair',
+        'Não foi possível sair',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     } finally {
@@ -170,10 +170,10 @@ export default function TeamAccessScreen() {
         </Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
           {membershipCards.length > 0
-            ? 'Escolha o time que voce quer abrir agora ou use um codigo para entrar em outro elenco.'
+            ? 'Escolha o time que você quer abrir agora ou use um código para entrar em outro elenco.'
             : currentUser?.displayName
-              ? `${currentUser.displayName}, voce precisa de um codigo de convite para acessar um time.`
-              : 'Voce precisa de um codigo de convite para acessar um time.'}
+              ? `${currentUser.displayName}, você precisa de um código de convite para acessar um time.`
+              : 'Você precisa de um código de convite para acessar um time.'}
         </Text>
         {canCreateTeam ? (
           <Text style={[styles.accessBadge, { color: theme.colors.secondary }]}>
@@ -185,7 +185,7 @@ export default function TeamAccessScreen() {
       {membershipCards.length > 0 ? (
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.textMuted }]}>
-            Times que voce participa
+            Times que você participa
           </Text>
           {membershipCards.map(({ membership, team }) => {
             const isCurrent = currentTeam?.id === team.id;
@@ -220,8 +220,8 @@ export default function TeamAccessScreen() {
         </View>
       ) : (
         <EmptyState
-          title="Voce ainda nao faz parte de um time"
-          description="Entre com um codigo de convite para comecar a acompanhar seu elenco."
+          title="Você ainda não faz parte de um time"
+          description="Entre com um código de convite para começar a acompanhar seu elenco."
         />
       )}
 
@@ -233,13 +233,13 @@ export default function TeamAccessScreen() {
             borderColor: theme.colors.border,
           },
         ]}>
-        <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Entrar com codigo</Text>
+        <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Entrar com código</Text>
         <Controller
           control={control}
           name="inviteCode"
           render={({ field }) => (
             <AppInput
-              label="Codigo do time"
+              label="Código do time"
               autoCapitalize="characters"
               autoCorrect={false}
               value={field.value}

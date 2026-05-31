@@ -20,6 +20,8 @@ import {
 
 import { useAppTheme } from '@/hooks/use-app-theme';
 
+import { WebScreenHeader } from '../navigation/WebScreenHeader';
+
 export interface ScreenKeyboardContextValue {
   scrollToFocusedInput: (target: unknown) => void;
 }
@@ -39,6 +41,7 @@ interface ScreenProps extends PropsWithChildren {
   onRefresh?: () => void;
   style?: StyleProp<ViewStyle>;
   contentContainerStyle?: StyleProp<ViewStyle>;
+  hideWebHeader?: boolean;
 }
 
 export function Screen({
@@ -54,6 +57,7 @@ export function Screen({
   onRefresh,
   style,
   contentContainerStyle,
+  hideWebHeader = false,
 }: ScreenProps) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -147,6 +151,7 @@ export function Screen({
         enabled={keyboardAvoidanceEnabled}
         keyboardVerticalOffset={keyboardVerticalOffset}
         style={styles.flex}>
+        {Platform.OS === 'web' && !hideWebHeader ? <WebScreenHeader /> : null}
         <ScreenKeyboardContext.Provider value={keyboardContextValue}>
           {content}
         </ScreenKeyboardContext.Provider>
@@ -165,9 +170,9 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     width: '100%',
-    maxWidth: 1080,
+    maxWidth: Platform.OS === 'web' ? 1200 : 1080,
     alignSelf: 'center',
-    padding: 20,
+    padding: Platform.OS === 'web' ? 24 : 20,
     gap: 20,
   },
   orbTop: {

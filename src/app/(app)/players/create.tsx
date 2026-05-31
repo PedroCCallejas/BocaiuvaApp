@@ -41,7 +41,8 @@ export default function CreatePlayerScreen() {
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Novo jogador</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          Cadastre quem vai entrar em campo e deixe o elenco pronto para os proximos jogos.
+          Cadastre quem vai entrar em campo e, se quiser, informe o total atual do atleta antes
+          dos próximos jogos.
         </Text>
       </View>
       <PlayerForm
@@ -116,7 +117,7 @@ export default function CreatePlayerScreen() {
           } catch (error) {
             setPhotoUploadProgress(null);
             Alert.alert(
-              'Nao foi possivel salvar',
+              'Não foi possível salvar',
               error instanceof Error ? error.message : 'Tente novamente.',
             );
           }

@@ -81,7 +81,7 @@ export default function ImportLegacyMatchesScreen() {
       setPreview(nextPreview);
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel gerar a previa',
+        'Não foi possível gerar a prévia',
         error instanceof Error ? error.message : 'Revise o JSON e tente novamente.',
       );
     } finally {
@@ -104,7 +104,7 @@ export default function ImportLegacyMatchesScreen() {
       router.replace('/matches');
     } catch (error) {
       Alert.alert(
-        'Nao foi possivel importar',
+        'Não foi possível importar',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     } finally {
@@ -179,7 +179,7 @@ export default function ImportLegacyMatchesScreen() {
             <SummaryCard label="Duplicados" value={preview.summary.duplicateMatches} />
             <SummaryCard label="Invalidos" value={preview.summary.invalidMatches} />
             <SummaryCard label="Jogadores encontrados" value={preview.summary.matchedPlayers} />
-            <SummaryCard label="Nao encontrados" value={preview.summary.unresolvedPlayers} />
+            <SummaryCard label="Não encontrados" value={preview.summary.unresolvedPlayers} />
             <SummaryCard label="Conflitos" value={preview.summary.conflicts} />
           </View>
 
@@ -231,7 +231,7 @@ export default function ImportLegacyMatchesScreen() {
 
               <SectionHeader
                 title="Jogadores"
-                subtitle={`${item.matchedPlayerCount} encontrado(s), ${item.unresolvedPlayerCount} nao encontrado(s), ${item.conflictCount} conflito(s)`}
+                subtitle={`${item.matchedPlayerCount} encontrado(s), ${item.unresolvedPlayerCount} não encontrado(s), ${item.conflictCount} conflito(s)`}
               />
               {item.players.map((player) => (
                 <PlayerPreviewLine key={`${item.sourceIndex}-${player.sourceIndex}-${player.lookupLabel}`} player={player} />

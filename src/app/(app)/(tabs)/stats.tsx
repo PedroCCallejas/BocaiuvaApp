@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
 import { MetricCard } from '@/components/cards/MetricCard';
@@ -14,20 +14,20 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   applyPlayerStatsFilters,
   buildCriterionSortMetric,
-  buildPlayerMetricSubtitle,
   buildPlayerAggregates,
+  buildPlayerMetricSubtitle,
   buildPlayerProfileMetricCards,
   buildRankingByMetric,
   buildTeamAggregates,
   calculateRankingMetric,
   filterMatchesForStats,
+  formatPlayerMetricValue,
   formatStatNumber,
-  getCriterionIdFromMetric,
   getAvailableStatsMonths,
   getAvailableStatsYears,
+  getCriterionIdFromMetric,
   isCriterionMetric,
   PLAYER_STATS_LABELS,
-  formatPlayerMetricValue,
   type StatsFilters,
   type StatsPeriodPreset,
   type StatsPlayerScope,
@@ -45,11 +45,11 @@ const PERIOD_FILTERS: Array<{ id: StatsPeriodPreset; label: string }> = [
   { id: 'all', label: 'Geral' },
   { id: 'current-year', label: 'Ano atual' },
   { id: 'year', label: 'Ano' },
-  { id: 'current-month', label: 'Mes atual' },
-  { id: 'month', label: 'Mes/Ano' },
+  { id: 'current-month', label: 'Mês atual' },
+  { id: 'month', label: 'Mês/Ano' },
 ];
 const PLAYER_SCOPE_FILTERS: Array<{ id: StatsPlayerScope; label: string }> = [
-  { id: 'active', label: 'So ativos' },
+  { id: 'active', label: 'Só ativos' },
   { id: 'with-history', label: 'Incluir inativos' },
   { id: 'all', label: 'Todos' },
 ];
@@ -98,7 +98,7 @@ function FilterChip({
       style={[
         styles.filterChip,
         {
-          backgroundColor: selected ? theme.colors.primarySoft : theme.colors.surface,
+          backgroundColor: selected ? theme.colors.primarySoft : theme.colors.backgroundElevated,
           borderColor: selected ? theme.colors.primary : theme.colors.border,
         },
       ]}>
@@ -108,6 +108,7 @@ function FilterChip({
 }
 
 export default function StatsScreen() {
+  const isWeb = Platform.OS === 'web';
   const theme = useAppTheme();
   const snapshot = useAppStore((state) => state.snapshot);
   const team = useAppStore(selectCurrentTeam);
@@ -145,11 +146,11 @@ export default function StatsScreen() {
     minGames,
   };
   const teamStats = buildTeamAggregates(snapshot, team.id, filters);
-  const playerStats = applyPlayerStatsFilters(
-    buildPlayerAggregates(snapshot, team.id, filters),
-    { minGames },
-  );
-  const selectedMetric = TAB_CONFIG.find((tab) => tab.id === selectedTab)?.metric ?? 'goalParticipations';
+  const playerStats = applyPlayerStatsFilters(buildPlayerAggregates(snapshot, team.id, filters), {
+    minGames,
+  });
+  const selectedMetric =
+    TAB_CONFIG.find((tab) => tab.id === selectedTab)?.metric ?? 'goalParticipations';
   const topRanking = buildRankingByMetric(playerStats, selectedMetric, {
     limit: 5,
     minGames,
@@ -162,16 +163,27 @@ export default function StatsScreen() {
     limit: 5,
     minGames,
   });
+  const hasManualHistoryInStats = playerStats.some((item) => item.manualHistoryIncluded);
   const selectedCriterionId = getCriterionIdFromMetric(selectedRatingMetric);
   const selectedCriterion =
     activeCriteria.find((criterion) => criterion.id === selectedCriterionId) ?? null;
   const filteredMatches = filterMatchesForStats(snapshot.matches, team.id, filters);
-  const hasFinishedMatches = teamStats.totalMatches > 0 || playerStats.some((item) => item.hasHistory);
+  const hasFinishedMatches =
+    teamStats.totalMatches > 0 || playerStats.some((item) => item.hasHistory);
   const bestRatedPlayerCards = byRating[0] ? buildPlayerProfileMetricCards(byRating[0]) : [];
 
   return (
     <Screen>
-      <SectionHeader title="Estatisticas" subtitle="Leitura automatica dos jogos encerrados" />
+      {!isWeb ? (
+        <SectionHeader
+          title="Estatísticas"
+          subtitle={
+            hasManualHistoryInStats
+              ? 'Resultados oficiais do time, com correções manuais aplicadas aos totais gerais.'
+              : 'Resumo automático das partidas encerradas.'
+          }
+        />
+      ) : null}
 
       <View
         style={[
@@ -184,7 +196,7 @@ export default function StatsScreen() {
         <Text style={[styles.filterTitle, { color: theme.colors.text }]}>Filtros</Text>
 
         <View style={styles.filterGroup}>
-          <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Periodo</Text>
+          <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Período</Text>
           <View style={styles.filterRow}>
             {PERIOD_FILTERS.map((filter) => (
               <FilterChip
@@ -215,7 +227,7 @@ export default function StatsScreen() {
 
         {selectedPeriod === 'month' ? (
           <View style={styles.filterGroup}>
-            <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Mes</Text>
+            <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Mês</Text>
             <View style={styles.filterRow}>
               {availableMonths.map((month) => (
                 <FilterChip
@@ -258,7 +270,7 @@ export default function StatsScreen() {
         </View>
 
         <View style={styles.filterGroup}>
-          <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Minimo de jogos</Text>
+          <Text style={[styles.filterLabel, { color: theme.colors.textMuted }]}>Mínimo de jogos</Text>
           <View style={styles.filterRow}>
             {MIN_GAMES_FILTERS.map((value) => (
               <FilterChip
@@ -272,20 +284,48 @@ export default function StatsScreen() {
         </View>
       </View>
 
+      {hasManualHistoryInStats ? (
+        <View
+          style={[
+            styles.noticeCard,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.border,
+            },
+          ]}>
+          <Text style={[styles.noticeTitle, { color: theme.colors.text }]}>
+            Correção manual aplicada
+          </Text>
+          <Text style={[styles.noticeText, { color: theme.colors.textMuted }]}>
+            No filtro geral, os totais do atleta consideram correções manuais somadas ao que foi
+            registrado nas partidas. Os números do time continuam vindo apenas dos jogos
+            encerrados.
+          </Text>
+        </View>
+      ) : null}
+
       <View style={styles.metricsRow}>
         <MetricCard label="Jogos" value={String(teamStats.totalMatches)} helper="encerrados" />
-        <MetricCard label="Vitorias" value={String(teamStats.wins)} helper={`${teamStats.pointsRate}%`} />
+        <MetricCard label="Vitórias" value={String(teamStats.wins)} helper={`${teamStats.pointsRate}%`} />
       </View>
       <View style={styles.metricsRow}>
-        <MetricCard label="Gols feitos" value={String(teamStats.goalsFor)} helper={`Media ${formatStatNumber(teamStats.goalsPerGame, 2)}`} />
-        <MetricCard label="Gols tomados" value={String(teamStats.goalsAgainst)} helper={`Saldo ${teamStats.goalDiff}`} />
+        <MetricCard
+          label="Gols feitos"
+          value={String(teamStats.goalsFor)}
+          helper={`Média ${formatStatNumber(teamStats.goalsPerGame, 2)}`}
+        />
+        <MetricCard
+          label="Gols tomados"
+          value={String(teamStats.goalsAgainst)}
+          helper={`Saldo ${teamStats.goalDiff}`}
+        />
       </View>
 
       <View style={styles.metricsRow}>
         <MetricCard
           label="Artilheiro"
           value={byGoals[0]?.player.nickname ?? '-'}
-          helper={byGoals[0] ? `${byGoals[0].goals} gol(s)` : 'Sem lideranca ainda'}
+          helper={byGoals[0] ? `${byGoals[0].goals} gol(s)` : 'Sem liderança ainda'}
         />
         <MetricCard
           label={`Melhor ${PLAYER_STATS_LABELS.overallRating.toLowerCase()}`}
@@ -320,8 +360,8 @@ export default function StatsScreen() {
 
       {!hasFinishedMatches ? (
         <EmptyState
-          title="Sem estatisticas por enquanto"
-          description="As estatisticas aparecem assim que as primeiras partidas forem encerradas."
+          title="Sem estatísticas por enquanto"
+          description="As estatísticas aparecem assim que as primeiras partidas forem encerradas."
         />
       ) : (
         <>
@@ -357,21 +397,23 @@ export default function StatsScreen() {
           ) : (
             <EmptyState
               title="Nenhum jogador atende ao filtro"
-              description="Reduza o minimo de jogos ou troque o periodo para exibir destaques."
+              description="Reduza o mínimo de jogos ou troque o período para exibir destaques."
             />
           )}
 
-          <AppButton
-            label="Ver ranking completo"
-            variant="secondary"
-            onPress={() => router.push('/rankings')}
-          />
+          {!isWeb ? (
+            <AppButton
+              label="Ver ranking completo"
+              variant="secondary"
+              onPress={() => router.push('/rankings')}
+            />
+          ) : null}
 
           {activeCriteria.length > 0 ? (
             <>
               <SectionHeader
                 title="Notas por critério"
-                subtitle="Leia a nota geral ou o melhor desempenho em um critério específico"
+                subtitle="Veja a nota geral ou o melhor desempenho em um critério específico"
               />
               <View style={styles.tabRow}>
                 <FilterChip
@@ -455,6 +497,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+  },
+  noticeCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 16,
+    gap: 8,
+  },
+  noticeTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  noticeText: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
   },
   tabRow: {
     flexDirection: 'row',

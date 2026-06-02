@@ -1,10 +1,10 @@
 import type { ExpoConfig } from 'expo/config';
 import appJson from './app.json';
-import {
-  APP_DESCRIPTION,
-  APP_NAME,
-  APP_SHORT_NAME,
-} from './src/constants/branding';
+
+const APP_NAME = 'Professô FC';
+const APP_SHORT_NAME = 'Professô FC';
+const APP_DESCRIPTION =
+  'Organize seu time, monte escalações, acompanhe estatísticas e marque amistosos.';
 
 const baseConfig = appJson.expo as ExpoConfig;
 const basePlugins = (baseConfig.plugins ?? []).filter((plugin) => {

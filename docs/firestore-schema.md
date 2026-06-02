@@ -52,9 +52,9 @@ Notas:
 
 - O documento usa o mesmo `uid` do Firebase Auth.
 - `appRole` pode ser `owner`, `team_admin` ou `player`.
-- No cadastro inicial, o app cria `appRole: 'player'`, `canCreateTeam: false`, `activeTeamId: null`, `teamId: null` e `playerId: null`.
-- O campo `canCreateTeam` controla quem pode abrir um time novo no app.
-- Quando o acesso e liberado manualmente, o usuario passa a enxergar a opcao de criar time na tela sem time.
+- No cadastro inicial, o app cria `appRole: 'player'`, `activeTeamId: null`, `teamId: null` e `playerId: null`.
+- `canCreateTeam` permanece apenas como campo legado de compatibilidade temporaria.
+- A criacao de time nao depende mais de `canCreateTeam`.
 - `activeTeamId` aponta para o time que esta carregado no momento.
 - `teamId` e `playerId` continuam como espelho temporario do time atual para compatibilidade.
 - Ao criar um time, a conta passa a apontar para esse time em `activeTeamId` e ganha uma membership com papel de admin e jogador.
@@ -113,7 +113,8 @@ Notas:
 - `accentColor` prepara a identidade visual do time para componentes de destaque.
 - `inviteCode` e um codigo curto usado para entrada de novos jogadores no time.
 - `inviteCodeUpdatedAt` registra quando o ultimo codigo passou a valer.
-- A criacao do time so pode acontecer quando `users/{uid}.canCreateTeam` estiver `true`.
+- Qualquer usuario autenticado pode criar ate 2 times em que seja `adminUserId`.
+- O limite conta apenas times proprios; participar de outros times nao consome vaga.
 - Nesta etapa, `activeSeasonId` fica `null`.
 
 ### `players/{playerId}`
@@ -334,9 +335,9 @@ Notas:
 
 ## Fluxos de acesso
 
-- Cadastro novo: cria `users/{uid}` sem time ativo e com `canCreateTeam: false`.
-- Liberacao manual: alterar `users/{uid}.canCreateTeam` para `true` no Console.
-- Criacao de time: cria `teams/{teamId}`, `players/{playerId}` basico do criador e `teamMembers/{membershipId}` com papeis `admin` e `player`.
+- Cadastro novo: cria `users/{uid}` sem time ativo; `canCreateTeam` pode permanecer no documento apenas por compatibilidade.
+- Criacao de time: qualquer conta autenticada pode criar ate 2 times, contando apenas documentos `teams` onde ela e `adminUserId`.
+- Criacao de time: ao salvar, o app cria `teams/{teamId}`, `players/{playerId}` basico do criador e `teamMembers/{membershipId}` com papeis `admin` e `player`.
 - Entrada com codigo: busca `teams` por `inviteCode`, tenta vincular por `linkedEmail` e cria ou atualiza `teamMembers`.
 - Troca de time: atualiza `users/{uid}.activeTeamId` sem apagar participacoes anteriores.
 - Criacao de partida: grava `matches/{matchId}` e cria `attendance` pendente para o elenco do time ativo.
@@ -355,6 +356,7 @@ Notas:
 - `users(activeTeamId)`
 - `teamMembers(userId)`
 - `teamMembers(teamId)`
+- `teams(adminUserId)`
 - `teams(inviteCode)`
 - `players(teamId)`
 - `players(teamId, jerseyNumber)`

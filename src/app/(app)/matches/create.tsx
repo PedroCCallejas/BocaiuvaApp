@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -11,10 +12,12 @@ import { MATCH_TYPE_LABELS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatDateBR, isValidTime, parseDateBRToISO } from '@/lib/date';
+import { buildPublicLocationLabel } from '@/lib/public-team';
 import { isValidExternalUrl } from '@/lib/url';
+import { showMatchCreateInterstitialIfEligible } from '@/services/ads/admob-service';
 import { useAppStore } from '@/store/app-store';
 import { selectCanManageTeam, selectCurrentTeam } from '@/store/selectors';
-import type { MatchType } from '@/types/domain';
+import type { MatchType, PublicTeamSummary } from '@/types/domain';
 
 const schema = z.object({
   opponentName: z.string().min(3, 'Informe o adversário.'),
@@ -52,6 +55,10 @@ export default function CreateMatchScreen() {
   const canManage = useAppStore(selectCanManageTeam);
   const team = useAppStore(selectCurrentTeam);
   const createMatch = useAppStore((state) => state.createMatch);
+  const listPublicTeams = useAppStore((state) => state.listPublicTeams);
+  const [publicTeams, setPublicTeams] = useState<PublicTeamSummary[]>([]);
+  const [selectedPublicTeamId, setSelectedPublicTeamId] = useState<string | null>(null);
+  const [loadingPublicTeams, setLoadingPublicTeams] = useState(false);
   const {
     control,
     handleSubmit,
@@ -77,6 +84,60 @@ export default function CreateMatchScreen() {
   }
 
   const currentTeam = team;
+  const opponentName = watch('opponentName');
+  const selectedPublicTeam =
+    publicTeams.find((item) => item.id === selectedPublicTeamId) ?? null;
+  const suggestedPublicTeams = useMemo(() => {
+    const normalizedOpponentName = opponentName.trim().toLowerCase();
+
+    return publicTeams
+      .filter((item) => item.id !== currentTeam.id)
+      .filter((item) => {
+        if (!normalizedOpponentName) {
+          return true;
+        }
+
+        return item.name.toLowerCase().includes(normalizedOpponentName);
+      })
+      .slice(0, 4);
+  }, [currentTeam.id, opponentName, publicTeams]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadPublicTeams() {
+      try {
+        setLoadingPublicTeams(true);
+        const teams = await listPublicTeams();
+
+        if (mounted) {
+          setPublicTeams(teams);
+        }
+      } catch (error) {
+        if (mounted) {
+          Alert.alert(
+            'Não foi possível carregar a galeria pública',
+            error instanceof Error ? error.message : 'Tente novamente.',
+          );
+        }
+      } finally {
+        if (mounted) {
+          setLoadingPublicTeams(false);
+        }
+      }
+    }
+
+    void loadPublicTeams();
+
+    return () => {
+      mounted = false;
+    };
+  }, [listPublicTeams]);
+
+  function handleSelectPublicTeam(publicTeam: PublicTeamSummary) {
+    setSelectedPublicTeamId(publicTeam.id);
+    setValue('opponentName', publicTeam.name, { shouldDirty: true });
+  }
 
   async function onSubmit(values: MatchValues) {
     try {
@@ -84,10 +145,16 @@ export default function CreateMatchScreen() {
         ...values,
         date: parseDateBRToISO(values.date) ?? values.date,
         locationUrl: values.locationUrl?.trim() || null,
+        opponentLogoUrl: selectedPublicTeam?.logoUrl ?? null,
+        opponentTeamId: selectedPublicTeam?.id ?? null,
+        opponentTeamName: selectedPublicTeam?.name ?? null,
+        opponentTeamLogoUrl: selectedPublicTeam?.logoUrl ?? null,
+        opponentSource: selectedPublicTeam ? 'public_team' : null,
         linePlayersCount: Number(values.linePlayersCount.trim()),
         teamId: currentTeam.id,
         seasonId: currentTeam.activeSeasonId ?? null,
       });
+      await showMatchCreateInterstitialIfEligible();
       router.replace(`/matches/${matchId}`);
     } catch (error) {
       Alert.alert(
@@ -122,11 +189,101 @@ export default function CreateMatchScreen() {
               label="Adversário"
               value={field.value}
               onBlur={field.onBlur}
-              onChangeText={field.onChange}
+              onChangeText={(value) => {
+                field.onChange(value);
+
+                if (selectedPublicTeam && value.trim() !== selectedPublicTeam.name) {
+                  setSelectedPublicTeamId(null);
+                }
+              }}
               error={errors.opponentName?.message}
             />
           )}
         />
+
+        <View
+          style={[
+            styles.publicTeamsCard,
+            {
+              backgroundColor: theme.colors.backgroundElevated,
+              borderColor: theme.colors.border,
+            },
+          ]}>
+          <View style={styles.publicTeamsHeader}>
+            <View style={styles.publicTeamsCopy}>
+              <Text style={[styles.fieldLabel, { color: theme.colors.textMuted }]}>
+                Buscar na galeria pública
+              </Text>
+              <Text style={[styles.publicTeamsHint, { color: theme.colors.textMuted }]}>
+                Selecione um time público para salvar o adversário com metadados da galeria.
+              </Text>
+            </View>
+            {selectedPublicTeam ? (
+              <AppButton
+                label="Limpar seleção"
+                variant="ghost"
+                onPress={() => setSelectedPublicTeamId(null)}
+              />
+            ) : null}
+          </View>
+
+          {selectedPublicTeam ? (
+            <View
+              style={[
+                styles.selectedPublicTeamCard,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.primary,
+                },
+              ]}>
+              <Text style={[styles.selectedPublicTeamName, { color: theme.colors.text }]}>
+                {selectedPublicTeam.name}
+              </Text>
+              <Text style={[styles.selectedPublicTeamMeta, { color: theme.colors.textMuted }]}>
+                {buildPublicLocationLabel(selectedPublicTeam)}
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.publicTeamsList}>
+            {loadingPublicTeams ? (
+              <Text style={[styles.publicTeamsHint, { color: theme.colors.textMuted }]}>
+                Carregando times públicos...
+              </Text>
+            ) : suggestedPublicTeams.length === 0 ? (
+              <Text style={[styles.publicTeamsHint, { color: theme.colors.textMuted }]}>
+                Nenhum time público combina com a busca atual.
+              </Text>
+            ) : (
+              suggestedPublicTeams.map((publicTeam) => {
+                const isSelected = publicTeam.id === selectedPublicTeamId;
+
+                return (
+                  <Pressable
+                    key={publicTeam.id}
+                    onPress={() => handleSelectPublicTeam(publicTeam)}
+                    style={[
+                      styles.publicTeamChip,
+                      {
+                        backgroundColor: isSelected
+                          ? theme.colors.primarySoft
+                          : theme.colors.surface,
+                        borderColor: isSelected ? theme.colors.primary : theme.colors.border,
+                      },
+                    ]}>
+                    <Text style={[styles.publicTeamChipName, { color: theme.colors.text }]}>
+                      {publicTeam.name}
+                    </Text>
+                    <Text style={[styles.publicTeamChipMeta, { color: theme.colors.textMuted }]}>
+                      {buildPublicLocationLabel(publicTeam)}
+                    </Text>
+                  </Pressable>
+                );
+              })
+            )}
+          </View>
+        </View>
+
         <Controller
           control={control}
           name="venue"
@@ -269,6 +426,63 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     padding: 18,
     gap: 14,
+  },
+  publicTeamsCard: {
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 14,
+    gap: 12,
+  },
+  publicTeamsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  publicTeamsCopy: {
+    flex: 1,
+    gap: 4,
+    minWidth: 180,
+  },
+  publicTeamsHint: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  selectedPublicTeamCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  selectedPublicTeamName: {
+    fontFamily: fonts.heading,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  selectedPublicTeamMeta: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+  },
+  publicTeamsList: {
+    gap: 10,
+  },
+  publicTeamChip: {
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  publicTeamChipName: {
+    fontFamily: fonts.heading,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  publicTeamChipMeta: {
+    fontFamily: fonts.body,
+    fontSize: 12,
   },
   row: {
     flexDirection: 'row',

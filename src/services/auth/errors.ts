@@ -1,19 +1,19 @@
 const authErrorMessages: Record<string, string> = {
-  'auth/invalid-email': 'Informe um e-mail valido.',
+  'auth/invalid-email': 'Informe um e-mail válido.',
   'auth/weak-password': 'Use uma senha mais forte com pelo menos 6 caracteres.',
-  'auth/user-not-found': 'Nao encontramos uma conta com este e-mail.',
-  'auth/wrong-password': 'A senha informada esta incorreta.',
+  'auth/user-not-found': 'Não encontramos uma conta com este e-mail.',
+  'auth/wrong-password': 'A senha informada está incorreta.',
   'auth/invalid-credential': 'E-mail ou senha incorretos.',
-  'auth/email-already-in-use': 'Este e-mail ja esta cadastrado.',
+  'auth/email-already-in-use': 'Este e-mail já está cadastrado.',
   'auth/account-exists-with-different-credential':
-    'Ja existe uma conta com esse e-mail usando outro acesso.',
-  'auth/network-request-failed': 'Verifique sua conexao com a internet e tente novamente.',
+    'Já existe uma conta com esse e-mail usando outro acesso.',
+  'auth/network-request-failed': 'Verifique sua conexão com a internet e tente novamente.',
   'auth/too-many-requests': 'Muitas tentativas seguidas. Aguarde um pouco e tente novamente.',
   'auth/user-disabled': 'Esta conta foi desativada.',
-  'auth/popup-closed-by-user': 'A entrada com Google foi cancelada antes da confirmacao.',
+  'auth/popup-closed-by-user': 'A entrada com Google foi cancelada antes da confirmação.',
   'auth/popup-blocked': 'Permita a abertura da janela do Google para continuar.',
   'auth/operation-not-allowed':
-    'O acesso por e-mail e senha ainda nao foi habilitado para esta conta.',
+    'O acesso por e-mail e senha ainda não foi habilitado para esta conta.',
 };
 
 type ErrorWithCode = Error & { code?: string };

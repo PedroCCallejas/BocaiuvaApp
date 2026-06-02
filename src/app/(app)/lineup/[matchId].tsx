@@ -1,30 +1,30 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
-import { useLocalSearchParams } from "expo-router";
-import { useNavigation, usePreventRemove } from "@react-navigation/native";
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+import { useNavigation, usePreventRemove } from '@react-navigation/native';
 
-import { MetricCard } from "@/components/cards/MetricCard";
-import { LineupField } from "@/components/lineup/LineupField";
-import { AppButton } from "@/components/ui/AppButton";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Screen } from "@/components/ui/Screen";
-import { SectionHeader } from "@/components/ui/SectionHeader";
-import { fonts } from "@/constants/theme";
-import { useAppTheme } from "@/hooks/use-app-theme";
+import { MetricCard } from '@/components/cards/MetricCard';
+import { LineupField } from '@/components/lineup/LineupField';
+import { AppButton } from '@/components/ui/AppButton';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Screen } from '@/components/ui/Screen';
+import { SectionHeader } from '@/components/ui/SectionHeader';
+import { fonts } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   buildLineupFromPreset,
   buildLineupStateFromSource,
   getFormationPresets,
-} from "@/lib/lineup";
-import { useAppStore } from "@/store/app-store";
+} from '@/lib/lineup';
+import { useAppStore } from '@/store/app-store';
 import {
   findLineupByMatchId,
   findMatchById,
   selectCanManageTeam,
   selectCurrentTeam,
   selectTeamPlayers,
-} from "@/store/selectors";
-import type { LineupNode } from "@/types/domain";
+} from '@/store/selectors';
+import type { LineupNode } from '@/types/domain';
 
 interface LocalLineupState {
   formationKey: string;
@@ -32,7 +32,7 @@ interface LocalLineupState {
   benchPlayerIds: string[];
 }
 
-type SaveStatus = "clean" | "dirty" | "saving" | "saved";
+type SaveStatus = 'clean' | 'dirty' | 'saving' | 'saved';
 
 function areLineupStatesEqual(left: LocalLineupState, right: LocalLineupState) {
   if (
@@ -80,7 +80,7 @@ export default function LineupScreen() {
 
   const rawMatchId = params.matchId;
   const resolvedMatchId =
-    typeof rawMatchId === "string" ? rawMatchId : (rawMatchId?.[0] ?? "");
+    typeof rawMatchId === 'string' ? rawMatchId : (rawMatchId?.[0] ?? '');
 
   const currentMatch =
     useAppStore((state) => findMatchById(state, resolvedMatchId)) ?? null;
@@ -115,7 +115,7 @@ export default function LineupScreen() {
   const confirmedPlayers = useMemo(
     () =>
       players.filter(
-        (player) => attendanceByPlayerId.get(player.id) === "confirmed",
+        (player) => attendanceByPlayerId.get(player.id) === 'confirmed',
       ),
     [attendanceByPlayerId, players],
   );
@@ -138,18 +138,18 @@ export default function LineupScreen() {
   );
 
   const confirmedPlayersKey = useMemo(
-    () => confirmedPlayers.map((player) => player.id).join("|"),
+    () => confirmedPlayers.map((player) => player.id).join('|'),
     [confirmedPlayers],
   );
   const publishedPlayersKey = useMemo(
-    () => publishedPlayers.map((player) => player.id).join("|"),
+    () => publishedPlayers.map((player) => player.id).join('|'),
     [publishedPlayers],
   );
 
   const absentCount = useMemo(
     () =>
       players.filter(
-        (player) => attendanceByPlayerId.get(player.id) === "absent",
+        (player) => attendanceByPlayerId.get(player.id) === 'absent',
       ).length,
     [attendanceByPlayerId, players],
   );
@@ -158,14 +158,14 @@ export default function LineupScreen() {
     () =>
       players.filter((player) => {
         const status = attendanceByPlayerId.get(player.id);
-        return status == null || status === "pending";
+        return status == null || status === 'pending';
       }).length,
     [attendanceByPlayerId, players],
   );
 
   const initialDraft = useMemo<LocalLineupState>(
     () => ({
-      formationKey: fallbackPreset?.key ?? "",
+      formationKey: fallbackPreset?.key ?? '',
       starters: [],
       benchPlayerIds: [],
     }),
@@ -174,10 +174,10 @@ export default function LineupScreen() {
 
   const [draft, setDraft] = useState<LocalLineupState>(initialDraft);
   const [isDragging, setIsDragging] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("clean");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('clean');
 
   const draftRef = useRef<LocalLineupState>(initialDraft);
-  const sourceKeyRef = useRef("");
+  const sourceKeyRef = useRef('');
   const isDirtyRef = useRef(false);
   const isDraggingRef = useRef(false);
 
@@ -202,7 +202,7 @@ export default function LineupScreen() {
 
       setSaveStatus(
         options?.saveStatus ??
-          (options?.markDirty === false ? "clean" : "dirty"),
+          (options?.markDirty === false ? 'clean' : 'dirty'),
       );
     },
     [],
@@ -220,10 +220,10 @@ export default function LineupScreen() {
     const sourceKey = [
       currentMatch.id,
       fallbackPreset.key,
-      existingLineup?.id ?? "no-lineup",
-      existingLineup?.updatedAt ?? "no-lineup-update",
+      existingLineup?.id ?? 'no-lineup',
+      existingLineup?.updatedAt ?? 'no-lineup-update',
       canManage ? confirmedPlayersKey : publishedPlayersKey,
-    ].join("__");
+    ].join('__');
 
     if (sourceKey === sourceKeyRef.current) {
       return;
@@ -245,7 +245,7 @@ export default function LineupScreen() {
       setDraft(nextDraft);
     }
 
-    setSaveStatus("clean");
+    setSaveStatus('clean');
     sourceKeyRef.current = sourceKey;
   }, [
     canManage,
@@ -274,17 +274,17 @@ export default function LineupScreen() {
   const lineupState = canManage ? draft : readOnlyLineup;
   const lineupPlayers = canManage ? confirmedPlayers : publishedPlayers;
   const hasUnsavedChanges =
-    canManage && (saveStatus === "dirty" || saveStatus === "saving");
+    canManage && (saveStatus === 'dirty' || saveStatus === 'saving');
 
   usePreventRemove(hasUnsavedChanges, (event) => {
     Alert.alert(
-      "Escalação não salva",
-      "Você tem alterações pendentes na escalação. Deseja sair sem salvar?",
+      'Escalação não salva',
+      'Você tem alterações pendentes na escalação. Deseja sair sem salvar?',
       [
-        { text: "Continuar editando", style: "cancel" },
+        { text: 'Continuar editando', style: 'cancel' },
         {
-          text: "Sair sem salvar",
-          style: "destructive",
+          text: 'Sair sem salvar',
+          style: 'destructive',
           onPress: () => navigation.dispatch(event.data.action),
         },
       ],
@@ -298,7 +298,7 @@ export default function LineupScreen() {
       }
 
       applyDraft({
-        formationKey: draftRef.current.formationKey || fallbackPreset?.key || "",
+        formationKey: draftRef.current.formationKey || fallbackPreset?.key || '',
         starters: next.starters,
         benchPlayerIds: next.benchPlayerIds,
       });
@@ -347,7 +347,7 @@ export default function LineupScreen() {
     }
 
     try {
-      setSaveStatus("saving");
+      setSaveStatus('saving');
 
       await saveLineup({
         matchId: currentMatch.id,
@@ -357,18 +357,18 @@ export default function LineupScreen() {
       });
 
       isDirtyRef.current = false;
-      setSaveStatus("saved");
+      setSaveStatus('saved');
 
       Alert.alert(
-        "Escalação salva",
-        "A distribuicao dos jogadores foi atualizada com sucesso.",
+        'Escalação salva',
+        'A distribuição dos jogadores foi atualizada com sucesso.',
       );
     } catch (error) {
-      setSaveStatus("dirty");
+      setSaveStatus('dirty');
 
       Alert.alert(
-        "Não foi possível salvar",
-        error instanceof Error ? error.message : "Tente novamente.",
+        'Não foi possível salvar',
+        error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
   }, [canManage, currentMatch, fallbackPreset, saveLineup]);
@@ -388,7 +388,7 @@ export default function LineupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Sem formacao disponivel"
+          title="Sem formação disponível"
           description="Ainda não encontramos uma formação compatível com este tipo de partida."
         />
       </Screen>
@@ -408,13 +408,13 @@ export default function LineupScreen() {
 
   if (
     canManage &&
-    (currentMatch.status === "finished" || currentMatch.status === "canceled")
+    (currentMatch.status === 'finished' || currentMatch.status === 'canceled')
   ) {
     return (
       <Screen>
         <EmptyState
           title="Escalação bloqueada"
-          description="A escalacao pode ser ajustada apenas antes do encerramento da partida."
+          description="A escalação pode ser ajustada apenas antes do encerramento da partida."
         />
       </Screen>
     );
@@ -453,8 +453,8 @@ export default function LineupScreen() {
 
       <Text style={[styles.helper, { color: theme.colors.textMuted }]}>
         {canManage
-          ? "Arraste jogadores apenas dentro do campo. O banco usa toque para adicionar/remover, evitando troca automatica."
-          : "Somente visualização. Apenas administradores podem alterar a escalação."}
+          ? 'Arraste jogadores apenas dentro do campo. O banco usa toque para adicionar/remover, evitando troca automática.'
+          : 'Somente visualização. Apenas administradores podem alterar a escalação.'}
       </Text>
 
       <View style={styles.metricsRow}>
@@ -469,7 +469,7 @@ export default function LineupScreen() {
           helper={
             canManage
               ? `${confirmedPlayers.length} confirmados`
-              : `${lineupPlayers.length} na escalacao`
+              : `${lineupPlayers.length} na escalação`
           }
         />
         <MetricCard
@@ -487,9 +487,9 @@ export default function LineupScreen() {
             borderColor:
               !canManage
                 ? theme.colors.border
-                : saveStatus === "saved"
+                : saveStatus === 'saved'
                   ? theme.colors.success
-                  : saveStatus === "dirty"
+                  : saveStatus === 'dirty'
                     ? theme.colors.warning
                     : theme.colors.border,
           },
@@ -497,26 +497,26 @@ export default function LineupScreen() {
       >
         <Text style={[styles.statusTitle, { color: theme.colors.text }]}>
           {!canManage
-            ? "Somente visualização"
-            : saveStatus === "saving"
-              ? "Salvando..."
-              : saveStatus === "saved"
-                ? "Escalação salva"
-                : saveStatus === "dirty"
-                  ? "Escalação não salva"
-                  : "Escalação pronta"}
+            ? 'Somente visualização'
+            : saveStatus === 'saving'
+              ? 'Salvando...'
+              : saveStatus === 'saved'
+                ? 'Escalação salva'
+                : saveStatus === 'dirty'
+                  ? 'Escalação não salva'
+                  : 'Escalação pronta'}
         </Text>
 
         <Text style={[styles.statusText, { color: theme.colors.textMuted }]}>
           {!canManage
-            ? "Apenas administradores podem organizar, limpar ou salvar a escalacao."
-            : saveStatus === "saving"
-              ? "Persistindo a distribuicao atual no time."
-              : saveStatus === "saved"
-                ? "As coordenadas atuais ja estao sincronizadas."
-                : saveStatus === "dirty"
-                  ? "Você tem alterações pendentes. Só enviamos para o banco ao tocar em salvar."
-                  : "Mova jogadores livremente e salve apenas quando terminar."}
+            ? 'Apenas administradores podem organizar, limpar ou salvar a escalação.'
+            : saveStatus === 'saving'
+              ? 'Persistindo a distribuição atual no time.'
+              : saveStatus === 'saved'
+                ? 'As coordenadas atuais já estão sincronizadas.'
+                : saveStatus === 'dirty'
+                  ? 'Você tem alterações pendentes. Só enviamos para o banco ao tocar em salvar.'
+                  : 'Mova jogadores livremente e salve apenas quando terminar.'}
         </Text>
       </View>
 
@@ -572,13 +572,13 @@ export default function LineupScreen() {
             onPress={() => handleAutoArrange()}
           />
           <AppButton
-            label="Limpar escalacao"
+            label="Limpar escalação"
             variant="ghost"
             onPress={handleClearLineup}
           />
           <AppButton
-            label="Salvar escalacao"
-            loading={saveStatus === "saving"}
+            label="Salvar escalação"
+            loading={saveStatus === 'saving'}
             onPress={() => void handleSave()}
           />
         </View>
@@ -594,8 +594,8 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   metricsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
   },
   statusCard: {
@@ -607,7 +607,7 @@ const styles = StyleSheet.create({
   statusTitle: {
     fontFamily: fonts.heading,
     fontSize: 16,
-    fontWeight: "800",
+    fontWeight: '800',
   },
   statusText: {
     fontFamily: fonts.body,
@@ -615,8 +615,8 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   formationRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   formationChip: {
@@ -628,11 +628,11 @@ const styles = StyleSheet.create({
   formationText: {
     fontFamily: fonts.heading,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: '700',
   },
   actionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
 });

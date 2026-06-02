@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import Constants from 'expo-constants';
 
 import { authService } from '@/services/auth';
@@ -7,6 +7,12 @@ import {
   clearCurrentUserPushToken,
   syncCurrentUserPushToken,
 } from '@/services/notifications';
+import {
+  canCreateTeamFromOwnedTeamsCount,
+  getOwnedTeamsCount,
+  OWNED_TEAMS_LIMIT_REACHED_MESSAGE,
+} from '@/lib/team';
+import { isTeamStorageCleanupWarning } from '@/lib/team-deletion';
 import { repository } from '@/services/repository';
 import { emptySnapshot } from '@/services/repository/types';
 import type {
@@ -25,6 +31,7 @@ import type {
   SubmitMvpVoteInput,
   SubmitPlayerRatingInput,
   UpdateMatchInput,
+  UpdateMatchFieldPaymentInput,
   UpdateMatchDiaryEntryInput,
   UpdateRatingCriterionInput,
   UpdateTeamInput,
@@ -36,7 +43,7 @@ import type {
   ImportedMatchPayloadItem,
   LegacyMatchImportPreview,
 } from '@/types/match-import';
-import type { Team } from '@/types/domain';
+import type { PublicTeamProfile, PublicTeamSummary, Team } from '@/types/domain';
 
 type SyncStatus = 'idle' | 'connecting' | 'refreshing';
 
@@ -56,8 +63,11 @@ export interface AppState {
   logout: () => Promise<void>;
   refreshData: () => Promise<void>;
   refreshAccess: () => Promise<void>;
+  listPublicTeams: () => Promise<PublicTeamSummary[]>;
+  getPublicTeamProfile: (teamId: string) => Promise<PublicTeamProfile | null>;
   createTeam: (input: CreateTeamInput) => Promise<Team>;
   updateTeam: (teamId: string, input: UpdateTeamInput) => Promise<void>;
+  deleteTeamPermanently: (teamId: string) => Promise<{ storageCleanupWarning: boolean }>;
   regenerateTeamInviteCode: (teamId: string) => Promise<string>;
   createRatingCriterion: (input: CreateRatingCriterionInput) => Promise<void>;
   updateRatingCriterion: (criterionId: string, input: UpdateRatingCriterionInput) => Promise<void>;
@@ -72,6 +82,10 @@ export interface AppState {
   reactivatePlayer: (playerId: string) => Promise<void>;
   createMatch: (input: CreateMatchInput) => Promise<string>;
   updateMatch: (matchId: string, input: UpdateMatchInput) => Promise<void>;
+  updateMatchFieldPayment: (
+    matchId: string,
+    input: UpdateMatchFieldPaymentInput,
+  ) => Promise<void>;
   setAttendance: (input: UpdateAttendanceInput) => Promise<void>;
   saveLineup: (input: SaveLineupInput) => Promise<void>;
   finishMatch: (input: FinishMatchInput) => Promise<void>;
@@ -376,10 +390,33 @@ export const useAppStore = create<AppState>((set, get) => ({
     await syncPushTokenForUser(get().currentUserId);
   },
 
+  async listPublicTeams() {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    return repository.listPublicTeams(userId);
+  },
+
+  async getPublicTeamProfile(teamId) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    return repository.getPublicTeamProfile(teamId, userId);
+  },
+
   async createTeam(input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
+    }
+
+    const ownedTeamsCount = getOwnedTeamsCount(get().snapshot.teams, userId);
+    if (!canCreateTeamFromOwnedTeamsCount(ownedTeamsCount)) {
+      throw new Error(OWNED_TEAMS_LIMIT_REACHED_MESSAGE);
     }
 
     const team = await repository.createTeam(input, userId);
@@ -390,17 +427,37 @@ export const useAppStore = create<AppState>((set, get) => ({
   async updateTeam(teamId, input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.updateTeam(teamId, input, userId);
     await refreshCurrentSession(set, get);
   },
 
+  async deleteTeamPermanently(teamId) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    try {
+      await repository.deleteTeamPermanently(teamId, userId);
+      await refreshCurrentSession(set, get);
+      return { storageCleanupWarning: false };
+    } catch (error) {
+      if (isTeamStorageCleanupWarning(error)) {
+        await refreshCurrentSession(set, get);
+        return { storageCleanupWarning: true };
+      }
+
+      throw error;
+    }
+  },
+
   async regenerateTeamInviteCode(teamId) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     const team = await repository.regenerateTeamInviteCode(teamId, userId);
@@ -411,7 +468,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async createRatingCriterion(input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.createRatingCriterion(input, userId);
@@ -421,7 +478,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async updateRatingCriterion(criterionId, input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.updateRatingCriterion(criterionId, input, userId);
@@ -431,7 +488,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async deleteRatingCriterion(criterionId) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.deleteRatingCriterion(criterionId, userId);
@@ -441,7 +498,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async setActiveTeam(teamId) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.setActiveTeam(teamId, userId);
@@ -451,7 +508,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async joinTeamWithInviteCode(inviteCode) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     const result = await repository.joinTeamWithInviteCode(inviteCode, userId);
@@ -462,7 +519,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async markNotificationAsRead(notificationId) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.markNotificationAsRead(notificationId, userId);
@@ -472,7 +529,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async markAllNotificationsAsRead() {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.markAllNotificationsAsRead(userId);
@@ -482,7 +539,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async createPlayer(input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     const player = await repository.createPlayer(input, userId);
@@ -493,7 +550,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async updatePlayer(playerId, input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.updatePlayer(playerId, input, userId);
@@ -503,7 +560,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async removePlayer(playerId) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.removePlayer(playerId, userId);
@@ -513,7 +570,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async reactivatePlayer(playerId) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.reactivatePlayer(playerId, userId);
@@ -523,7 +580,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async createMatch(input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     const match = await repository.createMatch(input, userId);
@@ -534,17 +591,27 @@ export const useAppStore = create<AppState>((set, get) => ({
   async updateMatch(matchId, input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.updateMatch(matchId, input, userId);
     await refreshCurrentSession(set, get);
   },
 
+  async updateMatchFieldPayment(matchId, input) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    await repository.updateMatchFieldPayment(matchId, input, userId);
+    await refreshCurrentSession(set, get);
+  },
+
   async setAttendance(input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.updateAttendance(input, userId);
@@ -554,7 +621,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async saveLineup(input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.saveLineup(input, userId);
@@ -564,7 +631,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async finishMatch(input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.finishMatch(input, userId);
@@ -574,7 +641,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async registerFinishedMatch(input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     const match = await repository.registerFinishedMatch(input, userId);
@@ -585,7 +652,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async previewLegacyMatchImport(payload) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     return repository.previewLegacyMatchImport(payload, userId);
@@ -594,7 +661,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async importLegacyMatches(payload) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     const result = await repository.importLegacyMatches(payload, userId);
@@ -605,7 +672,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async createMatchDiaryEntry(input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     const entry = await repository.createMatchDiaryEntry(input, userId);
@@ -616,7 +683,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async updateMatchDiaryEntry(entryId, input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.updateMatchDiaryEntry(entryId, input, userId);
@@ -626,7 +693,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async deleteMatchDiaryEntry(entryId) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.deleteMatchDiaryEntry(entryId, userId);
@@ -636,7 +703,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   async submitMvpVote(input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.submitMvpVote(input, userId);
@@ -646,10 +713,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   async submitPlayerRating(input) {
     const userId = get().currentUserId;
     if (!userId) {
-      throw new Error('Sessao expirada.');
+      throw new Error('Sessão expirada.');
     }
 
     await repository.submitPlayerRating(input, userId);
     await refreshCurrentSession(set, get);
   },
 }));
+

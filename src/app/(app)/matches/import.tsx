@@ -47,7 +47,7 @@ const EXAMPLE_JSON = `[
 const IMPORT_STATUS_LABELS = {
   ready: 'Pronto',
   duplicate: 'Duplicado',
-  invalid: 'Invalido',
+  invalid: 'Inválido',
 } as const;
 
 export default function ImportLegacyMatchesScreen() {
@@ -98,8 +98,8 @@ export default function ImportLegacyMatchesScreen() {
       setImporting(true);
       const result = await importLegacyMatches(parsedPayload);
       Alert.alert(
-        'Importacao concluida',
-        `${result.createdMatches} jogo(s) criado(s), ${result.skippedDuplicates} duplicado(s) pulado(s) e ${result.invalidMatches} item(ns) invalido(s).`,
+        'Importação concluída',
+        `${result.createdMatches} jogo(s) criado(s), ${result.skippedDuplicates} duplicado(s) pulado(s) e ${result.invalidMatches} item(ns) inválido(s).`,
       );
       router.replace('/matches');
     } catch (error) {
@@ -118,8 +118,8 @@ export default function ImportLegacyMatchesScreen() {
     }
 
     Alert.alert(
-      'Confirmar importacao',
-      `Serao criados ${preview.summary.readyMatches} jogo(s). Os duplicados ou invalidos serao ignorados.`,
+      'Confirmar importação',
+      `Serão criados ${preview.summary.readyMatches} jogo(s). Os duplicados ou inválidos serão ignorados.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Importar', onPress: () => void confirmImport() },
@@ -134,12 +134,12 @@ export default function ImportLegacyMatchesScreen() {
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Importar jogos antigos</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          Cole um JSON, confira a previa e confirme apenas quando os jogadores e estatisticas estiverem corretos.
+          Cole um JSON, confira a prévia e confirme apenas quando os jogadores e estatísticas estiverem corretos.
         </Text>
       </View>
 
       <AppInput
-        label="JSON da importacao"
+        label="JSON da importação"
         multiline
         value={jsonText}
         onChangeText={(value) => {
@@ -154,7 +154,7 @@ export default function ImportLegacyMatchesScreen() {
 
       <View style={styles.buttonRow}>
         <AppButton
-          label="Gerar previa"
+          label="Gerar prévia"
           onPress={() => void handlePreview()}
           loading={previewLoading}
         />
@@ -170,14 +170,14 @@ export default function ImportLegacyMatchesScreen() {
       {preview ? (
         <>
           <SectionHeader
-            title="Resumo da previa"
+            title="Resumo da prévia"
             subtitle={`${preview.summary.totalMatches} jogo(s) lido(s) do JSON`}
           />
 
           <View style={styles.summaryGrid}>
             <SummaryCard label="Prontos" value={preview.summary.readyMatches} />
             <SummaryCard label="Duplicados" value={preview.summary.duplicateMatches} />
-            <SummaryCard label="Invalidos" value={preview.summary.invalidMatches} />
+            <SummaryCard label="Inválidos" value={preview.summary.invalidMatches} />
             <SummaryCard label="Jogadores encontrados" value={preview.summary.matchedPlayers} />
             <SummaryCard label="Não encontrados" value={preview.summary.unresolvedPlayers} />
             <SummaryCard label="Conflitos" value={preview.summary.conflicts} />
@@ -281,7 +281,7 @@ function PlayerPreviewLine({ player }: { player: LegacyMatchImportPlayerPreview 
       <Text style={[styles.playerLineSub, { color: theme.colors.textMuted }]}>
         {isMatched
           ? `${player.matchedPlayerName} ${player.matchedPlayerJerseyNumber != null ? `#${player.matchedPlayerJerseyNumber}` : ''} - ${player.goals}G ${player.assists}A - ${player.resolutionSource}`
-          : player.message ?? 'Sem correspondencia.'}
+          : player.message ?? 'Sem correspondência.'}
       </Text>
     </View>
   );

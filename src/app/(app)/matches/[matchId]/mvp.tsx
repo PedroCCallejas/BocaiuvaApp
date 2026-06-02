@@ -62,7 +62,7 @@ export default function MatchMvpScreen() {
       : breakdown.hasTie
         ? `${breakdown.winnerPlayerIds.length} jogadores empatados`
         : confirmedPlayers.find((player) => player.id === breakdown.winnerPlayerIds[0])?.nickname ??
-          'Lider definido';
+          'Líder definido';
 
   async function vote(targetPlayerId: string) {
     try {
@@ -109,7 +109,7 @@ export default function MatchMvpScreen() {
             {currentPlayer == null
               ? 'Resultado liberado'
               : hasAlreadyVoted
-                ? 'Seu voto ja foi registrado'
+                ? 'Seu voto já foi registrado'
                 : currentPlayerConfirmed
                   ? 'Aguardando seu voto'
                   : 'Você não estava confirmado para votar'}
@@ -121,7 +121,7 @@ export default function MatchMvpScreen() {
                 ? 'Seu voto entrou no placar e o resultado abaixo continua anônimo para todo mundo.'
                 : currentPlayerConfirmed
                   ? 'Escolha um companheiro confirmado para liberar seu voto.'
-                  : 'O resultado continua visivel, mas apenas jogadores confirmados podem votar.'}
+                  : 'O resultado continua visível, mas apenas jogadores confirmados podem votar.'}
           </Text>
           {canManage ? (
             <Text style={[styles.infoText, { color: theme.colors.secondary }]}>
@@ -144,14 +144,14 @@ export default function MatchMvpScreen() {
         <MetricCard
           label="Pontos de MVP"
           value={breakdown.totalVotes > 0 ? formatStatNumber(breakdown.awardPointsEach, 2) : '0'}
-          helper={breakdown.hasTie ? 'por lider empatado' : 'para o vencedor'}
+          helper={breakdown.hasTie ? 'por líder empatado' : 'para o vencedor'}
         />
       </View>
 
       {breakdown.results.length > 0 ? (
         <>
           <RankingList
-            title="Votacao da partida"
+            title="Votação da partida"
             items={breakdown.results.map((item) => {
               const player = confirmedPlayers.find((entry) => entry.id === item.playerId);
               return {
@@ -176,8 +176,8 @@ export default function MatchMvpScreen() {
               title="Resultado do MVP"
               subtitle={
                 breakdown.hasTie
-                  ? 'A partida distribui 1 ponto de MVP dividido entre os lideres.'
-                  : 'A partida distribui 1 ponto de MVP para o lider isolado.'
+                  ? 'A partida distribui 1 ponto de MVP dividido entre os líderes.'
+                  : 'A partida distribui 1 ponto de MVP para o líder isolado.'
               }
             />
             {breakdown.results

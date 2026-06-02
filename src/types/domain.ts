@@ -5,6 +5,7 @@ export type TeamMemberStatus = 'active' | 'inactive';
 export type MatchType = 'society' | 'futsal' | 'field' | 'training';
 
 export type MatchStatus = 'scheduled' | 'confirmed' | 'finished' | 'canceled';
+export type PublicOpponentSource = 'manual' | 'public_team';
 
 export type PlayerStatus = 'active' | 'injured' | 'suspended' | 'inactive';
 
@@ -83,6 +84,7 @@ export interface User extends BaseEntity {
   email: string;
   displayName: string;
   appRole: AppRole;
+  /** Deprecated: team creation now depends on owned-team count, kept only for compatibility. */
   canCreateTeam: boolean;
   activeTeamId: string | null;
   teamId?: string | null;
@@ -108,6 +110,17 @@ export interface Team extends BaseEntity {
   logoUrl?: string | null;
   bannerUrl?: string | null;
   presentationVideoUrl?: string | null;
+  isPublic?: boolean;
+  city?: string | null;
+  state?: string | null;
+  neighborhood?: string | null;
+  homeFieldName?: string | null;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  contactWhatsapp?: string | null;
+  publicDescription?: string | null;
+  allowFriendlyContact?: boolean;
+  publicRosterEnabled?: boolean;
   primaryColor: string;
   secondaryColor: string;
   accentColor?: string | null;
@@ -151,11 +164,76 @@ export interface Player extends BaseEntity {
   deletedAt?: string | null;
 }
 
+export interface PublicTeamStats {
+  games: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  pointsRate: number;
+}
+
+export interface PublicTeamRosterPlayer {
+  id: string;
+  fullName: string;
+  nickname: string;
+  photoUrl?: string | null;
+  primaryPosition: Position;
+  jerseyNumber: number;
+}
+
+export interface PublicTeamSummary {
+  id: string;
+  slug: string;
+  name: string;
+  logoUrl?: string | null;
+  bannerUrl?: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor?: string | null;
+  city: string;
+  state: string;
+  neighborhood?: string | null;
+  homeFieldName?: string | null;
+  publicDescription?: string | null;
+  allowFriendlyContact: boolean;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  contactWhatsapp?: string | null;
+  stats: PublicTeamStats;
+}
+
+export interface PublicTeamProfile extends PublicTeamSummary {
+  presentationVideoUrl?: string | null;
+  publicRosterEnabled: boolean;
+  roster: PublicTeamRosterPlayer[];
+}
+
 export interface Scoreboard {
   team: number;
   opponent: number;
   ownGoalsForTeam?: number;
   result: MatchResult;
+}
+
+export interface MatchFieldCost {
+  totalAmount: number;
+  splitCount: number;
+  amountPerPlayer: number;
+  currency: 'BRL';
+  note?: string | null;
+  updatedAt?: string;
+  updatedByUserId?: string;
+}
+
+export interface MatchFieldPayment {
+  payerPlayerIds: string[];
+  paidGuestCount?: number;
+  pixKey?: string | null;
+  responsibleName?: string | null;
+  updatedAt?: string;
+  updatedByUserId?: string;
 }
 
 export interface Match extends BaseEntity {
@@ -167,12 +245,18 @@ export interface Match extends BaseEntity {
   locationUrl?: string | null;
   opponentName: string;
   opponentLogoUrl?: string | null;
+  opponentTeamId?: string | null;
+  opponentTeamName?: string | null;
+  opponentTeamLogoUrl?: string | null;
+  opponentSource?: PublicOpponentSource | null;
   linePlayersCount: number;
   matchType: MatchType;
   notes?: string;
   status: MatchStatus;
   createdBy: string;
   scoreboard?: Scoreboard | null;
+  fieldCost?: MatchFieldCost | null;
+  fieldPayment?: MatchFieldPayment | null;
   finishedAt?: string | null;
   mvpWinnerPlayerIds?: string[];
   mvpTotalVotes?: number;

@@ -13,6 +13,7 @@ import {
 import { Screen } from '@/components/ui/Screen';
 import { AppInput } from '@/components/ui/AppInput';
 import { AppButton } from '@/components/ui/AppButton';
+import { APP_NAME, APP_TAGLINE } from '@/constants/branding';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
@@ -22,7 +23,7 @@ import {
 import { useAppStore } from '@/store/app-store';
 
 const schema = z.object({
-  email: z.string().email('Informe um e-mail valido.'),
+  email: z.string().email('Informe um e-mail válido.'),
   password: z.string().min(6, 'A senha deve ter ao menos 6 caracteres.'),
 });
 
@@ -69,7 +70,7 @@ export default function LoginScreen() {
     if (response.type !== 'success') {
       setGoogleLoading(false);
       Alert.alert(
-        'Não foi possível entrar com Google',
+        'Não foi possível entrar com o Google',
         'A autenticação foi interrompida antes da confirmação final.',
       );
       return;
@@ -78,8 +79,8 @@ export default function LoginScreen() {
     if (!idToken) {
       setGoogleLoading(false);
       Alert.alert(
-        'Não foi possível entrar com Google',
-        'O acesso com Google não foi concluído. Tente novamente em alguns instantes.',
+        'Não foi possível entrar com o Google',
+        'O acesso com o Google não foi concluído. Tente novamente em alguns instantes.',
       );
       return;
     }
@@ -90,7 +91,7 @@ export default function LoginScreen() {
         router.replace('/');
       } catch (error) {
         Alert.alert(
-          'Não foi possível entrar com Google',
+          'Não foi possível entrar com o Google',
           error instanceof Error ? error.message : 'Tente novamente.',
         );
       } finally {
@@ -123,7 +124,7 @@ export default function LoginScreen() {
     if (!googleConfigured) {
       Alert.alert(
         'Esse acesso ainda não está pronto',
-        'Entrar com Google será liberado assim que a conta estiver configurada.',
+        'Entrar com o Google será liberado assim que a conta estiver configurada.',
       );
       return;
     }
@@ -162,14 +163,14 @@ export default function LoginScreen() {
   return (
     <Screen formMode contentContainerStyle={styles.screen}>
       <View style={styles.hero}>
-        <Text style={[styles.eyebrow, { color: theme.colors.secondary }]}>Seu futebol organizado</Text>
+        <Text style={[styles.eyebrow, { color: theme.colors.secondary }]}>{APP_NAME}</Text>
         <Text style={[styles.title, { color: theme.colors.text }]}>
-          Monte seu elenco, cuide das partidas e acompanhe tudo em um só lugar.
+          {APP_TAGLINE} Monte seu elenco, cuide das partidas e acompanhe tudo em um só lugar.
         </Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
           {isMockMode
-            ? 'Use uma conta demo para explorar o fluxo completo e ver como seu time pode ficar.'
-            : 'Entre com sua conta para continuar de onde parou ou use o Google para agilizar o acesso.'}
+            ? 'Use uma conta demonstrativa para explorar o fluxo completo e sentir como o time pode ficar.'
+            : 'Entre com sua conta para seguir de onde parou ou use o Google para acelerar o acesso.'}
         </Text>
       </View>
 
@@ -231,7 +232,7 @@ export default function LoginScreen() {
             ) : null}
             {!request && showGoogleLogin ? (
               <Text style={[styles.helperNote, { color: theme.colors.textMuted }]}>
-                Preparando a entrada com Google.
+                Preparando a entrada com o Google.
               </Text>
             ) : null}
           </>
@@ -252,7 +253,7 @@ export default function LoginScreen() {
 
       {isMockMode ? (
         <View style={styles.demoSection}>
-          <Text style={[styles.demoTitle, { color: theme.colors.text }]}>Acesso rapido</Text>
+          <Text style={[styles.demoTitle, { color: theme.colors.text }]}>Acesso rápido</Text>
           <View style={styles.demoRow}>
             <AppButton
               label="Admin demo"

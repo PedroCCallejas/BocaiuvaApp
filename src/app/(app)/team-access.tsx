@@ -11,12 +11,17 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
-import { normalizeInviteCode } from '@/lib/team';
+import {
+  MAX_OWNED_TEAMS_PER_ACCOUNT,
+  normalizeInviteCode,
+  OWNED_TEAMS_LIMIT_REACHED_MESSAGE,
+} from '@/lib/team';
 import { useAppStore } from '@/store/app-store';
 import {
   selectCanCreateTeam,
   selectCurrentTeam,
   selectCurrentUser,
+  selectOwnedTeamsCount,
   selectUserMemberships,
 } from '@/store/selectors';
 
@@ -50,6 +55,7 @@ export default function TeamAccessScreen() {
   const currentUser = useAppStore(selectCurrentUser);
   const currentTeam = useAppStore(selectCurrentTeam);
   const canCreateTeam = useAppStore(selectCanCreateTeam);
+  const ownedTeamsCount = useAppStore(selectOwnedTeamsCount);
   const memberships = useAppStore(selectUserMemberships);
   const teams = useAppStore((state) => state.snapshot.teams);
   const joinTeamWithInviteCode = useAppStore((state) => state.joinTeamWithInviteCode);
@@ -133,17 +139,26 @@ export default function TeamAccessScreen() {
     try {
       await refreshAccess();
       Alert.alert(
-        'Acesso atualizado',
-        'Se sua liberação já foi feita, a opção de criar um novo time aparece aqui.',
+        'Dados atualizados',
+        'Se você criou, entrou ou recebeu acesso a um time em outro aparelho, ele aparece aqui.',
       );
     } catch (error) {
       Alert.alert(
-        'Não foi possível atualizar o acesso',
+        'Não foi possível atualizar os dados',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     } finally {
       setRefreshingAccess(false);
     }
+  }
+
+  function handleGoToCreateTeam() {
+    if (!canCreateTeam) {
+      Alert.alert('Limite atingido', OWNED_TEAMS_LIMIT_REACHED_MESSAGE);
+      return;
+    }
+
+    router.push('/team-setup' as never);
   }
 
   async function handleLogout() {
@@ -175,9 +190,14 @@ export default function TeamAccessScreen() {
               ? `${currentUser.displayName}, você precisa de um código de convite para acessar um time.`
               : 'Você precisa de um código de convite para acessar um time.'}
         </Text>
-        {canCreateTeam ? (
-          <Text style={[styles.accessBadge, { color: theme.colors.secondary }]}>
-            Acesso liberado
+        <Text style={[styles.accessBadge, { color: theme.colors.secondary }]}>
+          {canCreateTeam
+            ? `Você administra ${ownedTeamsCount} de ${MAX_OWNED_TEAMS_PER_ACCOUNT} time(s).`
+            : 'Limite de 2 times atingido.'}
+        </Text>
+        {!canCreateTeam ? (
+          <Text style={[styles.limitText, { color: theme.colors.warning }]}>
+            Você já administra 2 times.
           </Text>
         ) : null}
       </View>
@@ -257,17 +277,23 @@ export default function TeamAccessScreen() {
         />
       </View>
 
-      {canCreateTeam ? (
-        <AppButton
-          label={membershipCards.length > 0 ? 'Criar novo time' : 'Criar meu time'}
-          variant="secondary"
-          onPress={() => router.push('/team-setup' as never)}
-          fullWidth
-        />
-      ) : null}
+      <AppButton
+        label={membershipCards.length > 0 ? 'Criar novo time' : 'Criar meu time'}
+        variant="secondary"
+        onPress={handleGoToCreateTeam}
+        disabled={!canCreateTeam}
+        fullWidth
+      />
 
       <AppButton
-        label="Atualizar acesso"
+        label="Ver galeria de times"
+        variant="secondary"
+        onPress={() => router.push('/teams-gallery' as never)}
+        fullWidth
+      />
+
+      <AppButton
+        label="Atualizar dados"
         variant="ghost"
         onPress={() => void handleRefreshAccess()}
         loading={refreshingAccess}
@@ -308,6 +334,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
+  },
+  limitText: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
   },
   section: {
     gap: 12,

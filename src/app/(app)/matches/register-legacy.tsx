@@ -24,7 +24,7 @@ import {
 import type { MatchType } from '@/types/domain';
 
 const schema = z.object({
-  opponentName: z.string().min(3, 'Informe o adversario.'),
+  opponentName: z.string().min(3, 'Informe o adversário.'),
   date: z.string().refine((value) => Boolean(parseDateBRToISO(value)), {
     message: 'Use o formato DD/MM/AAAA.',
   }),
@@ -165,7 +165,7 @@ export default function RegisterLegacyMatchScreen() {
     selectedCount > 0 && totalGoals !== teamScore
       ? totalGoals > teamScore
         ? 'A soma de gols dos jogadores ultrapassa o placar do time.'
-        : 'A soma de gols dos jogadores esta diferente do placar informado.'
+        : 'A soma de gols dos jogadores está diferente do placar informado.'
       : null;
 
   return (
@@ -173,7 +173,7 @@ export default function RegisterLegacyMatchScreen() {
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Registrar jogo antigo</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          Use este fluxo para salvar partidas passadas ja encerradas com placar e estatisticas individuais.
+          Use este fluxo para salvar partidas passadas já encerradas com placar e estatísticas individuais.
         </Text>
       </View>
 
@@ -212,7 +212,7 @@ export default function RegisterLegacyMatchScreen() {
           name="opponentName"
           render={({ field }) => (
             <AppInput
-              label="Adversario"
+              label="Adversário"
               value={field.value}
               onBlur={field.onBlur}
               onChangeText={field.onChange}
@@ -243,7 +243,7 @@ export default function RegisterLegacyMatchScreen() {
               name="time"
               render={({ field }) => (
                 <AppInput
-                  label="Horario opcional"
+                  label="Horário opcional"
                   keyboardType="numbers-and-punctuation"
                   value={field.value}
                   onBlur={field.onBlur}
@@ -294,7 +294,7 @@ export default function RegisterLegacyMatchScreen() {
           name="notes"
           render={({ field }) => (
             <AppInput
-              label="Observacoes"
+              label="Observações"
               multiline
               value={field.value ?? ''}
               onBlur={field.onBlur}

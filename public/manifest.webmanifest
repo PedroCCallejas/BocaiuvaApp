@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Bocaiuva APP",
-  "short_name": "Bocaiuva",
-  "description": "Aplicativo para organizar times de futebol amador, jogos, presenca, escalacao e estatisticas.",
+  "name": "Professô FC",
+  "short_name": "Professô FC",
+  "description": "Organize seu time, monte escalações, acompanhe estatísticas e marque amistosos.",
   "lang": "pt-BR",
   "start_url": "/",
   "scope": "/",

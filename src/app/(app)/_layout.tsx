@@ -18,8 +18,9 @@ export default function AppLayout() {
 
   const inTeamSetup = segments.some((segment) => segment === 'team-setup');
   const inTeamAccess = segments.some((segment) => segment === 'team-access');
+  const inTeamsGallery = segments[0] === 'teams-gallery' || segments[0] === 'teams';
 
-  if (!team && !inTeamSetup && !inTeamAccess) {
+  if (!team && !inTeamSetup && !inTeamAccess && !inTeamsGallery) {
     return <Redirect href={'/team-access' as never} />;
   }
 
@@ -42,6 +43,11 @@ export default function AppLayout() {
       <Stack.Screen name="team-access" options={{ title: 'Meus times' }} />
       <Stack.Screen name="team-setup" options={{ title: 'Criar novo time' }} />
       <Stack.Screen name="team-settings" options={{ title: 'Editar time' }} />
+      <Stack.Screen name="teams-gallery" options={{ title: 'Galeria de times' }} />
+      <Stack.Screen
+        name="teams/[teamId]/public"
+        options={{ title: 'Perfil público do time' }}
+      />
       <Stack.Screen name="team-rating-criteria" options={{ title: 'Critérios de avaliação' }} />
       <Stack.Screen name="team-invite" options={{ title: 'Convidar jogadores' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notificações' }} />

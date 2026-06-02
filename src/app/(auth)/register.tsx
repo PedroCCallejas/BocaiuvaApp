@@ -7,13 +7,14 @@ import { z } from 'zod';
 import { Screen } from '@/components/ui/Screen';
 import { AppInput } from '@/components/ui/AppInput';
 import { AppButton } from '@/components/ui/AppButton';
+import { APP_NAME } from '@/constants/branding';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { useAppStore } from '@/store/app-store';
 
 const schema = z.object({
   displayName: z.string().min(3, 'Informe um nome com ao menos 3 caracteres.'),
-  email: z.string().email('Informe um e-mail valido.'),
+  email: z.string().email('Informe um e-mail válido.'),
   password: z.string().min(6, 'A senha deve ter ao menos 6 caracteres.'),
 });
 
@@ -40,7 +41,10 @@ export default function RegisterScreen() {
       await register(values);
       router.replace('/');
     } catch (error) {
-      Alert.alert('Não foi possível criar a conta', error instanceof Error ? error.message : 'Tente novamente.');
+      Alert.alert(
+        'Não foi possível criar a conta',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
     }
   }
 
@@ -49,7 +53,7 @@ export default function RegisterScreen() {
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Criar conta</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          Crie sua conta para entrar com convite, acompanhar seu time e seguir quando seu acesso estiver liberado.
+          Crie sua conta no {APP_NAME} para montar seu time, entrar por convite e acompanhar tudo em um só lugar.
         </Text>
       </View>
 

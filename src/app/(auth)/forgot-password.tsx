@@ -7,12 +7,13 @@ import { z } from 'zod';
 import { Screen } from '@/components/ui/Screen';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
+import { APP_NAME } from '@/constants/branding';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { useAppStore } from '@/store/app-store';
 
 const schema = z.object({
-  email: z.string().email('Informe um e-mail valido.'),
+  email: z.string().email('Informe um e-mail válido.'),
 });
 
 type ForgotValues = z.infer<typeof schema>;
@@ -34,7 +35,7 @@ export default function ForgotPasswordScreen() {
       await resetPassword(values.email);
       Alert.alert(
         'Link enviado',
-        'Se existir uma conta com esse e-mail, o link de recuperacao foi enviado.',
+        'Se existir uma conta com esse e-mail, o link de recuperação já foi enviado.',
       );
       router.back();
     } catch (error) {
@@ -50,7 +51,7 @@ export default function ForgotPasswordScreen() {
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Recuperar senha</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          Informe o e-mail da conta para receber o link de redefinicao de senha.
+          Informe o e-mail da sua conta no {APP_NAME} para receber o link de redefinição de senha.
         </Text>
       </View>
       <View

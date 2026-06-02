@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AppButton } from '@/components/ui/AppButton';
 import { Pill } from '@/components/ui/Pill';
 import { fonts } from '@/constants/theme';
+import { APP_NAME } from '@/constants/branding';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { useAppStore } from '@/store/app-store';
 import {
@@ -337,7 +338,7 @@ function resolveWebRouteMeta(input: {
             homeCrumb,
             { label: 'Partidas', href: '/matches' },
             { label: match?.opponentName ?? 'Partida', href: match ? `/matches/${match.id}` : '/matches' },
-            { label: 'Pos-jogo' },
+            { label: 'Pós-jogo' },
           ],
           backHref: match ? `/matches/${match.id}` : '/matches',
         };
@@ -379,7 +380,7 @@ function resolveWebRouteMeta(input: {
             homeCrumb,
             { label: 'Partidas', href: '/matches' },
             { label: match?.opponentName ?? 'Partida', href: match ? `/matches/${match.id}` : '/matches' },
-            { label: 'Diario' },
+            { label: 'Diário' },
           ],
           backHref: match ? `/matches/${match.id}` : '/matches',
         };
@@ -448,6 +449,24 @@ function resolveWebRouteMeta(input: {
         backHref: '/home',
         action: input.canManageTeam ? { label: 'Convites', href: '/team-invite' } : undefined,
       };
+    case 'teams-gallery':
+      return {
+        title: 'Galeria de times',
+        subtitle: 'Encontre adversários próximos e perfis públicos disponíveis para amistoso',
+        breadcrumbs: [homeCrumb, { label: 'Galeria de times' }],
+        backHref: input.currentTeamName ? '/home' : '/team-access',
+      };
+    case 'teams':
+      return {
+        title: 'Perfil público do time',
+        subtitle: 'Escudo, localização, números agregados e contato liberado pelo próprio time',
+        breadcrumbs: [
+          homeCrumb,
+          { label: 'Galeria de times', href: '/teams-gallery' },
+          { label: 'Perfil público' },
+        ],
+        backHref: '/teams-gallery',
+      };
     case 'team-rating-criteria':
       return {
         title: 'Critérios de avaliação',
@@ -488,7 +507,7 @@ function resolveWebRouteMeta(input: {
       };
     default:
       return {
-        title: 'App Bocaíuva',
+        title: APP_NAME,
         breadcrumbs: [homeCrumb],
         backHref: '/home',
       };

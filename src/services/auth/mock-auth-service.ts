@@ -53,7 +53,7 @@ class MockAuthService implements AuthService {
   }
 
   async loginWithGoogle(_input: GoogleLoginInput): Promise<AuthSessionUser> {
-    throw createAuthError('Esse acesso nao esta disponivel nesta demonstracao.');
+    throw createAuthError('Esse acesso não está disponível nesta demonstração.');
   }
 
   async register(input: RegisterInput) {

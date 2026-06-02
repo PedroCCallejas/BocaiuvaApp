@@ -6,6 +6,8 @@ import type {
   Lineup,
   LineupNode,
   Match,
+  MatchFieldCost,
+  MatchFieldPayment,
   MatchDiaryEntry,
   MatchDiaryMood,
   MatchStat,
@@ -14,6 +16,9 @@ import type {
   ManualPlayerStats,
   Player,
   PlayerRating,
+  PublicTeamProfile,
+  PublicTeamSummary,
+  PublicOpponentSource,
   Position,
   TeamRatingCriterion,
   Season,
@@ -113,6 +118,17 @@ export interface UpdateTeamInput {
   bannerUrl?: string | null;
   presentationVideoUrl?: string | null;
   description?: string | null;
+  isPublic?: boolean;
+  city?: string | null;
+  state?: string | null;
+  neighborhood?: string | null;
+  homeFieldName?: string | null;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  contactWhatsapp?: string | null;
+  publicDescription?: string | null;
+  allowFriendlyContact?: boolean;
+  publicRosterEnabled?: boolean;
 }
 
 export interface CreateMatchInput {
@@ -124,6 +140,10 @@ export interface CreateMatchInput {
   locationUrl?: string | null;
   opponentName: string;
   opponentLogoUrl?: string | null;
+  opponentTeamId?: string | null;
+  opponentTeamName?: string | null;
+  opponentTeamLogoUrl?: string | null;
+  opponentSource?: PublicOpponentSource | null;
   linePlayersCount: number;
   matchType: MatchType;
   notes?: string;
@@ -137,9 +157,14 @@ export interface UpdateMatchInput {
   locationUrl?: string | null;
   opponentName: string;
   opponentLogoUrl?: string | null;
+  opponentTeamId?: string | null;
+  opponentTeamName?: string | null;
+  opponentTeamLogoUrl?: string | null;
+  opponentSource?: PublicOpponentSource | null;
   linePlayersCount: number;
   matchType: MatchType;
   notes?: string;
+  fieldCost?: MatchFieldCost | null;
   status?: Match['status'];
 }
 
@@ -203,11 +228,25 @@ export interface FinishMatchPlayerStatInput {
   assists: number;
 }
 
+export interface MatchFieldCostInput {
+  totalAmount: number;
+  splitCount: number;
+  note?: string | null;
+}
+
+export interface MatchFieldPaymentInput {
+  payerPlayerIds: string[];
+  paidGuestCount?: number;
+  pixKey?: string | null;
+  responsibleName?: string | null;
+}
+
 export interface FinishMatchInput {
   matchId: string;
   teamScore: number;
   opponentScore: number;
   ownGoalsForTeam?: number;
+  fieldCost?: MatchFieldCostInput | null;
   playerStats: FinishMatchPlayerStatInput[];
 }
 
@@ -225,6 +264,10 @@ export interface RegisterFinishedMatchInput {
   teamScore: number;
   opponentScore: number;
   players: RegisterFinishedMatchPlayerInput[];
+}
+
+export interface UpdateMatchFieldPaymentInput {
+  fieldPayment: MatchFieldPaymentInput | null;
 }
 
 export interface SubmitMvpVoteInput {
@@ -284,6 +327,8 @@ export interface AppRepository {
   getMode(): RepositoryMode;
   getInitialSnapshot(): Promise<AppSnapshot>;
   getSnapshot(): Promise<AppSnapshot>;
+  listPublicTeams(actorUserId: string): Promise<PublicTeamSummary[]>;
+  getPublicTeamProfile(teamId: string, actorUserId: string): Promise<PublicTeamProfile | null>;
   subscribeSnapshot?(
     currentUserId: string,
     handlers: SnapshotSubscriptionHandlers,
@@ -294,6 +339,7 @@ export interface AppRepository {
   resetPassword(email: string): Promise<void>;
   createTeam(input: CreateTeamInput, adminUserId: string): Promise<Team>;
   updateTeam(teamId: string, input: UpdateTeamInput, actorUserId: string): Promise<Team>;
+  deleteTeamPermanently(teamId: string, actorUserId: string): Promise<void>;
   regenerateTeamInviteCode(teamId: string, actorUserId: string): Promise<Team>;
   createRatingCriterion(
     input: CreateRatingCriterionInput,
@@ -316,6 +362,11 @@ export interface AppRepository {
   reactivatePlayer(playerId: string, actorUserId: string): Promise<Player>;
   createMatch(input: CreateMatchInput, creatorUserId: string): Promise<Match>;
   updateMatch(matchId: string, input: UpdateMatchInput, actorUserId: string): Promise<Match>;
+  updateMatchFieldPayment(
+    matchId: string,
+    input: UpdateMatchFieldPaymentInput,
+    actorUserId: string,
+  ): Promise<Match>;
   updateAttendance(input: UpdateAttendanceInput, actorUserId: string): Promise<AttendanceRecord>;
   saveLineup(input: SaveLineupInput, actorUserId: string): Promise<Lineup>;
   finishMatch(input: FinishMatchInput, actorUserId: string): Promise<Match>;

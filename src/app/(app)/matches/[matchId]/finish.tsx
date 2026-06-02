@@ -6,10 +6,12 @@ import { MetricCard } from '@/components/cards/MetricCard';
 import { AppButton } from '@/components/ui/AppButton';
 import { CounterField } from '@/components/ui/CounterField';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { AppInput } from '@/components/ui/AppInput';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { formatCurrencyBRL, parseCurrencyInputToNumber } from '@/lib/field-cost';
 import { calculateMatchResult, getConfirmedPlayers } from '@/lib/match';
 import { useAppStore } from '@/store/app-store';
 import {
@@ -41,6 +43,10 @@ function sumAssists(playerStats: Record<string, { goals: number; assists: number
     (sum, item) => sum + Math.max(item.assists, 0),
     0,
   );
+}
+
+function formatDecimalInput(value: number) {
+  return value.toFixed(2).replace('.', ',');
 }
 
 export default function FinishMatchScreen() {
@@ -83,6 +89,13 @@ export default function FinishMatchScreen() {
   const [ownGoalsForTeam, setOwnGoalsForTeam] = useState(initialOwnGoalsForTeam);
   const [teamScoreManuallyEdited, setTeamScoreManuallyEdited] = useState(false);
   const [playerStats, setPlayerStats] = useState(initialPlayerStats);
+  const [fieldCostTotalAmount, setFieldCostTotalAmount] = useState(
+    currentMatch?.fieldCost ? formatDecimalInput(currentMatch.fieldCost.totalAmount) : '',
+  );
+  const [fieldCostSplitCount, setFieldCostSplitCount] = useState(
+    String(currentMatch?.fieldCost?.splitCount ?? confirmedPlayers.length),
+  );
+  const [fieldCostNote, setFieldCostNote] = useState(currentMatch?.fieldCost?.note ?? '');
 
   useEffect(() => {
     if (!currentMatch) {
@@ -94,8 +107,15 @@ export default function FinishMatchScreen() {
     setOpponentScore(currentMatch.scoreboard?.opponent ?? 0);
     setTeamScore(currentMatch.scoreboard?.team ?? initialComputedTeamGoals);
     setTeamScoreManuallyEdited(false);
+    setFieldCostTotalAmount(
+      currentMatch.fieldCost ? formatDecimalInput(currentMatch.fieldCost.totalAmount) : '',
+    );
+    setFieldCostSplitCount(String(currentMatch.fieldCost?.splitCount ?? confirmedPlayers.length));
+    setFieldCostNote(currentMatch.fieldCost?.note ?? '');
   }, [
+    confirmedPlayers.length,
     currentMatch?.id,
+    currentMatch?.fieldCost,
     currentMatch?.scoreboard?.opponent,
     currentMatch?.scoreboard?.team,
     initialComputedTeamGoals,
@@ -106,6 +126,32 @@ export default function FinishMatchScreen() {
   const totalPlayerGoals = useMemo(() => sumGoals(playerStats), [playerStats]);
   const totalAssists = useMemo(() => sumAssists(playerStats), [playerStats]);
   const totalTeamGoals = totalPlayerGoals + ownGoalsForTeam;
+  const hasFieldCostInput = fieldCostTotalAmount.trim().length > 0;
+  const parsedFieldCostTotalAmount = useMemo(
+    () => parseCurrencyInputToNumber(fieldCostTotalAmount),
+    [fieldCostTotalAmount],
+  );
+  const parsedFieldCostSplitCount = useMemo(() => {
+    const normalized = fieldCostSplitCount.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+  }, [fieldCostSplitCount]);
+  const fieldCostAmountPerPlayer = useMemo(() => {
+    if (
+      parsedFieldCostTotalAmount == null ||
+      parsedFieldCostTotalAmount < 0 ||
+      parsedFieldCostSplitCount == null ||
+      parsedFieldCostSplitCount <= 0
+    ) {
+      return null;
+    }
+
+    return Math.round((parsedFieldCostTotalAmount / parsedFieldCostSplitCount) * 100) / 100;
+  }, [parsedFieldCostSplitCount, parsedFieldCostTotalAmount]);
 
   useEffect(() => {
     if (!teamScoreManuallyEdited) {
@@ -155,12 +201,36 @@ export default function FinishMatchScreen() {
       return;
     }
 
+    let nextFieldCost = null;
+
+    if (hasFieldCostInput) {
+      if (parsedFieldCostTotalAmount == null || parsedFieldCostTotalAmount < 0) {
+        Alert.alert('Valor do campo inválido', 'Informe um valor total maior ou igual a zero.');
+        return;
+      }
+
+      if (parsedFieldCostSplitCount == null || parsedFieldCostSplitCount <= 0) {
+        Alert.alert(
+          'Divisão inválida',
+          'Informe em quantas pessoas o valor do campo será dividido.',
+        );
+        return;
+      }
+
+      nextFieldCost = {
+        totalAmount: parsedFieldCostTotalAmount,
+        splitCount: parsedFieldCostSplitCount,
+        note: fieldCostNote.trim() || null,
+      };
+    }
+
     try {
       await finishMatch({
         matchId: currentMatch.id,
         teamScore,
         opponentScore,
         ownGoalsForTeam,
+        fieldCost: nextFieldCost,
         playerStats: confirmedPlayers.map((player) => ({
           playerId: player.id,
           goals: playerStats[player.id]?.goals ?? 0,
@@ -298,6 +368,67 @@ export default function FinishMatchScreen() {
         />
       </View>
 
+      <View
+        style={[
+          styles.fieldCostCard,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.border,
+          },
+        ]}>
+        <SectionHeader
+          title="Valor do campo"
+          subtitle="Opcional. Se quiser, o app já calcula quanto fica para cada pessoa."
+        />
+        <View style={styles.fieldCostInputs}>
+          <AppInput
+            label="Valor total do campo"
+            value={fieldCostTotalAmount}
+            onChangeText={setFieldCostTotalAmount}
+            placeholder="120,00"
+            keyboardType="decimal-pad"
+          />
+          <AppInput
+            label="Dividir entre quantas pessoas"
+            value={fieldCostSplitCount}
+            onChangeText={(value) => setFieldCostSplitCount(value.replace(/[^\d]/g, ''))}
+            placeholder={String(confirmedPlayers.length)}
+            keyboardType="number-pad"
+          />
+          <AppInput
+            label="Observação opcional"
+            value={fieldCostNote}
+            onChangeText={setFieldCostNote}
+            placeholder="Ex.: incluir goleiro convidado"
+            multiline
+            numberOfLines={3}
+            style={styles.noteInput}
+          />
+        </View>
+        <View
+          style={[
+            styles.fieldCostSummary,
+            {
+              backgroundColor: theme.colors.background,
+              borderColor: theme.colors.border,
+            },
+          ]}>
+          <Text style={[styles.fieldCostSummaryTitle, { color: theme.colors.text }]}>
+            Cada um paga
+          </Text>
+          <Text style={[styles.fieldCostSummaryValue, { color: theme.colors.secondary }]}>
+            {fieldCostAmountPerPlayer != null
+              ? `${formatCurrencyBRL(fieldCostAmountPerPlayer)}`
+              : 'Preencha valor e divisão'}
+          </Text>
+          <Text style={[styles.fieldCostSummaryHint, { color: theme.colors.textMuted }]}>
+            {fieldCostAmountPerPlayer != null
+              ? `${formatCurrencyBRL(parsedFieldCostTotalAmount ?? 0)} dividido por ${parsedFieldCostSplitCount} pessoa(s).`
+              : `Sugestão inicial: dividir entre ${confirmedPlayers.length} jogador(es) confirmados.`}
+          </Text>
+        </View>
+      </View>
+
       <SectionHeader title="Resultado" subtitle={resultLabel} />
 
       {confirmedPlayers.map((player) => (
@@ -383,6 +514,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+  },
+  fieldCostCard: {
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: 16,
+    gap: 14,
+  },
+  fieldCostInputs: {
+    gap: 12,
+  },
+  noteInput: {
+    minHeight: 96,
+    textAlignVertical: 'top',
+    paddingTop: 14,
+  },
+  fieldCostSummary: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    gap: 4,
+  },
+  fieldCostSummaryTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  fieldCostSummaryValue: {
+    fontFamily: fonts.display,
+    fontSize: 26,
+    fontWeight: '900',
+  },
+  fieldCostSummaryHint: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 20,
   },
   playerRow: {
     borderWidth: 1,

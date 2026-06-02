@@ -12,7 +12,7 @@ import type {
 
 const importedMatchPlayerSchema = z.object({
   linkedUserId: z.string().trim().min(1).optional().nullable(),
-  email: z.string().trim().email('Use um e-mail valido.').optional().nullable(),
+  email: z.string().trim().email('Use um e-mail válido.').optional().nullable(),
   jerseyNumber: z.coerce.number().int().min(0).optional().nullable(),
   name: z.string().trim().min(1).optional().nullable(),
   played: z.boolean().optional(),
@@ -42,7 +42,7 @@ const importedMatchSchema = z.object({
     .trim()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a data no formato AAAA-MM-DD.')
     .refine((value) => isValidIsoDate(value), {
-      message: 'Informe uma data valida.',
+      message: 'Informe uma data válida.',
     }),
   time: z
     .string()
@@ -50,9 +50,9 @@ const importedMatchSchema = z.object({
     .optional()
     .nullable()
     .refine((value) => value == null || value === '' || isValidTime(value), {
-      message: 'Use o horario no formato HH:mm.',
+      message: 'Use o horário no formato HH:mm.',
     }),
-  opponentName: z.string().trim().min(1, 'Informe o adversario.'),
+  opponentName: z.string().trim().min(1, 'Informe o adversário.'),
   venue: z.string().trim().optional().nullable(),
   matchType: z.enum(['society', 'futsal', 'field', 'training']),
   teamScore: z.coerce.number().int().min(0),
@@ -203,7 +203,7 @@ function resolveImportedPlayer(
         sourceIndex,
         player,
         'conflict',
-        'Mais de um jogador do time aponta para este usuario vinculado.',
+        'Mais de um jogador do time aponta para este usuário vinculado.',
       );
     }
   }
@@ -267,7 +267,7 @@ function resolveImportedPlayer(
       sourceIndex,
       player,
       'ignored',
-      'Jogador sem participacao e sem estatisticas. Esta linha sera ignorada.',
+      'Jogador sem participação e sem estatísticas. Esta linha será ignorada.',
     );
   }
 

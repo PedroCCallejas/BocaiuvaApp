@@ -1,29 +1,36 @@
 import { useMemo } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
+import { AdSlot } from '@/components/ads/AdSlot';
 import { MatchCard } from '@/components/cards/MatchCard';
 import { MetricCard } from '@/components/cards/MetricCard';
 import { NotificationCard } from '@/components/cards/NotificationCard';
 import { SyncStatusCard } from '@/components/cards/SyncStatusCard';
 import { TeamHeroCard } from '@/components/cards/TeamHeroCard';
+import { MatchDiaryEntryCard } from '@/components/matches/MatchDiaryEntryCard';
+import { RankingList } from '@/components/stats/RankingList';
 import { PresentationVideoCard } from '@/components/video/PresentationVideoCard';
 import { AppButton } from '@/components/ui/AppButton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
-import { RankingList } from '@/components/stats/RankingList';
+import { AD_PLACEMENTS } from '@/constants/ads';
+import { fonts } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
+import { buildProfessoHomeTip } from '@/lib/professo-tips';
 import { buildPlayerAggregates, buildTeamAggregates } from '@/lib/stats';
 import { useAppStore } from '@/store/app-store';
 import {
-  selectCanManagePlayers,
   getAttendanceSummary,
+  selectCanManagePlayers,
   selectCanManageTeam,
-  selectCurrentUser,
   selectCurrentTeam,
+  selectCurrentUser,
   selectIsRefreshingData,
   selectSyncStatusHint,
   selectSyncStatusMessage,
+  selectTeamMatchDiaryEntries,
   selectTeamNotifications,
   selectTeamPlayers,
   selectUnreadNotifications,
@@ -32,11 +39,21 @@ import {
 } from '@/store/selectors';
 import type { AppNotification } from '@/types/domain';
 
+function buildHomeLocationLabel(city?: string | null, state?: string | null) {
+  if (!city?.trim()) {
+    return null;
+  }
+
+  return [city.trim(), state?.trim()].filter(Boolean).join(', ');
+}
+
 export default function HomeScreen() {
+  const theme = useAppTheme();
   const snapshot = useAppStore((state) => state.snapshot);
   const team = useAppStore(selectCurrentTeam);
   const currentUser = useAppStore(selectCurrentUser);
   const players = useAppStore(selectTeamPlayers);
+  const diaryEntries = useAppStore(selectTeamMatchDiaryEntries);
   const upcomingMatches = useAppStore(selectUpcomingMatches);
   const notifications = useAppStore(selectTeamNotifications);
   const unreadNotifications = useAppStore(selectUnreadNotifications);
@@ -60,7 +77,14 @@ export default function HomeScreen() {
 
   const teamStats = buildTeamAggregates(snapshot, team.id);
   const playerStats = buildPlayerAggregates(snapshot, team.id);
-  const nextMatch = upcomingMatches.find((match) => match.status !== 'canceled');
+  const nextMatch = upcomingMatches.find((match) => match.status !== 'canceled') ?? null;
+  const nextMatchAttendance = nextMatch
+    ? getAttendanceSummary({ snapshot }, nextMatch.id)
+    : undefined;
+  const latestDiaryEntry = diaryEntries[0] ?? null;
+  const latestDiaryMentionedPlayers = latestDiaryEntry
+    ? players.filter((player) => latestDiaryEntry.mentionedPlayerIds.includes(player.id))
+    : [];
   const topScorers = [...playerStats]
     .filter((item) => item.games > 0 || item.goals > 0 || item.assists > 0)
     .sort((left, right) => right.goals - left.goals)
@@ -72,6 +96,20 @@ export default function HomeScreen() {
       value: item.goals,
     }));
   const previewNotifications = notifications.slice(0, 3);
+  const heroLocation = buildHomeLocationLabel(team.city, team.state);
+  const heroDescription = team.publicDescription?.trim() || team.description?.trim() || null;
+  const heroSupportingText = [team.homeFieldName, team.neighborhood]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join(' • ');
+  const professoTip = buildProfessoHomeTip({
+    team,
+    canManageTeam,
+    teamStats,
+    upcomingMatch: nextMatch,
+    upcomingAttendance: nextMatchAttendance,
+    finishedMatches: snapshot.matches.filter((match) => match.teamId === team.id),
+    playerStats,
+  });
 
   async function handleOpenNotification(notification: AppNotification) {
     try {
@@ -98,17 +136,94 @@ export default function HomeScreen() {
       <TeamHeroCard
         team={team}
         modeLabel={canManageTeam ? 'Comando do time' : 'Vestiário do elenco'}
+        locationLabel={heroLocation}
+        description={heroDescription}
+        supportingText={heroSupportingText.length > 0 ? heroSupportingText : null}
       />
+
+      {professoTip ? (
+        <View
+          style={[
+            styles.professoCard,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.border,
+            },
+          ]}>
+          <Text style={[styles.professoEyebrow, { color: theme.colors.secondary }]}>
+            {professoTip.label}
+          </Text>
+          <Text style={[styles.professoTitle, { color: theme.colors.text }]}>
+            {professoTip.title}
+          </Text>
+          <Text style={[styles.professoMessage, { color: theme.colors.textMuted }]}>
+            {professoTip.message}
+          </Text>
+        </View>
+      ) : null}
 
       {team.presentationVideoUrl ? (
         <PresentationVideoCard
-          title="Apresentação do time"
-          description="Um vídeo curto para dar o tom da identidade do elenco antes da rodada."
+          title="Vídeo de apresentação"
+          description="O banner abre a identidade do clube e o vídeo deixa esse clima vivo para todo o elenco."
           videoUrl={team.presentationVideoUrl}
           posterUrl={team.bannerUrl ?? team.logoUrl ?? null}
           accentColors={[team.primaryColor, team.secondaryColor]}
         />
       ) : null}
+
+      {nextMatch ? (
+        <>
+          <SectionHeader
+            title="Próxima partida"
+            subtitle="O que o elenco precisa responder agora"
+            actionLabel="Ver jogos"
+            onAction={() => router.push('/matches')}
+          />
+          <MatchCard
+            match={nextMatch}
+            attendance={nextMatchAttendance}
+            onPress={() => router.push(`/matches/${nextMatch.id}`)}
+          />
+        </>
+      ) : (
+        <EmptyState
+          title="Sem jogos futuros"
+          description={
+            canCreateMatches
+              ? 'Crie a próxima partida para abrir confirmação de presença e escalação.'
+              : 'Essa função estará disponível assim que o time tiver novos jogos.'
+          }
+          actionLabel={canCreateMatches ? 'Criar partida' : undefined}
+          onAction={canCreateMatches ? () => router.push('/matches/create') : undefined}
+        />
+      )}
+
+      <AdSlot placement={AD_PLACEMENTS.HOME_AFTER_NEXT_MATCH} />
+
+      <SectionHeader
+        title="Última resenha"
+        subtitle={
+          latestDiaryEntry
+            ? 'A publicação mais recente do diário do time fica visível logo na entrada.'
+            : 'Quando a comissão publicar uma resenha, ela aparece aqui.'
+        }
+        actionLabel={latestDiaryEntry ? 'Abrir partida' : undefined}
+        onAction={
+          latestDiaryEntry ? () => router.push(`/matches/${latestDiaryEntry.matchId}`) : undefined
+        }
+      />
+      {latestDiaryEntry ? (
+        <MatchDiaryEntryCard
+          entry={latestDiaryEntry}
+          mentionedPlayers={latestDiaryMentionedPlayers}
+        />
+      ) : (
+        <EmptyState
+          title="Sem resenha publicada"
+          description="Use o diário da partida para contar a história do jogo e destacar o clima do elenco."
+        />
+      )}
 
       <SyncStatusCard
         hint={syncHint}
@@ -136,6 +251,11 @@ export default function HomeScreen() {
 
       <View style={styles.actionRow}>
         <AppButton label="Ver elenco" variant="secondary" onPress={() => router.push('/players')} />
+        <AppButton
+          label="Times para amistoso"
+          variant="secondary"
+          onPress={() => router.push('/teams-gallery' as never)}
+        />
         {canManageTeam || canManagePlayers ? (
           <>
             {canManagePlayers ? (
@@ -158,33 +278,6 @@ export default function HomeScreen() {
           </>
         ) : null}
       </View>
-
-      {nextMatch ? (
-        <>
-          <SectionHeader
-            title="Próxima partida"
-            subtitle="O que o elenco precisa responder agora"
-            actionLabel="Ver jogos"
-            onAction={() => router.push('/matches')}
-          />
-          <MatchCard
-            match={nextMatch}
-            attendance={getAttendanceSummary({ snapshot }, nextMatch.id)}
-            onPress={() => router.push(`/matches/${nextMatch.id}`)}
-          />
-        </>
-      ) : (
-        <EmptyState
-          title="Sem jogos futuros"
-          description={
-            canCreateMatches
-              ? 'Crie a próxima partida para abrir confirmação de presença e escalação.'
-              : 'Essa função estará disponível em breve.'
-          }
-          actionLabel={canCreateMatches ? 'Criar partida' : undefined}
-          onAction={canCreateMatches ? () => router.push('/matches/create') : undefined}
-        />
-      )}
 
       <SectionHeader
         title="Notificações do time"
@@ -218,7 +311,7 @@ export default function HomeScreen() {
           description={
             canManageTeam || canManagePlayers
               ? 'Adicione o primeiro nome do elenco ou convide seus jogadores para começar.'
-              : 'O administrador ainda está montando o elenco do time.'
+              : 'A administração do time ainda está montando o elenco.'
           }
           actionLabel={canManageTeam ? 'Convidar jogadores' : undefined}
           onAction={canManageTeam ? () => router.push('/team-invite' as never) : undefined}
@@ -245,5 +338,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+  },
+  professoCard: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 18,
+    gap: 6,
+  },
+  professoEyebrow: {
+    fontFamily: fonts.heading,
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  professoTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  professoMessage: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
   },
 });

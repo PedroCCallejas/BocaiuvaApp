@@ -5,6 +5,11 @@ import {
 } from '@/lib/date';
 import { membershipIndicatesPlayer, resolvePlayerForUser } from '@/lib/player-linking';
 import { getActiveRatingCriteria, sortRatingCriteria } from '@/lib/rating-criteria';
+import {
+  canCreateTeamFromOwnedTeamsCount,
+  getOwnedTeamsCount,
+  getRemainingOwnedTeamSlots,
+} from '@/lib/team';
 import { isNotificationRead, sortNotificationsByDate } from '@/lib/notifications';
 import type { AppState } from '@/store/app-store';
 import type {
@@ -41,6 +46,8 @@ interface DerivedSnapshotSelectors {
   canManageTeam: boolean;
   canManagePlayers: boolean;
   canCreateTeam: boolean;
+  ownedTeamsCount: number;
+  remainingOwnedTeamSlots: number;
   currentRoleLabel: string;
 }
 
@@ -269,6 +276,9 @@ function getDerivedSelectors(state: Slice): DerivedSnapshotSelectors {
       )
     : [];
   const activeTeamRatingCriteria = getActiveRatingCriteria(teamRatingCriteria);
+  const ownedTeamsCount = currentUser
+    ? getOwnedTeamsCount(state.snapshot.teams, currentUser.id)
+    : 0;
 
   cachedSnapshot = state.snapshot;
   cachedCurrentUserId = state.currentUserId;
@@ -292,7 +302,9 @@ function getDerivedSelectors(state: Slice): DerivedSnapshotSelectors {
     activeTeamRatingCriteria,
     canManageTeam: currentMembership?.canManageTeam === true,
     canManagePlayers: currentMembership?.canManagePlayers === true,
-    canCreateTeam: currentUser?.canCreateTeam === true,
+    canCreateTeam: currentUser ? canCreateTeamFromOwnedTeamsCount(ownedTeamsCount) : false,
+    ownedTeamsCount,
+    remainingOwnedTeamSlots: getRemainingOwnedTeamSlots(ownedTeamsCount),
     currentRoleLabel: buildRoleLabel(currentMembership),
   };
 
@@ -381,6 +393,14 @@ export function selectCanManagePlayers(state: Slice) {
 
 export function selectCanCreateTeam(state: Slice) {
   return getDerivedSelectors(state).canCreateTeam;
+}
+
+export function selectOwnedTeamsCount(state: Slice) {
+  return getDerivedSelectors(state).ownedTeamsCount;
+}
+
+export function selectRemainingOwnedTeamSlots(state: Slice) {
+  return getDerivedSelectors(state).remainingOwnedTeamSlots;
 }
 
 export function selectCurrentRoleLabel(state: Slice) {
@@ -482,21 +502,21 @@ export function selectSyncStatusMessage(state: SyncSlice) {
     return 'Tudo em dia entre seus aparelhos.';
   }
 
-  return 'Dados prontos para voce.';
+  return 'Dados prontos para você.';
 }
 
 export function selectSyncStatusHint(state: SyncSlice) {
   if (state.syncStatus === 'connecting') {
-    return 'As novidades do time vao aparecer assim que a conexao terminar.';
+    return 'As novidades do time vão aparecer assim que a conexão terminar.';
   }
 
   if (state.syncStatus === 'refreshing') {
-    return 'Buscando as ultimas mudancas sem precisar sair do app.';
+    return 'Buscando as últimas mudanças sem precisar sair do app.';
   }
 
   if (state.hasLiveSync) {
-    return 'Mudancas feitas no celular ou no navegador aparecem aqui automaticamente.';
+    return 'Mudanças feitas no celular ou no navegador aparecem aqui automaticamente.';
   }
 
-  return 'Se algo ainda nao apareceu, use o botao de atualizar.';
+  return 'Se algo ainda não apareceu, use o botão de atualizar.';
 }

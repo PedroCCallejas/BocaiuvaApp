@@ -79,7 +79,7 @@ export default function MatchDiaryEntryScreen() {
       <Screen>
         <EmptyState
           title="Partida não encontrada"
-          description="A resenha precisa estar vinculada a uma partida valida."
+          description="A resenha precisa estar vinculada a uma partida válida."
           actionLabel="Voltar"
           onAction={() => router.back()}
         />
@@ -166,12 +166,12 @@ export default function MatchDiaryEntryScreen() {
           {editableEntry ? 'Editar resenha' : 'Nova resenha'}
         </Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          Conte a historia de {currentMatch.opponentName} para o elenco, destaque jogadores e publique a resenha no diario da partida.
+          Conte a história de {currentMatch.opponentName} para o elenco, destaque jogadores e publique a resenha no diário da partida.
         </Text>
       </View>
 
       <AppInput
-        label={`Titulo opcional (${title.length}/${MATCH_DIARY_TITLE_MAX_LENGTH})`}
+        label={`Título opcional (${title.length}/${MATCH_DIARY_TITLE_MAX_LENGTH})`}
         placeholder="Ex.: CRAQUE?!"
         value={title}
         maxLength={MATCH_DIARY_TITLE_MAX_LENGTH}
@@ -180,7 +180,7 @@ export default function MatchDiaryEntryScreen() {
 
       <AppInput
         label={`Texto (${content.length}/${MATCH_DIARY_CONTENT_MAX_LENGTH})`}
-        placeholder="Escreva a resenha pos-jogo..."
+        placeholder="Escreva a resenha pós-jogo..."
         value={content}
         maxLength={MATCH_DIARY_CONTENT_MAX_LENGTH}
         multiline
@@ -217,7 +217,7 @@ export default function MatchDiaryEntryScreen() {
       <View style={styles.section}>
         <SectionHeader
           title="Jogadores mencionados"
-          subtitle="Selecione os nomes que vao aparecer como destaque clicavel"
+          subtitle="Selecione os nomes que vão aparecer como destaque clicável"
         />
         <View style={styles.chipsWrap}>
           {teamPlayers.map((player) => {
@@ -256,7 +256,7 @@ export default function MatchDiaryEntryScreen() {
               Notificar elenco ao publicar
             </Text>
             <Text style={[styles.switchDescription, { color: theme.colors.textMuted }]}>
-              Cria notificacoes internas para o time e destaca quem foi mencionado.
+              Cria notificações internas para o time e destaca quem foi mencionado.
             </Text>
           </View>
           <Switch
@@ -276,7 +276,7 @@ export default function MatchDiaryEntryScreen() {
               Fixar no topo
             </Text>
             <Text style={[styles.switchDescription, { color: theme.colors.textMuted }]}>
-              Mantem esta resenha em destaque na lista do diario da partida.
+              Mantém esta resenha em destaque na lista do diário da partida.
             </Text>
           </View>
           <Switch

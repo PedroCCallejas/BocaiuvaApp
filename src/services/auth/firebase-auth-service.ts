@@ -26,7 +26,7 @@ import { createAuthError, toFriendlyAuthError } from './errors';
 import type { AuthService, AuthSessionUser } from './types';
 
 function getFallbackDisplayName(email: string) {
-  return email.split('@')[0]?.trim() || 'Usuario';
+  return email.split('@')[0]?.trim() || 'Usuário';
 }
 
 function toSessionUser(user: FirebaseUser | null): AuthSessionUser | null {
@@ -46,7 +46,7 @@ function requireFirebaseAuth() {
   if (!firebaseEnabled || !auth) {
     throw createAuthError(
       firebaseConfigError ??
-        'A conta conectada ainda nao esta pronta para uso.',
+        'A conta conectada ainda não está pronta para uso.',
       'auth/configuration-error',
     );
   }
@@ -100,12 +100,12 @@ class FirebaseAuthService implements AuthService {
       this.currentUser = toSessionUser(credential.user);
 
       if (!this.currentUser) {
-        throw createAuthError('Nao foi possivel carregar a sessao da conta.');
+        throw createAuthError('Não foi possível carregar a sessão da conta.');
       }
 
       return this.currentUser;
     } catch (error) {
-      throw toFriendlyAuthError(error, 'Nao foi possivel entrar agora.');
+      throw toFriendlyAuthError(error, 'Não foi possível entrar agora.');
     }
   }
 
@@ -121,14 +121,14 @@ class FirebaseAuthService implements AuthService {
       this.currentUser = toSessionUser(session.user);
 
       if (!this.currentUser) {
-        throw createAuthError('Nao foi possivel concluir a entrada com Google.');
+        throw createAuthError('Não foi possível concluir a entrada com Google.');
       }
 
       return this.currentUser;
     } catch (error) {
       throw toFriendlyAuthError(
         error,
-        'Nao foi possivel concluir a entrada com Google.',
+        'Não foi possível concluir a entrada com Google.',
       );
     }
   }
@@ -152,12 +152,12 @@ class FirebaseAuthService implements AuthService {
       this.currentUser = toSessionUser(authInstance.currentUser ?? credential.user);
 
       if (!this.currentUser) {
-        throw createAuthError('Nao foi possivel carregar a conta recem-criada.');
+        throw createAuthError('Não foi possível carregar a conta recém-criada.');
       }
 
       return this.currentUser;
     } catch (error) {
-      throw toFriendlyAuthError(error, 'Nao foi possivel criar a conta agora.');
+      throw toFriendlyAuthError(error, 'Não foi possível criar a conta agora.');
     }
   }
 
@@ -169,7 +169,7 @@ class FirebaseAuthService implements AuthService {
     } catch (error) {
       throw toFriendlyAuthError(
         error,
-        'Nao foi possivel enviar o link de recuperacao.',
+        'Não foi possível enviar o link de recuperação.',
       );
     }
   }
@@ -188,7 +188,7 @@ class FirebaseAuthService implements AuthService {
     } catch (error) {
       throw toFriendlyAuthError(
         error,
-        'Nao foi possivel sair da conta agora.',
+        'Não foi possível sair da conta agora.',
       );
     }
   }

@@ -84,12 +84,12 @@ export const RATING_CRITERIA_ORDER: LegacyRatingCriterionId[] = [
 ];
 
 export const RATING_CRITERIA_LABELS: Record<LegacyRatingCriterionId, string> = {
-  dedicacao: 'Dedicacao',
+  dedicacao: 'Dedicação',
   energia: 'Energia',
   qualidade: 'Qualidade',
   decisivo: 'Decisivo',
   preciosismo: 'Preciosismo',
-  reclamacao: 'Reclamacao',
+  reclamacao: 'Reclamação',
   fominha: 'Fominha',
   marra: 'Marra',
 };
@@ -126,7 +126,7 @@ export interface TeamColorPreset {
 export const TEAM_COLOR_PRESETS = [
   {
     id: 'classic-blue',
-    name: 'Classico Azul',
+    name: 'Clássico Azul',
     description: 'Azul escuro com branco e detalhes vibrantes.',
     primary: '#163A70',
     secondary: '#F4F7FB',
@@ -183,7 +183,7 @@ export const TEAM_COLOR_PRESETS = [
   {
     id: 'tricolor',
     name: 'Tricolor',
-    description: 'Azul, vermelho e branco em equilibrio.',
+    description: 'Azul, vermelho e branco em equilíbrio.',
     primary: '#18407D',
     secondary: '#FFFFFF',
     accent: '#C92A2A',

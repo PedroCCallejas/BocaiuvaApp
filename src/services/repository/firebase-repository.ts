@@ -10,6 +10,7 @@ import {
   where,
   writeBatch,
   type DocumentData,
+  type DocumentReference,
   type DocumentSnapshot,
   type FirestoreError,
   type QueryDocumentSnapshot,
@@ -25,6 +26,11 @@ import {
   calculateMatchResult,
   getMvpSummary,
 } from '@/lib/match';
+import {
+  buildMatchFieldCost,
+  buildMatchFieldPayment,
+  getMatchFieldPaymentSummary,
+} from '@/lib/field-cost';
 import {
   normalizeDiaryTitle,
   resolveDiaryEmoji,
@@ -63,14 +69,28 @@ import {
   createRatingsOpenedNotification,
 } from '@/lib/notifications';
 import {
+  canCreateTeamFromOwnedTeamsCount,
   createEmptyManualStats,
   createInviteCode,
   deriveNickname,
   displayNameFromEmail,
+  getOwnedTeamsCount as getOwnedTeamsCountFromTeams,
   normalizeInviteCode,
   normalizeManualStats,
+  OWNED_TEAMS_LIMIT_REACHED_MESSAGE,
   slugifyTeamName,
 } from '@/lib/team';
+import {
+  TEAM_STORAGE_CLEANUP_WARNING_CODE,
+  TEAM_STORAGE_CLEANUP_WARNING_MESSAGE,
+} from '@/lib/team-deletion';
+import {
+  buildPublicTeamProfile,
+  buildPublicTeamSummary,
+  normalizeTeamPublicProfileFields,
+  validateTeamPublicProfileFields,
+} from '@/lib/public-team';
+import { deleteTeamStorageAssets } from '@/lib/team-storage';
 import { authService } from '@/services/auth';
 import {
   type FirestoreAttendanceDocument,
@@ -100,6 +120,8 @@ import type {
   MvpVote,
   Player,
   PlayerRating,
+  PublicTeamProfile,
+  PublicTeamSummary,
   Season,
   Team,
   TeamMember,
@@ -125,6 +147,7 @@ import {
   type SnapshotSubscriptionHandlers,
   type UpdateAttendanceInput,
   type UpdateMatchInput,
+  type UpdateMatchFieldPaymentInput,
   type UpdateMatchDiaryEntryInput,
   type UpdateRatingCriterionInput,
   type UpdateTeamInput,
@@ -140,8 +163,8 @@ import type {
 const firestoreErrorMessages: Record<string, string> = {
   cancelled: 'A operacao foi cancelada. Tente novamente.',
   'already-exists': 'Esse registro ja existe.',
-  'not-found': 'Nao encontramos o registro solicitado.',
-  'permission-denied': 'Voce nao tem permissao para concluir esta acao.',
+  'not-found': 'Não encontramos o registro solicitado.',
+  'permission-denied': 'Você não tem permissão para concluir esta ação.',
   unavailable: 'Servico indisponivel no momento. Tente novamente em instantes.',
   'failed-precondition':
     'Ainda falta um ajuste para concluir esta acao.',
@@ -152,6 +175,8 @@ const firestoreErrorMessages: Record<string, string> = {
     'Limite temporario atingido. Aguarde e tente novamente.',
   internal: 'Ocorreu um erro interno. Tente novamente.',
 };
+
+const FIRESTORE_BATCH_WRITE_LIMIT = 450;
 
 type ErrorWithCode = Error & { code?: string };
 type LegacyCompatibleUserDocument = Partial<FirestoreUserDocument> &
@@ -175,6 +200,12 @@ interface RealtimeSnapshotState {
   playerRatings: PlayerRating[];
   notifications: AppNotification[];
   seasons: Season[];
+}
+
+interface FirestoreBatchMutation {
+  type: 'delete' | 'set';
+  ref: DocumentReference<DocumentData>;
+  data?: DocumentData;
 }
 
 function createRepositoryError(
@@ -204,6 +235,13 @@ function toFriendlyFirestoreError(
   return createRepositoryError(fallbackMessage);
 }
 
+function createTeamDeletionStorageWarningError() {
+  return createRepositoryError(
+    TEAM_STORAGE_CLEANUP_WARNING_MESSAGE,
+    TEAM_STORAGE_CLEANUP_WARNING_CODE,
+  );
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -222,7 +260,7 @@ function normalizeOptionalString(value?: string | null) {
 }
 
 function normalizeMatchVenue(venue?: string | null) {
-  return venue?.trim() || 'Nao informado';
+  return venue?.trim() || 'Não informado';
 }
 
 function defaultLinePlayersCount(matchType: MatchType) {
@@ -273,7 +311,7 @@ function requireFirestore() {
   if (!firebaseEnabled || !db) {
     throw createRepositoryError(
       firebaseConfigError ??
-        'Os dados da conta ainda nao estao prontos para uso.',
+        'Os dados da conta ainda não estão prontos para uso.',
       'configuration-error',
     );
   }
@@ -287,7 +325,7 @@ function parseDoc<T extends { id: string }>(
   const data = snapshot.data();
 
   if (!data) {
-    throw createRepositoryError('Documento nao encontrado.', 'not-found');
+    throw createRepositoryError('Documento não encontrado.', 'not-found');
   }
 
   return {
@@ -348,6 +386,17 @@ function normalizeTeamDocument(
     inviteCode: team.inviteCode ?? '',
     inviteCodeUpdatedAt: team.inviteCodeUpdatedAt ?? team.updatedAt,
     activeSeasonId: team.activeSeasonId ?? null,
+    isPublic: team.isPublic ?? false,
+    city: team.city?.trim() ?? null,
+    state: team.state?.trim().toUpperCase() ?? null,
+    neighborhood: team.neighborhood?.trim() ?? null,
+    homeFieldName: team.homeFieldName?.trim() ?? null,
+    contactName: team.contactName?.trim() ?? null,
+    contactPhone: team.contactPhone?.trim() ?? null,
+    contactWhatsapp: team.contactWhatsapp?.trim() ?? null,
+    publicDescription: team.publicDescription?.trim() ?? null,
+    allowFriendlyContact: team.allowFriendlyContact ?? false,
+    publicRosterEnabled: team.publicRosterEnabled ?? false,
   };
 }
 
@@ -379,11 +428,38 @@ function normalizeMatchDocument(
     seasonId: match.seasonId ?? null,
     locationUrl: match.locationUrl ?? null,
     opponentLogoUrl: match.opponentLogoUrl ?? null,
+    opponentTeamId: match.opponentTeamId ?? null,
+    opponentTeamName: match.opponentTeamName ?? null,
+    opponentTeamLogoUrl: match.opponentTeamLogoUrl ?? null,
+    opponentSource: match.opponentSource ?? null,
     notes: match.notes ?? '',
     scoreboard: match.scoreboard
       ? {
           ...match.scoreboard,
           ownGoalsForTeam: match.scoreboard.ownGoalsForTeam ?? 0,
+        }
+      : null,
+    fieldCost: match.fieldCost
+      ? {
+          ...match.fieldCost,
+          totalAmount: Number(match.fieldCost.totalAmount ?? 0),
+          splitCount: Number(match.fieldCost.splitCount ?? 0),
+          amountPerPlayer: Number(match.fieldCost.amountPerPlayer ?? 0),
+          currency: 'BRL',
+          note: match.fieldCost.note?.trim() || null,
+          updatedAt: match.fieldCost.updatedAt ?? match.updatedAt,
+          updatedByUserId: match.fieldCost.updatedByUserId ?? undefined,
+        }
+      : null,
+    fieldPayment: match.fieldPayment
+      ? {
+          ...match.fieldPayment,
+          payerPlayerIds: [...new Set(match.fieldPayment.payerPlayerIds ?? [])],
+          paidGuestCount: Math.max(0, Math.trunc(match.fieldPayment.paidGuestCount ?? 0)),
+          pixKey: match.fieldPayment.pixKey?.trim() || null,
+          responsibleName: match.fieldPayment.responsibleName?.trim() || null,
+          updatedAt: match.fieldPayment.updatedAt ?? match.updatedAt,
+          updatedByUserId: match.fieldPayment.updatedByUserId ?? undefined,
         }
       : null,
     finishedAt: match.finishedAt ?? null,
@@ -523,7 +599,7 @@ async function fetchUserById(userId: string) {
   const snapshot = await getDoc(doc(firestore, FIRESTORE_COLLECTIONS.users, userId));
 
   if (!snapshot.exists()) {
-    throw createRepositoryError('Usuario nao encontrado.', 'not-found');
+    throw createRepositoryError('Usuário não encontrado.', 'not-found');
   }
 
   return normalizeUserDocument(parseDoc<FirestoreUserDocument>(snapshot));
@@ -557,7 +633,7 @@ async function fetchTeamById(teamId: string) {
   const snapshot = await getDoc(doc(firestore, FIRESTORE_COLLECTIONS.teams, teamId));
 
   if (!snapshot.exists()) {
-    throw createRepositoryError('Time nao encontrado.', 'not-found');
+    throw createRepositoryError('Time não encontrado.', 'not-found');
   }
 
   const team = normalizeTeamDocument(parseDoc<FirestoreTeamDocument>(snapshot));
@@ -579,7 +655,7 @@ async function fetchPlayerByIdForTeam(teamId: string, playerId: string) {
   const player = (await fetchPlayersByTeamId(teamId)).find((item) => item.id === playerId);
 
   if (!player) {
-    throw createRepositoryError('Jogador nao encontrado.', 'not-found');
+    throw createRepositoryError('Jogador não encontrado.', 'not-found');
   }
 
   return player;
@@ -589,7 +665,7 @@ async function fetchMatchByIdForTeam(teamId: string, matchId: string) {
   const match = (await fetchMatchesByTeamId(teamId)).find((item) => item.id === matchId);
 
   if (!match) {
-    throw createRepositoryError('Partida nao encontrada.', 'not-found');
+    throw createRepositoryError('Partida não encontrada.', 'not-found');
   }
 
   return match;
@@ -651,6 +727,21 @@ async function fetchTeamsByIds(teamIds: string[]) {
   const uniqueTeamIds = [...new Set(teamIds)].filter(Boolean);
   const teams = await Promise.all(uniqueTeamIds.map((teamId) => fetchTeamById(teamId)));
   return teams.sort((left, right) => left.name.localeCompare(right.name));
+}
+
+async function getOwnedTeamsCount(userId: string) {
+  const firestore = requireFirestore();
+  const snapshot = await getDocs(
+    query(
+      collection(firestore, FIRESTORE_COLLECTIONS.teams),
+      where('adminUserId', '==', userId),
+    ),
+  );
+
+  return getOwnedTeamsCountFromTeams(
+    snapshot.docs.map((item) => normalizeTeamDocument(parseDoc<FirestoreTeamDocument>(item))),
+    userId,
+  );
 }
 
 async function fetchPlayersByTeamId(teamId: string) {
@@ -805,7 +896,7 @@ async function fetchMatchDiaryEntryByIdForTeam(teamId: string, entryId: string) 
 
   if (entry.teamId !== teamId) {
     throw createRepositoryError(
-      'Essa resenha nao pertence ao time atual.',
+      'Essa resenha não pertence ao time atual.',
       'permission-denied',
     );
   }
@@ -863,7 +954,7 @@ async function fetchRatingCriterionByIdForTeam(teamId: string, criterionId: stri
 
   if (criterion.teamId !== teamId) {
     throw createRepositoryError(
-      'Esse criterio nao pertence ao time atual.',
+      'Esse critério não pertence ao time atual.',
       'permission-denied',
     );
   }
@@ -919,7 +1010,7 @@ async function fetchNotificationByIdForTeam(teamId: string, notificationId: stri
 
   if (notification.teamId !== teamId) {
     throw createRepositoryError(
-      'Essa notificacao nao pertence ao time atual.',
+      'Essa notificação não pertence ao time atual.',
       'permission-denied',
     );
   }
@@ -1241,15 +1332,15 @@ async function reconcileDuplicateMemberships(
   return [...normalizedById.values()].filter((membership) => membership.userId === userId);
 }
 
-async function persistUserContext(
+function buildUserContextDocument(
   user: User,
   activeMembership: TeamMember | null,
   teamsById: Map<string, Team>,
 ) {
-  const firestore = requireFirestore();
   const activeTeam =
     activeMembership ? teamsById.get(activeMembership.teamId) ?? null : null;
-  const updatedUser = normalizeUserDocument({
+
+  return normalizeUserDocument({
     ...user,
     activeTeamId: activeMembership?.teamId ?? null,
     teamId: activeMembership?.teamId ?? null,
@@ -1262,6 +1353,15 @@ async function persistUserContext(
           : 'player',
     updatedAt: nowIso(),
   });
+}
+
+async function persistUserContext(
+  user: User,
+  activeMembership: TeamMember | null,
+  teamsById: Map<string, Team>,
+) {
+  const firestore = requireFirestore();
+  const updatedUser = buildUserContextDocument(user, activeMembership, teamsById);
 
   await setDoc(doc(firestore, FIRESTORE_COLLECTIONS.users, user.id), updatedUser);
   return updatedUser;
@@ -1725,7 +1825,7 @@ function validateLineupSlots(input: SaveLineupInput) {
     repeatedBetweenGroups.length > 0
   ) {
     throw createRepositoryError(
-      'A escalacao tem jogadores repetidos. Revise titulares e reservas.',
+      'A escalação tem jogadores repetidos. Revise titulares e reservas.',
       'failed-precondition',
     );
   }
@@ -1841,21 +1941,21 @@ function resolveFinishedMatchPlayersInput(input: {
 
     if (usedPlayerIds.has(item.playerId)) {
       throw createRepositoryError(
-        'Nao repita o mesmo jogador mais de uma vez na partida.',
+        'Não repita o mesmo jogador mais de uma vez na partida.',
         'failed-precondition',
       );
     }
 
     if (item.goals < 0 || item.assists < 0) {
       throw createRepositoryError(
-        'Gols e assistencias nao podem ser negativos.',
+        'Gols e assistências não podem ser negativos.',
         'failed-precondition',
       );
     }
 
     if (!item.played && (item.goals > 0 || item.assists > 0)) {
       throw createRepositoryError(
-        'Um jogador marcado como ausente nao pode receber estatisticas.',
+        'Um jogador marcado como ausente não pode receber estatísticas.',
         'failed-precondition',
       );
     }
@@ -1880,7 +1980,7 @@ function resolveFinishedMatchPlayersInput(input: {
   const totalGoals = playedPlayers.reduce((sum, item) => sum + item.goals, 0);
   if (totalGoals > input.teamScore) {
     throw createRepositoryError(
-      'A soma de gols dos jogadores nao pode ultrapassar o placar do time.',
+      'A soma de gols dos jogadores não pode ultrapassar o placar do time.',
       'failed-precondition',
     );
   }
@@ -1904,7 +2004,7 @@ async function createFinishedMatchRecord(input: {
 
   if (input.values.teamScore < 0 || input.values.opponentScore < 0) {
     throw createRepositoryError(
-      'O placar nao pode ter numeros negativos.',
+      'O placar não pode ter números negativos.',
       'failed-precondition',
     );
   }
@@ -2236,7 +2336,7 @@ async function ensureActiveTeamContext(userId: string) {
 
   if (!membership) {
     throw createRepositoryError(
-      'Seu acesso ao time atual nao esta disponivel.',
+      'Seu acesso ao time atual não está disponível.',
       'permission-denied',
     );
   }
@@ -2295,6 +2395,20 @@ async function ensureTeamAdmin(userId: string, teamId: string) {
   return { actor, membership };
 }
 
+async function ensureTeamOwner(userId: string, teamId: string) {
+  const { actor } = await ensureMembershipContext(userId, teamId);
+  const team = await fetchTeamById(teamId);
+
+  if (team.adminUserId !== actor.id) {
+    throw createRepositoryError(
+      'Apenas quem criou o time pode excluir definitivamente.',
+      'permission-denied',
+    );
+  }
+
+  return { actor, team };
+}
+
 async function ensurePlayerManager(userId: string, teamId: string) {
   const { actor, membership } = await ensureMembershipContext(userId, teamId);
 
@@ -2308,6 +2422,47 @@ async function ensurePlayerManager(userId: string, teamId: string) {
   return { actor, membership };
 }
 
+function resolveNextActiveMembershipForUserAfterTeamDeletion(input: {
+  user: User;
+  deletedTeamId: string;
+  memberships: TeamMember[];
+  teamsById: Map<string, Team>;
+}) {
+  const remainingMemberships = sortMembershipsByPriority(
+    input.memberships.filter(
+      (membership) =>
+        membership.status === 'active' &&
+        membership.teamId !== input.deletedTeamId &&
+        input.teamsById.has(membership.teamId),
+    ),
+  );
+
+  return (
+    remainingMemberships.find((membership) => membership.teamId === input.user.activeTeamId) ??
+    remainingMemberships[0] ??
+    null
+  );
+}
+
+async function commitFirestoreBatchMutations(mutations: FirestoreBatchMutation[]) {
+  const firestore = requireFirestore();
+
+  for (let index = 0; index < mutations.length; index += FIRESTORE_BATCH_WRITE_LIMIT) {
+    const batch = writeBatch(firestore);
+
+    for (const mutation of mutations.slice(index, index + FIRESTORE_BATCH_WRITE_LIMIT)) {
+      if (mutation.type === 'delete') {
+        batch.delete(mutation.ref);
+        continue;
+      }
+
+      batch.set(mutation.ref, mutation.data!);
+    }
+
+    await batch.commit();
+  }
+}
+
 async function ensureSelfPlayerEdit(userId: string, player: Player) {
   const { actor, membership } = await ensureMembershipContext(userId, player.teamId);
   const ownPlayerId = membership?.roles.includes('player')
@@ -2316,7 +2471,7 @@ async function ensureSelfPlayerEdit(userId: string, player: Player) {
 
   if (!membership?.roles.includes('player') || ownPlayerId !== player.id) {
     throw createRepositoryError(
-      'Voce nao tem permissao para editar esse jogador.',
+      'Você não tem permissão para editar esse jogador.',
       'permission-denied',
     );
   }
@@ -2503,7 +2658,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel carregar os dados iniciais agora.',
+        'Não foi possível carregar os dados iniciais agora.',
       );
     }
   },
@@ -2514,7 +2669,71 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel atualizar os dados agora.',
+        'Não foi possível atualizar os dados agora.',
+      );
+    }
+  },
+
+  async listPublicTeams(actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      await fetchUserById(actorUserId);
+      const publicTeamsSnapshot = await getDocs(
+        query(
+          collection(firestore, FIRESTORE_COLLECTIONS.teams),
+          where('isPublic', '==', true),
+        ),
+      );
+      const publicTeams = publicTeamsSnapshot.docs.map((item) =>
+        normalizeTeamDocument(parseDoc<FirestoreTeamDocument>(item)),
+      );
+      const summaries = (
+        await Promise.all(
+          publicTeams.map(async (team) =>
+            buildPublicTeamSummary(team, await fetchMatchesByTeamId(team.id)),
+          ),
+        )
+      )
+        .filter((team): team is PublicTeamSummary => Boolean(team))
+        .sort((left, right) => {
+          const stateOrder = left.state.localeCompare(right.state);
+
+          if (stateOrder !== 0) {
+            return stateOrder;
+          }
+
+          const cityOrder = left.city.localeCompare(right.city);
+
+          if (cityOrder !== 0) {
+            return cityOrder;
+          }
+
+          return left.name.localeCompare(right.name);
+        });
+
+      return summaries;
+    } catch (error) {
+      throw toFriendlyFirestoreError(
+        error,
+        'Não foi possível carregar a galeria de times agora.',
+      );
+    }
+  },
+
+  async getPublicTeamProfile(teamId: string, actorUserId: string) {
+    try {
+      await fetchUserById(actorUserId);
+      const team = await fetchTeamById(teamId);
+      const [matches, players] = await Promise.all([
+        fetchMatchesByTeamId(team.id),
+        fetchPlayersByTeamId(team.id),
+      ]);
+
+      return buildPublicTeamProfile(team, matches, players);
+    } catch (error) {
+      throw toFriendlyFirestoreError(
+        error,
+        'Não foi possível carregar o perfil público do time agora.',
       );
     }
   },
@@ -2544,7 +2763,7 @@ export const firebaseRepository: AppRepository = {
       handlers.onError?.(
         toFriendlyFirestoreError(
           error,
-          'Nao foi possivel atualizar os dados do time agora.',
+          'Não foi possível atualizar os dados do time agora.',
         ),
       );
     };
@@ -2812,14 +3031,14 @@ export const firebaseRepository: AppRepository = {
       const user = await ensureCurrentUserDocument();
 
       if (!user) {
-        throw createRepositoryError('Nao foi possivel abrir a sessao do usuario.');
+        throw createRepositoryError('Não foi possível abrir a sessão do usuário.');
       }
 
       return user;
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel entrar agora.',
+        'Não foi possível entrar agora.',
       );
     }
   },
@@ -2830,14 +3049,14 @@ export const firebaseRepository: AppRepository = {
       const user = await ensureCurrentUserDocument();
 
       if (!user) {
-        throw createRepositoryError('Nao foi possivel abrir a sessao do usuario.');
+        throw createRepositoryError('Não foi possível abrir a sessão do usuário.');
       }
 
       return user;
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel entrar com Google agora.',
+        'Não foi possível entrar com Google agora.',
       );
     }
   },
@@ -2848,14 +3067,14 @@ export const firebaseRepository: AppRepository = {
       const user = await ensureCurrentUserDocument();
 
       if (!user) {
-        throw createRepositoryError('Nao foi possivel criar a conta agora.');
+        throw createRepositoryError('Não foi possível criar a conta agora.');
       }
 
       return user;
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel criar a conta agora.',
+        'Não foi possível criar a conta agora.',
       );
     }
   },
@@ -2868,11 +3087,12 @@ export const firebaseRepository: AppRepository = {
     try {
       const firestore = requireFirestore();
       const admin = await fetchUserById(adminUserId);
+      const ownedTeamsCount = await getOwnedTeamsCount(adminUserId);
 
-      if (!admin.canCreateTeam) {
+      if (!canCreateTeamFromOwnedTeamsCount(ownedTeamsCount)) {
         throw createRepositoryError(
-          'Seu acesso ainda nao permite criar um time.',
-          'permission-denied',
+          OWNED_TEAMS_LIMIT_REACHED_MESSAGE,
+          'failed-precondition',
         );
       }
 
@@ -2889,6 +3109,17 @@ export const firebaseRepository: AppRepository = {
         logoUrl: input.logoUrl?.trim() || null,
         bannerUrl: input.bannerUrl?.trim() || null,
         presentationVideoUrl: input.presentationVideoUrl?.trim() || null,
+        isPublic: false,
+        city: null,
+        state: null,
+        neighborhood: null,
+        homeFieldName: null,
+        contactName: null,
+        contactPhone: null,
+        contactWhatsapp: null,
+        publicDescription: null,
+        allowFriendlyContact: false,
+        publicRosterEnabled: false,
         primaryColor: input.primaryColor,
         secondaryColor: input.secondaryColor,
         accentColor: input.accentColor ?? null,
@@ -2949,7 +3180,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel criar o time agora.',
+        'Não foi possível criar o time agora.',
       );
     }
   },
@@ -2960,6 +3191,41 @@ export const firebaseRepository: AppRepository = {
       await ensureTeamAdmin(actorUserId, teamId);
       const currentTeam = await fetchTeamById(teamId);
       const updatedAt = nowIso();
+      const publicProfile = normalizeTeamPublicProfileFields({
+        isPublic: input.isPublic ?? currentTeam.isPublic,
+        city: input.city !== undefined ? input.city : currentTeam.city,
+        state: input.state !== undefined ? input.state : currentTeam.state,
+        neighborhood:
+          input.neighborhood !== undefined
+            ? input.neighborhood
+            : currentTeam.neighborhood,
+        homeFieldName:
+          input.homeFieldName !== undefined
+            ? input.homeFieldName
+            : currentTeam.homeFieldName,
+        contactName:
+          input.contactName !== undefined ? input.contactName : currentTeam.contactName,
+        contactPhone:
+          input.contactPhone !== undefined ? input.contactPhone : currentTeam.contactPhone,
+        contactWhatsapp:
+          input.contactWhatsapp !== undefined
+            ? input.contactWhatsapp
+            : currentTeam.contactWhatsapp,
+        publicDescription:
+          input.publicDescription !== undefined
+            ? input.publicDescription
+            : currentTeam.publicDescription,
+        allowFriendlyContact:
+          input.allowFriendlyContact !== undefined
+            ? input.allowFriendlyContact
+            : currentTeam.allowFriendlyContact,
+        publicRosterEnabled:
+          input.publicRosterEnabled !== undefined
+            ? input.publicRosterEnabled
+            : currentTeam.publicRosterEnabled,
+      });
+
+      validateTeamPublicProfileFields(publicProfile);
 
       const updatedTeam = normalizeTeamDocument({
         ...currentTeam,
@@ -2979,6 +3245,17 @@ export const firebaseRepository: AppRepository = {
         secondaryColor: input.secondaryColor,
         accentColor: input.accentColor ?? null,
         description: input.description?.trim() ?? '',
+        isPublic: publicProfile.isPublic,
+        city: publicProfile.city,
+        state: publicProfile.state,
+        neighborhood: publicProfile.neighborhood,
+        homeFieldName: publicProfile.homeFieldName,
+        contactName: publicProfile.contactName,
+        contactPhone: publicProfile.contactPhone,
+        contactWhatsapp: publicProfile.contactWhatsapp,
+        publicDescription: publicProfile.publicDescription,
+        allowFriendlyContact: publicProfile.allowFriendlyContact,
+        publicRosterEnabled: publicProfile.publicRosterEnabled,
         updatedAt,
       });
 
@@ -2987,7 +3264,165 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel salvar as configuracoes do time.',
+        'Não foi possível salvar as configurações do time.',
+      );
+    }
+  },
+
+  async deleteTeamPermanently(teamId: string, actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      const { team } = await ensureTeamOwner(actorUserId, teamId);
+      const [
+        teamMembers,
+        usersWithDeletedTeamAsActive,
+        players,
+        matches,
+        lineups,
+        attendance,
+        matchStats,
+        matchDiaryEntries,
+        mvpVotes,
+        playerRatings,
+        ratingCriteria,
+        notifications,
+        seasons,
+      ] = await Promise.all([
+        fetchTeamMembersByTeamId(teamId),
+        fetchUsersByTeamId(teamId),
+        fetchPlayersByTeamId(teamId),
+        fetchMatchesByTeamId(teamId),
+        fetchLineupsByTeamId(teamId),
+        fetchAttendanceByTeamId(teamId),
+        fetchMatchStatsByTeamId(teamId),
+        fetchMatchDiaryEntriesByTeamId(teamId),
+        fetchMvpVotesByTeamId(teamId),
+        fetchPlayerRatingsByTeamId(teamId),
+        fetchRatingCriteriaByTeamId(teamId),
+        fetchNotificationsByTeamId(teamId),
+        fetchSeasonsByTeamId(teamId),
+      ]);
+
+      const affectedUserIds = [
+        ...new Set([
+          ...teamMembers.map((membership) => membership.userId),
+          ...usersWithDeletedTeamAsActive.map((user) => user.id),
+        ]),
+      ];
+      const [affectedUsers, membershipsByUser] = await Promise.all([
+        Promise.all(affectedUserIds.map((userId) => fetchUserById(userId))),
+        Promise.all(affectedUserIds.map((userId) => fetchTeamMembersByUserId(userId))),
+      ]);
+      const remainingTeamIds = [
+        ...new Set(
+          membershipsByUser
+            .flat()
+            .filter(
+              (membership) =>
+                membership.status === 'active' && membership.teamId !== teamId,
+            )
+            .map((membership) => membership.teamId),
+        ),
+      ];
+      const remainingTeams = (
+        await Promise.allSettled(
+          remainingTeamIds.map((remainingTeamId) => fetchTeamById(remainingTeamId)),
+        )
+      )
+        .filter(
+          (
+            result,
+          ): result is PromiseFulfilledResult<Team> => result.status === 'fulfilled',
+        )
+        .map((result) => result.value);
+      const remainingTeamsById = new Map(
+        remainingTeams.map((remainingTeam) => [remainingTeam.id, remainingTeam]),
+      );
+      const updatedUsers = affectedUsers.map((user, index) => {
+        const nextMembership = resolveNextActiveMembershipForUserAfterTeamDeletion({
+          user,
+          deletedTeamId: teamId,
+          memberships: membershipsByUser[index] ?? [],
+          teamsById: remainingTeamsById,
+        });
+
+        return buildUserContextDocument(user, nextMembership, remainingTeamsById);
+      });
+      const mutations: FirestoreBatchMutation[] = [
+        ...updatedUsers.map((user) => ({
+          type: 'set' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.users, user.id),
+          data: user,
+        })),
+        ...teamMembers.map((membership) => ({
+          type: 'delete' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.teamMembers, membership.id),
+        })),
+        {
+          type: 'delete' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.teams, team.id),
+        },
+        ...players.map((player) => ({
+          type: 'delete' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.players, player.id),
+        })),
+        ...matches.map((match) => ({
+          type: 'delete' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.matches, match.id),
+        })),
+        ...lineups.map((lineup) => ({
+          type: 'delete' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.lineups, lineup.id),
+        })),
+        ...attendance.map((record) => ({
+          type: 'delete' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.attendance, record.id),
+        })),
+        ...matchStats.map((stat) => ({
+          type: 'delete' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.matchStats, stat.id),
+        })),
+        ...matchDiaryEntries.map((entry) => ({
+          type: 'delete' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.matchDiaryEntries, entry.id),
+        })),
+        ...mvpVotes.map((vote) => ({
+          type: 'delete' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.mvpVotes, vote.id),
+        })),
+        ...playerRatings.map((rating) => ({
+          type: 'delete' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.playerRatings, rating.id),
+        })),
+        ...ratingCriteria.map((criterion) => ({
+          type: 'delete' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.ratingCriteria, criterion.id),
+        })),
+        ...notifications.map((notification) => ({
+          type: 'delete' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.notifications, notification.id),
+        })),
+        ...seasons.map((season) => ({
+          type: 'delete' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.seasons, season.id),
+        })),
+      ];
+
+      await commitFirestoreBatchMutations(mutations);
+
+      try {
+        await deleteTeamStorageAssets(teamId);
+      } catch (error) {
+        console.warn('[team-delete] storage cleanup warning', {
+          teamId,
+          error,
+        });
+        throw createTeamDeletionStorageWarningError();
+      }
+    } catch (error) {
+      throw toFriendlyFirestoreError(
+        error,
+        'NÃ£o foi possÃ­vel excluir o time agora.',
       );
     }
   },
@@ -3011,7 +3446,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel gerar um novo codigo agora.',
+        'Não foi possível gerar um novo código agora.',
       );
     }
   },
@@ -3028,7 +3463,7 @@ export const firebaseRepository: AppRepository = {
 
       if (shouldActivate && activeCount >= 12) {
         throw createRepositoryError(
-          'Use no maximo 12 criterios ativos por time.',
+          'Use no máximo 12 critérios ativos por time.',
           'failed-precondition',
         );
       }
@@ -3055,7 +3490,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel criar o criterio agora.',
+        'Não foi possível criar o critério agora.',
       );
     }
   },
@@ -3072,7 +3507,7 @@ export const firebaseRepository: AppRepository = {
 
       if (!criterion) {
         throw createRepositoryError(
-          'Criterio de avaliacao nao encontrado.',
+          'Critério de avaliação não encontrado.',
           'not-found',
         );
       }
@@ -3096,7 +3531,7 @@ export const firebaseRepository: AppRepository = {
 
       if (activeCount > 12) {
         throw createRepositoryError(
-          'Use no maximo 12 criterios ativos por time.',
+          'Use no máximo 12 critérios ativos por time.',
           'failed-precondition',
         );
       }
@@ -3106,7 +3541,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel atualizar o criterio agora.',
+        'Não foi possível atualizar o critério agora.',
       );
     }
   },
@@ -3119,7 +3554,7 @@ export const firebaseRepository: AppRepository = {
 
       if (!criterion) {
         throw createRepositoryError(
-          'Criterio de avaliacao nao encontrado.',
+          'Critério de avaliação não encontrado.',
           'not-found',
         );
       }
@@ -3147,7 +3582,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel remover o criterio agora.',
+        'Não foi possível remover o critério agora.',
       );
     }
   },
@@ -3163,7 +3598,7 @@ export const firebaseRepository: AppRepository = {
 
       if (!membership) {
         throw createRepositoryError(
-          'Voce ainda nao participa desse time.',
+          'Você ainda não participa desse time.',
           'permission-denied',
         );
       }
@@ -3185,7 +3620,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel trocar de time agora.',
+        'Não foi possível trocar de time agora.',
       );
     }
   },
@@ -3199,7 +3634,7 @@ export const firebaseRepository: AppRepository = {
       const team = await fetchTeamByInviteCode(inviteCode);
       if (!team) {
         throw createRepositoryError(
-          'Nao encontramos um time com esse codigo.',
+          'Não encontramos um time com esse código.',
           'not-found',
         );
       }
@@ -3301,7 +3736,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel entrar no time agora.',
+        'Não foi possível entrar no time agora.',
       );
     }
   },
@@ -3378,7 +3813,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel salvar o jogador agora.',
+        'Não foi possível salvar o jogador agora.',
       );
     }
   },
@@ -3585,7 +4020,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel atualizar o jogador agora.',
+        'Não foi possível atualizar o jogador agora.',
       );
     }
   },
@@ -3818,7 +4253,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel reativar o jogador agora.',
+        'Não foi possível reativar o jogador agora.',
       );
     }
   },
@@ -3840,6 +4275,10 @@ export const firebaseRepository: AppRepository = {
         locationUrl: input.locationUrl?.trim() || null,
         opponentName: input.opponentName.trim(),
         opponentLogoUrl: input.opponentLogoUrl ?? null,
+        opponentTeamId: input.opponentTeamId ?? null,
+        opponentTeamName: input.opponentTeamName ?? null,
+        opponentTeamLogoUrl: input.opponentTeamLogoUrl ?? null,
+        opponentSource: input.opponentSource ?? null,
         linePlayersCount: input.linePlayersCount,
         matchType: input.matchType,
         notes: input.notes?.trim() ?? '',
@@ -3894,7 +4333,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel criar a partida agora.',
+        'Não foi possível criar a partida agora.',
       );
     }
   },
@@ -3928,9 +4367,31 @@ export const firebaseRepository: AppRepository = {
           input.opponentLogoUrl !== undefined
             ? input.opponentLogoUrl
             : currentMatch.opponentLogoUrl ?? null,
+        opponentTeamId:
+          input.opponentTeamId !== undefined
+            ? input.opponentTeamId
+            : currentMatch.opponentTeamId ?? null,
+        opponentTeamName:
+          input.opponentTeamName !== undefined
+            ? input.opponentTeamName
+            : currentMatch.opponentTeamName ?? null,
+        opponentTeamLogoUrl:
+          input.opponentTeamLogoUrl !== undefined
+            ? input.opponentTeamLogoUrl
+            : currentMatch.opponentTeamLogoUrl ?? null,
+        opponentSource:
+          input.opponentSource !== undefined
+            ? input.opponentSource
+            : currentMatch.opponentSource ?? null,
         linePlayersCount: input.linePlayersCount,
         matchType: input.matchType,
         notes: input.notes?.trim() ?? '',
+        fieldCost:
+          input.fieldCost !== undefined
+            ? input.fieldCost
+            : currentMatch.fieldCost ?? null,
+        fieldPayment:
+          input.fieldCost === null ? null : currentMatch.fieldPayment ?? null,
         status: nextStatus,
         scoreboard: nextStatus === 'canceled' ? null : currentMatch.scoreboard ?? null,
         finishedAt:
@@ -3965,7 +4426,63 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel salvar a partida agora.',
+        'Não foi possível salvar a partida agora.',
+      );
+    }
+  },
+
+  async updateMatchFieldPayment(
+    matchId: string,
+    input: UpdateMatchFieldPaymentInput,
+    actorUserId: string,
+  ) {
+    try {
+      const firestore = requireFirestore();
+      const { membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      if (!membership.canManageTeam) {
+        throw createRepositoryError(
+          'Apenas o administrador do time pode fazer essa acao.',
+          'permission-denied',
+        );
+      }
+
+      const currentMatch = await fetchMatchByIdForTeam(activeTeamId, matchId);
+
+      if (!currentMatch.fieldCost) {
+        throw createRepositoryError(
+          'Informe o valor do campo antes de controlar pagamentos.',
+          'failed-precondition',
+        );
+      }
+
+      const attendance = await fetchAttendanceByMatchIdForTeam(activeTeamId, currentMatch.id);
+      const confirmedPlayerIds = attendance
+        .filter((item) => item.status === 'confirmed')
+        .map((item) => item.playerId);
+      const updatedAt = nowIso();
+      const updatedMatch = normalizeMatchDocument({
+        ...currentMatch,
+        fieldPayment: input.fieldPayment
+          ? buildMatchFieldPayment({
+              values: input.fieldPayment,
+              fieldCost: currentMatch.fieldCost,
+              confirmedPlayerIds,
+              updatedAt,
+              updatedByUserId: actorUserId,
+            })
+          : null,
+        updatedAt,
+      });
+
+      await setDoc(
+        doc(firestore, FIRESTORE_COLLECTIONS.matches, currentMatch.id),
+        updatedMatch,
+      );
+      return updatedMatch;
+    } catch (error) {
+      throw toFriendlyFirestoreError(
+        error,
+        'Não foi possível salvar o controle do campo agora.',
       );
     }
   },
@@ -3981,7 +4498,7 @@ export const firebaseRepository: AppRepository = {
 
       if (match.status === 'finished' || match.status === 'canceled') {
         throw createRepositoryError(
-          'A presenca desta partida nao aceita mais alteracoes.',
+          'A presença desta partida não aceita mais alterações.',
           'failed-precondition',
         );
       }
@@ -3992,7 +4509,7 @@ export const firebaseRepository: AppRepository = {
 
       if (!canManageAttendance && !isOwnAttendance) {
         throw createRepositoryError(
-          'Voce so pode responder a sua propria presenca.',
+          'Você só pode responder à sua própria presença.',
           'permission-denied',
         );
       }
@@ -4050,7 +4567,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel atualizar a presenca agora.',
+        'Não foi possível atualizar a presença agora.',
       );
     }
   },
@@ -4070,7 +4587,7 @@ export const firebaseRepository: AppRepository = {
 
       if (match.status === 'finished' || match.status === 'canceled') {
         throw createRepositoryError(
-          'A escalacao so pode ser salva antes do encerramento da partida.',
+          'A escalação só pode ser salva antes do encerramento da partida.',
           'failed-precondition',
         );
       }
@@ -4086,7 +4603,7 @@ export const firebaseRepository: AppRepository = {
 
       if (confirmedPlayerIds.size === 0) {
         throw createRepositoryError(
-          'Confirme a presenca do elenco antes de salvar a escalacao.',
+          'Confirme a presença do elenco antes de salvar a escalação.',
           'failed-precondition',
         );
       }
@@ -4095,7 +4612,7 @@ export const firebaseRepository: AppRepository = {
         await ensurePlayerBelongsToTeam(starter.playerId, match.teamId);
         if (!confirmedPlayerIds.has(starter.playerId)) {
           throw createRepositoryError(
-            'A escalacao aceita apenas jogadores confirmados.',
+            'A escalação aceita apenas jogadores confirmados.',
             'failed-precondition',
           );
         }
@@ -4105,7 +4622,7 @@ export const firebaseRepository: AppRepository = {
         await ensurePlayerBelongsToTeam(playerId, match.teamId);
         if (!confirmedPlayerIds.has(playerId)) {
           throw createRepositoryError(
-            'A escalacao aceita apenas jogadores confirmados.',
+            'A escalação aceita apenas jogadores confirmados.',
             'failed-precondition',
           );
         }
@@ -4149,7 +4666,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel salvar a escalacao agora.',
+        'Não foi possível salvar a escalação agora.',
       );
     }
   },
@@ -4169,7 +4686,7 @@ export const firebaseRepository: AppRepository = {
 
       if (currentMatch.status === 'canceled') {
         throw createRepositoryError(
-          'Uma partida cancelada nao pode ser encerrada.',
+          'Uma partida cancelada não pode ser encerrada.',
           'failed-precondition',
         );
       }
@@ -4178,7 +4695,7 @@ export const firebaseRepository: AppRepository = {
 
       if (input.teamScore < 0 || input.opponentScore < 0 || ownGoalsForTeam < 0) {
         throw createRepositoryError(
-          'O placar nao pode ter numeros negativos.',
+          'O placar não pode ter números negativos.',
           'failed-precondition',
         );
       }
@@ -4193,7 +4710,7 @@ export const firebaseRepository: AppRepository = {
 
       if (confirmedPlayerIds.size === 0) {
         throw createRepositoryError(
-          'Confirme a presenca do elenco antes de fechar a partida.',
+          'Confirme a presença do elenco antes de fechar a partida.',
           'failed-precondition',
         );
       }
@@ -4208,7 +4725,7 @@ export const firebaseRepository: AppRepository = {
 
         if (stat.goals < 0 || stat.assists < 0) {
           throw createRepositoryError(
-            'Gols e assistencias nao podem ser negativos.',
+            'Gols e assistências não podem ser negativos.',
             'failed-precondition',
           );
         }
@@ -4236,6 +4753,26 @@ export const firebaseRepository: AppRepository = {
           buildStableDocumentId(currentMatch.id, playerId),
         ),
       );
+      const nextFieldCost = input.fieldCost
+        ? buildMatchFieldCost({
+            values: input.fieldCost,
+            updatedAt,
+            updatedByUserId: actorUserId,
+          })
+        : null;
+
+      if (
+        nextFieldCost &&
+        currentMatch.fieldPayment &&
+        getMatchFieldPaymentSummary(nextFieldCost, currentMatch.fieldPayment).totalPaidCount >
+          nextFieldCost.splitCount
+      ) {
+        throw createRepositoryError(
+          'A nova divisão do campo não comporta a quantidade de pagantes já marcada.',
+          'failed-precondition',
+        );
+      }
+
       const updatedMatch = normalizeMatchDocument({
         ...currentMatch,
         status: 'finished',
@@ -4245,6 +4782,8 @@ export const firebaseRepository: AppRepository = {
           ownGoalsForTeam,
           result: calculateMatchResult(input.teamScore, input.opponentScore),
         },
+        fieldCost: nextFieldCost,
+        fieldPayment: nextFieldCost ? currentMatch.fieldPayment ?? null : null,
         finishedAt: currentMatch.finishedAt ?? updatedAt,
         updatedAt,
       });
@@ -4339,7 +4878,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel encerrar a partida agora.',
+        'Não foi possível encerrar a partida agora.',
       );
     }
   },
@@ -4368,7 +4907,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel registrar o jogo antigo agora.',
+        'Não foi possível registrar o jogo antigo agora.',
       );
     }
   },
@@ -4399,7 +4938,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel gerar a previa da importacao agora.',
+        'Não foi possível gerar a prévia da importação agora.',
       );
     }
   },
@@ -4489,7 +5028,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel importar os jogos agora.',
+        'Não foi possível importar os jogos agora.',
       );
     }
   },
@@ -4568,7 +5107,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel publicar a resenha agora.',
+        'Não foi possível publicar a resenha agora.',
       );
     }
   },
@@ -4590,7 +5129,7 @@ export const firebaseRepository: AppRepository = {
 
       const existingEntry = await fetchMatchDiaryEntryByIdForTeam(activeTeamId, entryId);
       if (!existingEntry) {
-        throw createRepositoryError('Resenha da partida nao encontrada.', 'not-found');
+        throw createRepositoryError('Resenha da partida não encontrada.', 'not-found');
       }
 
       const match = await fetchMatchByIdForTeam(activeTeamId, existingEntry.matchId);
@@ -4670,7 +5209,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel atualizar a resenha agora.',
+        'Não foi possível atualizar a resenha agora.',
       );
     }
   },
@@ -4688,7 +5227,7 @@ export const firebaseRepository: AppRepository = {
 
       const entry = await fetchMatchDiaryEntryByIdForTeam(activeTeamId, entryId);
       if (!entry) {
-        throw createRepositoryError('Resenha da partida nao encontrada.', 'not-found');
+        throw createRepositoryError('Resenha da partida não encontrada.', 'not-found');
       }
 
       const notifications = await fetchNotificationsByTeamId(activeTeamId);
@@ -4705,7 +5244,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel excluir a resenha agora.',
+        'Não foi possível excluir a resenha agora.',
       );
     }
   },
@@ -4718,7 +5257,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel carregar as resenhas desta partida.',
+        'Não foi possível carregar as resenhas desta partida.',
       );
     }
   },
@@ -4738,7 +5277,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel carregar o diario do time agora.',
+        'Não foi possível carregar o diário do time agora.',
       );
     }
   },
@@ -4768,7 +5307,7 @@ export const firebaseRepository: AppRepository = {
 
       if (currentPlayerId === input.targetPlayerId) {
         throw createRepositoryError(
-          'Voce nao pode votar em si mesmo.',
+          'Você não pode votar em si mesmo.',
           'failed-precondition',
         );
       }
@@ -4873,7 +5412,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel registrar seu voto agora.',
+        'Não foi possível registrar seu voto agora.',
       );
     }
   },
@@ -4906,7 +5445,7 @@ export const firebaseRepository: AppRepository = {
 
       if (currentPlayerId === input.targetPlayerId) {
         throw createRepositoryError(
-          'Voce nao pode avaliar a si mesmo.',
+          'Você não pode avaliar a si mesmo.',
           'failed-precondition',
         );
       }
@@ -4941,7 +5480,7 @@ export const firebaseRepository: AppRepository = {
         });
       } catch (error) {
         throw createRepositoryError(
-          error instanceof Error ? error.message : 'Revise os criterios da avaliacao.',
+          error instanceof Error ? error.message : 'Revise os critérios da avaliação.',
           'failed-precondition',
         );
       }
@@ -4975,7 +5514,7 @@ export const firebaseRepository: AppRepository = {
 
         if (existingRating.exists()) {
           throw createRepositoryError(
-            'Voce ja avaliou esse jogador nesta partida.',
+            'Você já avaliou esse jogador nesta partida.',
             'failed-precondition',
           );
         }
@@ -4987,7 +5526,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel salvar sua avaliacao agora.',
+        'Não foi possível salvar sua avaliação agora.',
       );
     }
   },
@@ -5000,14 +5539,14 @@ export const firebaseRepository: AppRepository = {
 
       if (!notification) {
         throw createRepositoryError(
-          'Notificacao nao encontrada.',
+          'Notificação não encontrada.',
           'not-found',
         );
       }
 
       if (!canAccessNotification(notification, actor.id)) {
         throw createRepositoryError(
-          'Voce nao pode abrir esta notificacao.',
+          'Você não pode abrir esta notificação.',
           'permission-denied',
         );
       }
@@ -5026,7 +5565,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel atualizar essa notificacao agora.',
+        'Não foi possível atualizar essa notificação agora.',
       );
     }
   },
@@ -5062,7 +5601,7 @@ export const firebaseRepository: AppRepository = {
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
-        'Nao foi possivel atualizar suas notificacoes agora.',
+        'Não foi possível atualizar suas notificações agora.',
       );
     }
   },

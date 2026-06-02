@@ -7,6 +7,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Pill } from '@/components/ui/Pill';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { APP_NAME } from '@/constants/branding';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { useAppStore } from '@/store/app-store';
@@ -50,7 +51,10 @@ export default function ProfileScreen() {
   return (
     <Screen>
       {!isWeb ? (
-        <SectionHeader title="Conta e acesso" subtitle="Seu cadastro dentro do App Bocaíuva" />
+        <SectionHeader
+          title="Conta e acesso"
+          subtitle={`Seu cadastro dentro do ${APP_NAME}`}
+        />
       ) : null}
       <View
         style={[
@@ -96,7 +100,7 @@ export default function ProfileScreen() {
         <Text style={[styles.note, { color: theme.colors.textMuted }]}>
           {team
             ? 'Seu time está pronto para jogar.'
-            : 'Use um código de convite para entrar em um time ou atualize seu acesso.'}
+            : 'Use um código de convite para entrar em um time ou atualizar seu acesso.'}
         </Text>
         <AppButton
           label={team ? 'Trocar time' : 'Entrar com código'}

@@ -49,24 +49,19 @@ function buildNotification(params: {
   } satisfies AppNotification;
 }
 
-export function buildNotificationId(
-  type: NotificationType,
-  ...parts: string[]
-) {
+export function buildNotificationId(type: NotificationType, ...parts: string[]) {
   return ['notification', type, ...parts].join('__');
 }
 
 export function sortNotificationsByDate(notifications: AppNotification[]) {
-  return [...notifications].sort((left, right) =>
-    right.updatedAt.localeCompare(left.updatedAt) ||
-    right.createdAt.localeCompare(left.createdAt),
+  return [...notifications].sort(
+    (left, right) =>
+      right.updatedAt.localeCompare(left.updatedAt) ||
+      right.createdAt.localeCompare(left.createdAt),
   );
 }
 
-export function isNotificationRead(
-  notification: AppNotification,
-  userId?: string | null,
-) {
+export function isNotificationRead(notification: AppNotification, userId?: string | null) {
   if (!userId) {
     return false;
   }
@@ -134,8 +129,8 @@ export function createAttendanceNotification(params: {
     type: confirmed ? 'attendance-confirmed' : 'attendance-absent',
     title: confirmed
       ? `${params.player.nickname} confirmou presença`
-      : `${params.player.nickname} marcou ausência`,
-    message: `Resposta para ${params.match.opponentName} em ${matchMoment(params.match)}.`,
+      : `${params.player.nickname} avisou que não vai`,
+    message: `Resposta registrada para ${params.match.opponentName} em ${matchMoment(params.match)}.`,
     matchId: params.match.id,
     playerId: params.player.id,
     actorUserId: params.actorUserId,
@@ -203,7 +198,7 @@ export function createMvpVotingOpenedNotification(params: {
     id: params.id,
     teamId: params.teamId,
     type: 'mvp-voting-opened',
-    title: 'Craque da partida liberado',
+    title: 'Votação de craque liberada',
     message: `Quem participou de ${params.match.opponentName} já pode votar no destaque do jogo.`,
     matchId: params.match.id,
     actorUserId: params.actorUserId,
@@ -277,8 +272,8 @@ export function createMatchDiaryPublishedNotification(params: {
       params.variant === 'mentioned'
         ? 'Você foi mencionado na resenha da partida.'
         : params.variant === 'team'
-          ? 'Nova resenha da partida disponível.'
-          : `${params.authorName} publicou no diário da partida.`,
+          ? 'Tem resenha nova da partida para conferir.'
+          : `${params.authorName} deixou um recado novo no diário da partida.`,
     matchId: params.match.id,
     entryId: params.entryId,
     actorUserId: params.actorUserId,

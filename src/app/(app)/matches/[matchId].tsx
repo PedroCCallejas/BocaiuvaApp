@@ -1,11 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  Clipboard,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type GestureResponderEvent,
+} from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 
 import { MatchCard } from '@/components/cards/MatchCard';
 import { MatchDiaryEntryCard } from '@/components/matches/MatchDiaryEntryCard';
 import { RankingList } from '@/components/stats/RankingList';
 import { AppButton } from '@/components/ui/AppButton';
+import { AppInput } from '@/components/ui/AppInput';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Pill } from '@/components/ui/Pill';
 import { Screen } from '@/components/ui/Screen';
@@ -15,6 +24,7 @@ import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatMatchDateTime, hasMatchElapsedHours } from '@/lib/date';
 import { openExternalUrl } from '@/lib/external-url';
+import { formatCurrencyBRL, getMatchFieldPaymentSummary } from '@/lib/field-cost';
 import {
   membershipIndicatesPlayer,
 } from '@/lib/player-linking';
@@ -63,8 +73,10 @@ export default function MatchDetailsScreen() {
   const canManage = useAppStore(selectCanManageTeam);
   const setAttendance = useAppStore((state) => state.setAttendance);
   const updateMatch = useAppStore((state) => state.updateMatch);
+  const updateMatchFieldPayment = useAppStore((state) => state.updateMatchFieldPayment);
   const deleteMatchDiaryEntry = useAppStore((state) => state.deleteMatchDiaryEntry);
   const [navigatingEdit, setNavigatingEdit] = useState(false);
+  const [savingFieldPayment, setSavingFieldPayment] = useState(false);
   const navigatingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -122,11 +134,54 @@ export default function MatchDetailsScreen() {
     isPlayerConfirmedForMatch(snapshot, currentMatch.id, currentPlayer?.id);
   const mvpBreakdown = buildMatchMvpBreakdown(snapshot, currentMatch.id);
   const ratingsSummary = getRatingsSummary(snapshot, currentMatch.id);
+  const fieldCost = currentMatch.fieldCost ?? null;
+  const fieldPayment = currentMatch.fieldPayment ?? null;
   const matchStats = snapshot.matchStats
     .filter((item) => item.matchId === currentMatch.id)
     .sort((left, right) => right.goals + right.assists - (left.goals + left.assists));
   const diaryEntries = getMatchDiaryEntriesByMatchId({ snapshot }, currentMatch.id);
   const playerById = new Map(snapshot.players.map((player) => [player.id, player]));
+  const [payerPlayerIdsDraft, setPayerPlayerIdsDraft] = useState<string[]>(
+    fieldPayment?.payerPlayerIds ?? [],
+  );
+  const [paidGuestCountDraft, setPaidGuestCountDraft] = useState(
+    String(fieldPayment?.paidGuestCount ?? 0),
+  );
+  const [pixKeyDraft, setPixKeyDraft] = useState(fieldPayment?.pixKey ?? '');
+  const [responsibleNameDraft, setResponsibleNameDraft] = useState(
+    fieldPayment?.responsibleName ?? '',
+  );
+
+  useEffect(() => {
+    setPayerPlayerIdsDraft(fieldPayment?.payerPlayerIds ?? []);
+    setPaidGuestCountDraft(String(fieldPayment?.paidGuestCount ?? 0));
+    setPixKeyDraft(fieldPayment?.pixKey ?? '');
+    setResponsibleNameDraft(fieldPayment?.responsibleName ?? '');
+  }, [
+    currentMatch.id,
+    fieldPayment?.paidGuestCount,
+    fieldPayment?.pixKey,
+    fieldPayment?.responsibleName,
+    fieldPayment?.payerPlayerIds,
+  ]);
+
+  const paidGuestCountValue = useMemo(() => {
+    const parsed = Number(paidGuestCountDraft.trim() || '0');
+    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+  }, [paidGuestCountDraft]);
+  const fieldPaymentSummary = useMemo(
+    () =>
+      fieldCost
+        ? getMatchFieldPaymentSummary(fieldCost, {
+            payerPlayerIds: payerPlayerIdsDraft,
+            paidGuestCount: paidGuestCountValue,
+          })
+        : null,
+    [fieldCost, paidGuestCountValue, payerPlayerIdsDraft],
+  );
+  const isCurrentPlayerMarkedAsPaid = currentPlayer
+    ? payerPlayerIdsDraft.includes(currentPlayer.id)
+    : false;
 
   async function handleOpenLocation() {
     if (!currentMatch.locationUrl) {
@@ -140,6 +195,50 @@ export default function MatchDetailsScreen() {
         'Não foi possível abrir a localização',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
+    }
+  }
+
+  function handleTogglePlayerPaid(playerId: string) {
+    setPayerPlayerIdsDraft((current) =>
+      current.includes(playerId)
+        ? current.filter((item) => item !== playerId)
+        : [...current, playerId],
+    );
+  }
+
+  function handleCopyPix() {
+    const pixKey = fieldPayment?.pixKey?.trim();
+
+    if (!pixKey) {
+      return;
+    }
+
+    Clipboard.setString(pixKey);
+    Alert.alert('Chave Pix copiada', 'A chave Pix foi copiada para a área de transferência.');
+  }
+
+  async function handleSaveFieldPayment() {
+    if (!fieldCost) {
+      return;
+    }
+
+    try {
+      setSavingFieldPayment(true);
+      await updateMatchFieldPayment(currentMatch.id, {
+        fieldPayment: {
+          payerPlayerIds: payerPlayerIdsDraft,
+          paidGuestCount: paidGuestCountValue,
+          pixKey: pixKeyDraft.trim() || null,
+          responsibleName: responsibleNameDraft.trim() || null,
+        },
+      });
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível salvar o controle do campo',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    } finally {
+      setSavingFieldPayment(false);
     }
   }
 
@@ -304,6 +403,259 @@ export default function MatchDetailsScreen() {
       </View>
 
       <MatchCard match={currentMatch} attendance={attendanceSummary} />
+
+      <View style={styles.section}>
+        <SectionHeader
+          title={fieldCost ? 'Controle do campo' : 'Valor do campo'}
+          subtitle={
+            fieldCost
+              ? `${formatCurrencyBRL(fieldCost.amountPerPlayer)} por pessoa`
+              : canUsePostGame
+                ? 'Defina o valor total e a divisão ao encerrar a partida ou depois.'
+                : 'Valor do campo ainda não informado.'
+          }
+        />
+        {fieldCost ? (
+          <View
+            style={[
+              styles.fieldCostCard,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+              },
+            ]}>
+            <View style={styles.fieldCostSummaryRow}>
+              <View style={styles.fieldCostMetric}>
+                <Text style={[styles.fieldCostLabel, { color: theme.colors.textMuted }]}>
+                  Total do campo
+                </Text>
+                <Text style={[styles.fieldCostValue, { color: theme.colors.text }]}>
+                  {formatCurrencyBRL(fieldCost.totalAmount)}
+                </Text>
+              </View>
+              <View style={styles.fieldCostMetric}>
+                <Text style={[styles.fieldCostLabel, { color: theme.colors.textMuted }]}>
+                  Dividido entre
+                </Text>
+                <Text style={[styles.fieldCostValue, { color: theme.colors.text }]}>
+                  {fieldCost.splitCount} pessoa(s)
+                </Text>
+              </View>
+            </View>
+            <View style={styles.fieldCostSummaryRow}>
+              <View
+                style={[
+                  styles.fieldCostHighlight,
+                  {
+                    backgroundColor: theme.colors.background,
+                    borderColor: theme.colors.border,
+                  },
+                ]}>
+                <Text style={[styles.fieldCostLabel, { color: theme.colors.textMuted }]}>
+                  Cada um paga
+                </Text>
+                <Text style={[styles.fieldCostHighlightValue, { color: theme.colors.secondary }]}>
+                  {formatCurrencyBRL(fieldCost.amountPerPlayer)}
+                </Text>
+              </View>
+              {fieldPaymentSummary ? (
+                <View
+                  style={[
+                    styles.fieldCostHighlight,
+                    {
+                      backgroundColor: theme.colors.background,
+                      borderColor: theme.colors.border,
+                    },
+                  ]}>
+                  <Text style={[styles.fieldCostLabel, { color: theme.colors.textMuted }]}>
+                    Já pagaram
+                  </Text>
+                  <Text style={[styles.fieldCostHighlightValue, { color: theme.colors.secondary }]}>
+                    {fieldPaymentSummary.totalPaidCount}/{fieldCost.splitCount}
+                  </Text>
+                  {fieldPaymentSummary.paidGuestCount > 0 ? (
+                    <Text style={[styles.fieldCostHint, { color: theme.colors.textMuted }]}>
+                      Inclui {fieldPaymentSummary.paidGuestCount} pagante(s) extra(s).
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+            {fieldPaymentSummary ? (
+              <View style={styles.fieldCostSummaryRow}>
+                <View style={styles.fieldCostMetric}>
+                  <Text style={[styles.fieldCostLabel, { color: theme.colors.textMuted }]}>
+                    Recebido
+                  </Text>
+                  <Text style={[styles.fieldCostValue, { color: theme.colors.text }]}>
+                    {formatCurrencyBRL(fieldPaymentSummary.totalReceived)}
+                  </Text>
+                </View>
+                <View style={styles.fieldCostMetric}>
+                  <Text style={[styles.fieldCostLabel, { color: theme.colors.textMuted }]}>
+                    Falta receber
+                  </Text>
+                  <Text style={[styles.fieldCostValue, { color: theme.colors.text }]}>
+                    {formatCurrencyBRL(fieldPaymentSummary.pendingAmount)}
+                  </Text>
+                  <Text style={[styles.fieldCostHint, { color: theme.colors.textMuted }]}>
+                    {fieldPaymentSummary.pendingCount} pessoa(s) pendente(s)
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+            {fieldCost.note ? (
+              <Text style={[styles.fieldCostNote, { color: theme.colors.textMuted }]}>
+                {fieldCost.note}
+              </Text>
+            ) : null}
+            {fieldPayment?.responsibleName ? (
+              <Text style={[styles.fieldCostNote, { color: theme.colors.textMuted }]}>
+                Responsável pelo recebimento: {fieldPayment.responsibleName}
+              </Text>
+            ) : null}
+            {fieldPayment?.pixKey ? (
+              <View
+                style={[
+                  styles.pixCard,
+                  {
+                    backgroundColor: theme.colors.background,
+                    borderColor: theme.colors.border,
+                  },
+                ]}>
+                <Text style={[styles.fieldCostLabel, { color: theme.colors.textMuted }]}>
+                  Chave Pix
+                </Text>
+                <Text style={[styles.pixValue, { color: theme.colors.text }]}>
+                  {fieldPayment.pixKey}
+                </Text>
+                <AppButton label="Copiar Pix" variant="secondary" onPress={handleCopyPix} />
+              </View>
+            ) : null}
+            {!canManage && currentPlayer ? (
+              <View
+                style={[
+                  styles.playerPaymentStatus,
+                  {
+                    backgroundColor: theme.colors.background,
+                    borderColor: theme.colors.border,
+                  },
+                ]}>
+                <Text style={[styles.fieldCostLabel, { color: theme.colors.textMuted }]}>
+                  Seu status
+                </Text>
+                <Text style={[styles.fieldCostValue, { color: theme.colors.text }]}>
+                  {isCurrentPlayerMarkedAsPaid ? 'Pago' : 'Pendente'}
+                </Text>
+              </View>
+            ) : null}
+            {canManage ? (
+              <View style={styles.fieldPaymentAdminSection}>
+                <SectionHeader
+                  title="Marcar como pago"
+                  subtitle="Somente jogadores confirmados entram na lista de pagamento."
+                />
+                {confirmedPlayers.map((player) => {
+                  const isPaid = payerPlayerIdsDraft.includes(player.id);
+
+                  return (
+                    <View
+                      key={player.id}
+                      style={[
+                        styles.paymentPlayerRow,
+                        {
+                          backgroundColor: theme.colors.background,
+                          borderColor: theme.colors.border,
+                        },
+                      ]}>
+                      <View style={styles.paymentPlayerCopy}>
+                        <Text style={[styles.statName, { color: theme.colors.text }]}>
+                          #{player.jerseyNumber} {player.nickname}
+                        </Text>
+                        <Text style={[styles.playerSub, { color: theme.colors.textMuted }]}>
+                          {player.fullName}
+                        </Text>
+                      </View>
+                      <Pressable
+                        onPress={() => handleTogglePlayerPaid(player.id)}
+                        style={[
+                          styles.paymentToggle,
+                          {
+                            backgroundColor: isPaid
+                              ? theme.colors.secondary
+                              : theme.colors.surface,
+                            borderColor: isPaid
+                              ? theme.colors.secondary
+                              : theme.colors.border,
+                          },
+                        ]}>
+                        <Text
+                          style={[
+                            styles.paymentToggleLabel,
+                            {
+                              color: isPaid ? '#041008' : theme.colors.text,
+                            },
+                          ]}>
+                          {isPaid ? 'Pago' : 'Marcar como pago'}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  );
+                })}
+                <View style={styles.fieldCostInputs}>
+                  <AppInput
+                    label="Pagantes extras"
+                    value={paidGuestCountDraft}
+                    onChangeText={(value) => setPaidGuestCountDraft(value.replace(/[^\d]/g, ''))}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                  />
+                  <AppInput
+                    label="Chave Pix"
+                    value={pixKeyDraft}
+                    onChangeText={setPixKeyDraft}
+                    placeholder="Telefone, CPF, e-mail ou chave aleatória"
+                  />
+                  <AppInput
+                    label="Responsável pelo recebimento"
+                    value={responsibleNameDraft}
+                    onChangeText={setResponsibleNameDraft}
+                    placeholder="Nome de quem está recebendo"
+                  />
+                </View>
+                <View style={styles.buttonRow}>
+                  <AppButton
+                    label="Salvar controle do campo"
+                    onPress={() => void handleSaveFieldPayment()}
+                    loading={savingFieldPayment}
+                  />
+                  <AppButton
+                    label="Editar valor do campo"
+                    variant="secondary"
+                    onPress={() => router.push(`/matches/${currentMatch.id}/finish`)}
+                  />
+                </View>
+              </View>
+            ) : canUsePostGame ? (
+              <AppButton
+                label="Editar valor do campo"
+                variant="secondary"
+                onPress={() => router.push(`/matches/${currentMatch.id}/finish`)}
+              />
+            ) : null}
+          </View>
+        ) : canUsePostGame ? (
+          <AppButton
+            label="Adicionar valor do campo"
+            variant="secondary"
+            onPress={() => router.push(`/matches/${currentMatch.id}/finish`)}
+          />
+        ) : (
+          <Text style={[styles.description, { color: theme.colors.textMuted }]}>
+            Valor do campo ainda não informado.
+          </Text>
+        )}
+      </View>
 
       <View style={styles.section}>
         <SectionHeader
@@ -661,6 +1013,104 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   section: {
+    gap: 12,
+  },
+  fieldCostCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 16,
+    gap: 12,
+  },
+  fieldCostSummaryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  fieldCostMetric: {
+    flex: 1,
+    minWidth: 150,
+    gap: 4,
+  },
+  fieldCostLabel: {
+    fontFamily: fonts.heading,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  fieldCostValue: {
+    fontFamily: fonts.heading,
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  fieldCostHighlight: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    gap: 4,
+  },
+  fieldCostHighlightValue: {
+    fontFamily: fonts.display,
+    fontSize: 28,
+    fontWeight: '900',
+  },
+  fieldCostHint: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  fieldCostNote: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  pixCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    gap: 10,
+  },
+  pixValue: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  playerPaymentStatus: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    gap: 4,
+  },
+  fieldPaymentAdminSection: {
+    gap: 12,
+  },
+  paymentPlayerRow: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  paymentPlayerCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  paymentToggle: {
+    minHeight: 42,
+    minWidth: 132,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paymentToggleLabel: {
+    fontFamily: fonts.heading,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  fieldCostInputs: {
     gap: 12,
   },
   noticeCard: {

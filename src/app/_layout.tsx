@@ -6,6 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { initializeAdMob } from '@/services/ads/admob-service';
 import { setupNotificationHandler } from '@/services/notifications';
 import { useAppStore } from '@/store/app-store';
 
@@ -17,6 +18,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     void setupNotificationHandler();
+    void initializeAdMob();
     void bootstrap();
   }, [bootstrap]);
 

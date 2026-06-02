@@ -1,5 +1,5 @@
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router } from 'expo-router';
@@ -8,12 +8,15 @@ import { z } from 'zod';
 import { TeamHeroCard } from '@/components/cards/TeamHeroCard';
 import { ImageUploadField } from '@/components/forms/ImageUploadField';
 import { AppButton } from '@/components/ui/AppButton';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { AppInput } from '@/components/ui/AppInput';
 import { Screen } from '@/components/ui/Screen';
 import { TEAM_COLOR_PRESETS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import {
+  MAX_OWNED_TEAMS_PER_ACCOUNT,
+  OWNED_TEAMS_LIMIT_REACHED_MESSAGE,
+} from '@/lib/team';
 import {
   buildTeamLogoStoragePath,
   pickImage,
@@ -22,7 +25,11 @@ import {
   type SelectedImageAsset,
 } from '@/lib/uploadImage';
 import { useAppStore } from '@/store/app-store';
-import { selectCanCreateTeam, selectCurrentUser } from '@/store/selectors';
+import {
+  selectCanCreateTeam,
+  selectCurrentUser,
+  selectOwnedTeamsCount,
+} from '@/store/selectors';
 
 const schema = z.object({
   name: z.string().min(3, 'Informe o nome do time.'),
@@ -36,6 +43,7 @@ export default function TeamSetupScreen() {
   const theme = useAppTheme();
   const currentUser = useAppStore(selectCurrentUser);
   const canCreateTeam = useAppStore(selectCanCreateTeam);
+  const ownedTeamsCount = useAppStore(selectOwnedTeamsCount);
   const createTeam = useAppStore((state) => state.createTeam);
   const updateTeam = useAppStore((state) => state.updateTeam);
   const [pendingLogo, setPendingLogo] = useState<SelectedImageAsset | null>(null);
@@ -78,19 +86,6 @@ export default function TeamSetupScreen() {
     updatedAt: '',
   };
 
-  if (!canCreateTeam) {
-    return (
-      <Screen>
-        <EmptyState
-          title="Criar time indisponível"
-          description="Seu acesso ainda não permite criar um time."
-          actionLabel="Voltar"
-          onAction={() => router.replace('/team-access' as never)}
-        />
-      </Screen>
-    );
-  }
-
   async function handlePickLogo(source: ImagePickerSource) {
     try {
       const asset = await pickImage(source);
@@ -108,6 +103,11 @@ export default function TeamSetupScreen() {
   }
 
   async function onSubmit(values: TeamSetupValues) {
+    if (!canCreateTeam) {
+      Alert.alert('Limite atingido', OWNED_TEAMS_LIMIT_REACHED_MESSAGE);
+      return;
+    }
+
     const palette =
       TEAM_COLOR_PRESETS.find((preset) => preset.id === values.paletteId) ??
       TEAM_COLOR_PRESETS[0];
@@ -170,9 +170,19 @@ export default function TeamSetupScreen() {
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
           Escolha o nome, defina quem comanda o grupo e selecione uma paleta para deixar tudo com a cara do seu elenco.
         </Text>
+        <Text style={[styles.limitText, { color: theme.colors.textMuted }]}>
+          {canCreateTeam
+            ? `Você já administra ${ownedTeamsCount} de ${MAX_OWNED_TEAMS_PER_ACCOUNT} time(s).`
+            : 'Limite de 2 times atingido.'}
+        </Text>
+        {!canCreateTeam ? (
+          <Text style={[styles.limitWarning, { color: theme.colors.warning }]}>
+            Você já administra 2 times.
+          </Text>
+        ) : null}
       </View>
 
-      <TeamHeroCard team={previewTeam} modeLabel="Prévia do time" />
+      <TeamHeroCard team={previewTeam} modeLabel="Prévia do time" compact />
 
       <View
         style={[
@@ -255,9 +265,18 @@ export default function TeamSetupScreen() {
         <AppButton
           label="Criar time e entrar"
           onPress={handleSubmit(onSubmit)}
+          disabled={!canCreateTeam}
           loading={isSubmitting}
           fullWidth
         />
+        {!canCreateTeam ? (
+          <AppButton
+            label="Voltar"
+            variant="ghost"
+            onPress={() => router.replace('/team-access' as never)}
+            fullWidth
+          />
+        ) : null}
       </View>
     </Screen>
   );
@@ -276,6 +295,16 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 15,
     lineHeight: 22,
+  },
+  limitText: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  limitWarning: {
+    fontFamily: fonts.heading,
+    fontSize: 13,
+    fontWeight: '700',
   },
   card: {
     borderWidth: 1,

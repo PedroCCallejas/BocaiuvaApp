@@ -1,4 +1,7 @@
-import type { ManualPlayerStats } from '@/types/domain';
+import type { ManualPlayerStats, Team } from '@/types/domain';
+
+export const MAX_OWNED_TEAMS_PER_ACCOUNT = 2;
+export const OWNED_TEAMS_LIMIT_REACHED_MESSAGE = 'Você já atingiu o limite de 2 times por conta.';
 
 export function slugifyTeamName(value: string) {
   return value
@@ -54,13 +57,25 @@ export function normalizeManualStats(
 }
 
 export function displayNameFromEmail(email: string) {
-  return email.split('@')[0]?.trim() || 'Usuario';
+  return email.split('@')[0]?.trim() || 'Usuário';
 }
 
 export function deriveNickname(name: string, email: string) {
   const base = name.trim() || displayNameFromEmail(email);
   const firstChunk = base.split(' ').find(Boolean)?.trim() ?? displayNameFromEmail(email);
   return firstChunk.slice(0, 18);
+}
+
+export function getOwnedTeamsCount(teams: Pick<Team, 'adminUserId'>[], userId: string) {
+  return teams.filter((team) => team.adminUserId === userId).length;
+}
+
+export function canCreateTeamFromOwnedTeamsCount(ownedTeamsCount: number) {
+  return ownedTeamsCount < MAX_OWNED_TEAMS_PER_ACCOUNT;
+}
+
+export function getRemainingOwnedTeamSlots(ownedTeamsCount: number) {
+  return Math.max(0, MAX_OWNED_TEAMS_PER_ACCOUNT - ownedTeamsCount);
 }
 
 function normalizeWholeNumber(value: number) {

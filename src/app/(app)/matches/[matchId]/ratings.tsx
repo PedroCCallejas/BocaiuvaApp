@@ -103,7 +103,7 @@ export default function MatchRatingsScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Avaliacoes indisponiveis"
+          title="Avaliações indisponíveis"
           description="As notas anônimas só ficam disponíveis após o encerramento da partida."
         />
       </Screen>

@@ -23,7 +23,7 @@ import {
 import type { MatchType } from '@/types/domain';
 
 const schema = z.object({
-  opponentName: z.string().min(3, 'Informe o adversario.'),
+  opponentName: z.string().min(3, 'Informe o adversário.'),
   date: z.string().refine((value) => Boolean(parseDateBRToISO(value)), {
     message: 'Use o formato DD/MM/AAAA.',
   }),
@@ -35,20 +35,20 @@ const schema = z.object({
     .string()
     .optional()
     .refine((value) => !value?.trim() || isValidExternalUrl(value), {
-      message: 'Cole um link valido de mapas.',
+      message: 'Cole um link válido de mapas.',
     }),
   notes: z.string().optional(),
   matchType: z.enum(['society', 'futsal', 'field', 'training']),
   linePlayersCount: z
     .string()
-    .min(1, 'Informe quantos jogadores de linha vao para o jogo.')
+    .min(1, 'Informe quantos jogadores de linha vão para o jogo.')
     .refine((value) => /^\d+$/.test(value.trim()), {
-      message: 'Use apenas numeros inteiros.',
+      message: 'Use apenas números inteiros.',
     })
     .refine((value) => {
       const count = Number(value.trim());
       return count >= 1 && count <= 15;
-    }, 'Escolha um numero entre 1 e 15 jogadores de linha.'),
+    }, 'Escolha um número entre 1 e 15 jogadores de linha.'),
 });
 
 type MatchValues = z.infer<typeof schema>;
@@ -126,7 +126,7 @@ export default function EditMatchScreen() {
       <Screen>
         <EmptyState
           title="Partida não encontrada"
-          description="Não conseguimos localizar esta partida no snapshot atual."
+          description="Não conseguimos localizar esta partida nos dados atuais do time."
           actionLabel="Voltar"
           onAction={() => router.back()}
         />
@@ -151,6 +151,10 @@ export default function EditMatchScreen() {
 
   async function onSubmit(values: MatchValues) {
     try {
+      const keepsPublicOpponent =
+        currentMatch.opponentSource === 'public_team' &&
+        values.opponentName.trim() === (currentMatch.opponentTeamName ?? currentMatch.opponentName);
+
       await updateMatch(currentMatch.id, {
         seasonId: currentMatch.seasonId ?? null,
         date: parseDateBRToISO(values.date) ?? values.date,
@@ -159,6 +163,11 @@ export default function EditMatchScreen() {
         locationUrl: values.locationUrl?.trim() || null,
         opponentName: values.opponentName,
         opponentLogoUrl: currentMatch.opponentLogoUrl ?? null,
+        opponentTeamId: keepsPublicOpponent ? currentMatch.opponentTeamId ?? null : null,
+        opponentTeamName: keepsPublicOpponent ? currentMatch.opponentTeamName ?? null : null,
+        opponentTeamLogoUrl:
+          keepsPublicOpponent ? currentMatch.opponentTeamLogoUrl ?? null : null,
+        opponentSource: keepsPublicOpponent ? currentMatch.opponentSource ?? null : 'manual',
         linePlayersCount: Number(values.linePlayersCount.trim()),
         matchType: values.matchType,
         notes: values.notes?.trim() ?? '',
@@ -178,7 +187,7 @@ export default function EditMatchScreen() {
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Editar partida</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          Ajuste data, horario, local e formato do jogo sem perder o restante do planejamento.
+          Ajuste data, horário, local e formato do jogo sem perder o restante do planejamento.
         </Text>
       </View>
 
@@ -195,7 +204,7 @@ export default function EditMatchScreen() {
           name="opponentName"
           render={({ field }) => (
             <AppInput
-              label="Adversario"
+              label="Adversário"
               value={field.value}
               onBlur={field.onBlur}
               onChangeText={field.onChange}
@@ -221,7 +230,7 @@ export default function EditMatchScreen() {
           name="locationUrl"
           render={({ field }) => (
             <AppInput
-              label="Link da localizacao"
+              label="Link da localização"
               autoCapitalize="none"
               autoCorrect={false}
               value={field.value ?? ''}
@@ -254,7 +263,7 @@ export default function EditMatchScreen() {
               name="time"
               render={({ field }) => (
                 <AppInput
-                  label="Horario"
+                  label="Horário"
                   keyboardType="numbers-and-punctuation"
                   value={field.value}
                   onBlur={field.onBlur}
@@ -269,6 +278,7 @@ export default function EditMatchScreen() {
         <View style={styles.chipRow}>
           {(['society', 'futsal', 'field', 'training'] as MatchType[]).map((type) => {
             const selected = watch('matchType') === type;
+
             return (
               <Pressable
                 key={type}
@@ -306,7 +316,7 @@ export default function EditMatchScreen() {
           name="notes"
           render={({ field }) => (
             <AppInput
-              label="Observacoes"
+              label="Observações"
               multiline
               value={field.value ?? ''}
               onBlur={field.onBlur}
@@ -316,7 +326,7 @@ export default function EditMatchScreen() {
           )}
         />
         <AppButton
-          label="Salvar alteracoes"
+          label="Salvar alterações"
           onPress={handleSubmit(onSubmit)}
           loading={isSubmitting}
           fullWidth

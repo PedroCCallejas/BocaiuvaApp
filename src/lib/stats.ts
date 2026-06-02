@@ -12,6 +12,7 @@ import type {
   Player,
   PlayerRating,
   PlayerRatingCriteriaSnapshotItem,
+  PublicTeamStats,
   RatingCriterion,
   TeamRatingCriterion,
 } from '@/types/domain';
@@ -1045,6 +1046,41 @@ export function buildTeamAggregates(
     mvpLeaderId: byMvp[0]?.player.id,
     bestRatedId: byRating[0]?.player.id,
   } satisfies TeamAggregateStats;
+}
+
+export function buildPublicTeamStatsFromMatches(matches: Pick<Match, 'status' | 'scoreboard'>[]) {
+  const finishedMatches = matches.filter((match) => match.status === 'finished');
+  const wins = finishedMatches.filter((match) => match.scoreboard?.result === 'win').length;
+  const draws = finishedMatches.filter((match) => match.scoreboard?.result === 'draw').length;
+  const losses = finishedMatches.filter((match) => match.scoreboard?.result === 'loss').length;
+  const goalsFor = finishedMatches.reduce(
+    (sum, match) => sum + (match.scoreboard?.team ?? 0),
+    0,
+  );
+  const goalsAgainst = finishedMatches.reduce(
+    (sum, match) => sum + (match.scoreboard?.opponent ?? 0),
+    0,
+  );
+  const games = finishedMatches.length;
+
+  return {
+    games,
+    wins,
+    draws,
+    losses,
+    goalsFor,
+    goalsAgainst,
+    pointsRate: round(((wins * 3 + draws) / Math.max(games * 3, 1)) * 100, 1),
+  } satisfies PublicTeamStats;
+}
+
+export function getPublicTeamStats(
+  snapshot: Pick<AppSnapshot, 'matches'>,
+  teamId: string,
+) {
+  return buildPublicTeamStatsFromMatches(
+    snapshot.matches.filter((match) => match.teamId === teamId),
+  );
 }
 
 export function getAvailableStatsYears(matches: Match[]) {

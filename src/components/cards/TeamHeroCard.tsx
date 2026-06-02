@@ -1,58 +1,96 @@
+import type { ReactNode } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { fonts } from '@/constants/theme';
-import type { Team } from '@/types/domain';
+
+interface TeamHeroIdentity {
+  name: string;
+  logoUrl?: string | null;
+  bannerUrl?: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor?: string | null;
+  city?: string | null;
+  state?: string | null;
+  description?: string | null;
+}
 
 interface TeamHeroCardProps {
-  team: Team;
-  modeLabel: string;
+  team: TeamHeroIdentity;
+  modeLabel?: string;
+  locationLabel?: string | null;
+  description?: string | null;
+  supportingText?: string | null;
+  compact?: boolean;
+  children?: ReactNode;
 }
 
 const heroText = '#F7FBF8';
-const heroTextMuted = 'rgba(247,251,248,0.8)';
+const heroTextMuted = 'rgba(247,251,248,0.82)';
 
-export function TeamHeroCard({ team, modeLabel }: TeamHeroCardProps) {
+function buildLocationLabel(team: TeamHeroIdentity) {
+  if (!team.city?.trim()) {
+    return null;
+  }
+
+  return [team.city.trim(), team.state?.trim()].filter(Boolean).join(', ');
+}
+
+export function TeamHeroCard({
+  team,
+  modeLabel,
+  locationLabel,
+  description,
+  supportingText,
+  compact = false,
+  children,
+}: TeamHeroCardProps) {
+  const hasBanner = Boolean(team.bannerUrl);
   const accent = team.accentColor ?? team.secondaryColor;
+  const resolvedLocationLabel = locationLabel ?? buildLocationLabel(team);
+  const resolvedDescription = description ?? team.description ?? null;
+  const logoSize = compact ? 96 : 118;
 
   return (
     <View style={styles.shell}>
-      {team.bannerUrl ? (
-        <Image source={{ uri: team.bannerUrl }} resizeMode="cover" style={styles.banner} />
-      ) : team.logoUrl ? (
-        <Image source={{ uri: team.logoUrl }} resizeMode="contain" style={styles.watermark} />
-      ) : null}
-
       <LinearGradient
-        colors={[`${team.primaryColor}F4`, `${team.secondaryColor}D9`, `${team.primaryColor}FA`]}
+        colors={[`${team.primaryColor}F5`, `${team.secondaryColor}D6`, `${team.primaryColor}FA`]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={styles.gradient}>
+        style={[styles.gradient, compact ? styles.compactGradient : null]}>
+        {team.bannerUrl ? (
+          <Image source={{ uri: team.bannerUrl }} resizeMode="cover" style={styles.banner} />
+        ) : team.logoUrl ? (
+          <Image source={{ uri: team.logoUrl }} resizeMode="contain" style={styles.watermark} />
+        ) : null}
+
         <LinearGradient
-          colors={['rgba(4,10,8,0.12)', 'rgba(4,10,8,0.48)', 'rgba(4,10,8,0.86)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0.8, y: 1 }}
+          colors={['rgba(4,10,8,0.16)', 'rgba(4,10,8,0.54)', 'rgba(4,10,8,0.9)']}
+          start={{ x: 0.1, y: 0 }}
+          end={{ x: 0.9, y: 1 }}
           style={styles.overlay}
         />
 
-        <View
-          style={[
-            styles.orb,
-            {
-              backgroundColor: `${accent}1F`,
-              borderColor: `${accent}66`,
-            },
-          ]}
-        />
+        {!hasBanner ? (
+          <View
+            style={[
+              styles.lightOrb,
+              {
+                backgroundColor: `${accent}16`,
+                borderColor: `${accent}38`,
+              },
+            ]}
+          />
+        ) : null}
 
-        <View style={styles.topRow}>
-          <View style={styles.topCopy}>
+        <View style={styles.content}>
+          {modeLabel ? (
             <View style={styles.modePill}>
               <Text style={styles.mode}>{modeLabel}</Text>
             </View>
-            <Text style={styles.kicker}>Identidade do elenco</Text>
-          </View>
+          ) : null}
 
           <View
             style={[
@@ -65,36 +103,29 @@ export function TeamHeroCard({ team, modeLabel }: TeamHeroCardProps) {
             <Avatar
               name={team.name}
               photoUrl={team.logoUrl}
-              size={104}
+              size={logoSize}
               accent="rgba(255,255,255,0.16)"
             />
           </View>
-        </View>
 
-        <View style={styles.titleBlock}>
-          <Text style={styles.name}>{team.name}</Text>
-          <Text style={styles.coach}>Responsavel: {team.coachName}</Text>
-          {team.description ? (
-            <Text numberOfLines={2} style={styles.description}>
-              {team.description}
-            </Text>
-          ) : null}
-        </View>
+          <View style={styles.identityBlock}>
+            <Text style={styles.name}>{team.name}</Text>
+            {resolvedLocationLabel ? (
+              <Text style={styles.location}>{resolvedLocationLabel}</Text>
+            ) : null}
+            {resolvedDescription ? (
+              <Text numberOfLines={compact ? 3 : 4} style={styles.description}>
+                {resolvedDescription}
+              </Text>
+            ) : null}
+            {supportingText ? (
+              <Text style={styles.supportingText}>{supportingText}</Text>
+            ) : null}
+          </View>
 
-        <View style={styles.metaRow}>
-          <HeroTag label="Futebol amador" />
-          <HeroTag label="Escudo em destaque" />
-          <HeroTag label="Time organizado" />
+          {children ? <View style={styles.footer}>{children}</View> : null}
         </View>
       </LinearGradient>
-    </View>
-  );
-}
-
-function HeroTag({ label }: { label: string }) {
-  return (
-    <View style={styles.metaPill}>
-      <Text style={styles.meta}>{label}</Text>
     </View>
   );
 }
@@ -104,48 +135,47 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     overflow: 'hidden',
   },
+  gradient: {
+    minHeight: 348,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+  },
+  compactGradient: {
+    minHeight: 300,
+  },
   banner: {
     ...StyleSheet.absoluteFillObject,
-    opacity: 0.36,
+    opacity: 0.94,
   },
   watermark: {
     position: 'absolute',
-    right: -26,
-    bottom: -14,
+    right: -18,
+    bottom: -12,
     width: 210,
     height: 210,
     opacity: 0.14,
   },
-  gradient: {
-    minHeight: 240,
-    padding: 22,
-    gap: 18,
-    justifyContent: 'space-between',
-  },
   overlay: {
     ...StyleSheet.absoluteFillObject,
   },
-  orb: {
+  lightOrb: {
     position: 'absolute',
-    top: -36,
-    right: -20,
-    width: 168,
-    height: 168,
-    borderRadius: 84,
+    top: -34,
+    right: -12,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     borderWidth: 1,
+    opacity: 0.7,
   },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 16,
-  },
-  topCopy: {
-    flex: 1,
-    gap: 10,
+  content: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 18,
   },
   modePill: {
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -161,62 +191,55 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
-  kicker: {
-    color: heroTextMuted,
-    fontFamily: fonts.heading,
-    fontSize: 13,
-    fontWeight: '700',
-  },
   logoFrame: {
-    padding: 8,
-    borderRadius: 34,
+    padding: 10,
+    borderRadius: 40,
     borderWidth: 1,
-    backgroundColor: 'rgba(5,12,9,0.22)',
+    backgroundColor: 'rgba(5,12,9,0.24)',
     shadowOpacity: 0.28,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 12 },
     elevation: 10,
   },
-  titleBlock: {
+  identityBlock: {
+    maxWidth: 760,
+    alignItems: 'center',
     gap: 8,
-    maxWidth: '78%',
   },
   name: {
     color: heroText,
     fontFamily: fonts.display,
     fontSize: 40,
     fontWeight: '900',
-    lineHeight: 40,
+    lineHeight: 42,
+    textAlign: 'center',
   },
-  coach: {
+  location: {
     color: heroText,
     fontFamily: fonts.heading,
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    textAlign: 'center',
+    textTransform: 'uppercase',
   },
   description: {
     color: heroTextMuted,
     fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
   },
-  metaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  supportingText: {
+    color: 'rgba(255,255,255,0.74)',
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+  },
+  footer: {
+    width: '100%',
     gap: 10,
-  },
-  metaPill: {
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  meta: {
-    color: heroText,
-    fontFamily: fonts.heading,
-    fontSize: 12,
-    fontWeight: '700',
+    alignItems: 'center',
   },
 });

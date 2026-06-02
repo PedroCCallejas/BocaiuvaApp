@@ -358,6 +358,7 @@ export interface AppRepository {
   joinTeamWithInviteCode(inviteCode: string, userId: string): Promise<JoinTeamResult>;
   createPlayer(input: CreatePlayerInput, actorUserId: string): Promise<Player>;
   updatePlayer(playerId: string, input: UpdatePlayerInput, actorUserId: string): Promise<Player>;
+  unlinkPlayerAccount(playerId: string, actorUserId: string): Promise<Player>;
   removePlayer(playerId: string, actorUserId: string): Promise<Player>;
   reactivatePlayer(playerId: string, actorUserId: string): Promise<Player>;
   createMatch(input: CreateMatchInput, creatorUserId: string): Promise<Match>;

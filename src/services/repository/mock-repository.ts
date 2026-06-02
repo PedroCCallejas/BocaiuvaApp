@@ -12,6 +12,12 @@ import {
 } from '@/lib/match-diary';
 import { buildLegacyMatchImportPreview } from '@/lib/match-import';
 import {
+  buildInactivatedPlayerState,
+  buildReactivatedPlayerState,
+  buildUnlinkedPlayerState,
+  touchesRestrictedPlayerAdminFields,
+} from '@/lib/player-management';
+import {
   buildRatingCriteriaSnapshot,
   calculateOverallFromCriteriaScores,
   countRatingCriterionUsage,
@@ -2121,11 +2127,22 @@ export const mockRepository: AppRepository = {
     const actor = findUser(actorUserId);
     const createdAt = nowIso();
     syncUserActiveContext(actor);
+    const membership = findMembershipByUserAndTeam(actor.id, player.teamId);
 
-    if (
-      actor.teamId === player.teamId &&
-      findMembershipByUserAndTeam(actor.id, player.teamId)?.canManagePlayers
-    ) {
+    if (actor.teamId === player.teamId && membership?.canManagePlayers) {
+      if (
+        !membership.canManageTeam &&
+        touchesRestrictedPlayerAdminFields(player, {
+          status: input.status,
+          linkedUserId: input.linkedUserId,
+          linkedEmail: input.linkedEmail,
+        })
+      ) {
+        throw new Error(
+          'Apenas o administrador do time pode alterar o status ou o vinculo da conta do jogador.',
+        );
+      }
+
       const previousLinkedUserId = player.linkedUserId ?? null;
 
       if (typeof input.jerseyNumber === 'number') {
@@ -2279,9 +2296,28 @@ export const mockRepository: AppRepository = {
     return clone(player);
   },
 
+  async unlinkPlayerAccount(playerId: string, actorUserId: string) {
+    const player = findPlayer(playerId);
+    requireTeamAdmin(actorUserId, player.teamId);
+
+    if (!player.linkedUserId && !player.linkedEmail) {
+      return clone(player);
+    }
+
+    const updatedAt = nowIso();
+    unlinkPlayerFromUser(player);
+    const updatedPlayer = buildUnlinkedPlayerState(player, updatedAt);
+
+    player.linkedUserId = updatedPlayer.linkedUserId;
+    player.linkedEmail = updatedPlayer.linkedEmail;
+    player.updatedAt = updatedPlayer.updatedAt;
+
+    return clone(player);
+  },
+
   async removePlayer(playerId: string, actorUserId: string) {
     const player = findPlayer(playerId);
-    requirePlayerManager(actorUserId, player.teamId);
+    requireTeamAdmin(actorUserId, player.teamId);
 
     if (player.deletedAt || player.status === 'inactive') {
       throw new Error('Esse jogador já está fora do elenco ativo.');
@@ -2291,9 +2327,7 @@ export const mockRepository: AppRepository = {
     const linkedUserId = player.linkedUserId ?? null;
     const team = findTeam(player.teamId);
 
-    player.status = 'inactive';
-    player.deletedAt = updatedAt;
-    player.updatedAt = updatedAt;
+    Object.assign(player, buildInactivatedPlayerState(player, updatedAt));
 
     if (linkedUserId) {
       const linkedUser = findUser(linkedUserId);
@@ -2345,7 +2379,7 @@ export const mockRepository: AppRepository = {
 
   async reactivatePlayer(playerId: string, actorUserId: string) {
     const player = findPlayer(playerId);
-    requirePlayerManager(actorUserId, player.teamId);
+    requireTeamAdmin(actorUserId, player.teamId);
 
     if (player.status !== 'inactive' && !player.deletedAt) {
       throw new Error('Esse jogador ja esta ativo no elenco.');
@@ -2371,9 +2405,7 @@ export const mockRepository: AppRepository = {
 
     player.linkedUserId = linkResult.linkedUserId;
     player.linkedEmail = linkResult.linkedEmail;
-    player.status = 'active';
-    player.deletedAt = null;
-    player.updatedAt = updatedAt;
+    Object.assign(player, buildReactivatedPlayerState(player, updatedAt));
 
     syncLinkedUser(player);
     ensureOpenMatchAttendanceForPlayer(player);

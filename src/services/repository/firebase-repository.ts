@@ -39,6 +39,12 @@ import {
 } from '@/lib/match-diary';
 import { buildLegacyMatchImportPreview } from '@/lib/match-import';
 import {
+  buildInactivatedPlayerState,
+  buildReactivatedPlayerState,
+  buildUnlinkedPlayerState,
+  touchesRestrictedPlayerAdminFields,
+} from '@/lib/player-management';
+import {
   buildRatingCriteriaSnapshot,
   calculateOverallFromCriteriaScores,
   countRatingCriterionUsage,
@@ -3827,8 +3833,23 @@ export const firebaseRepository: AppRepository = {
       const now = nowIso();
       const playerRef = doc(firestore, FIRESTORE_COLLECTIONS.players, playerId);
       const canManagePlayer = membership?.canManagePlayers === true;
+      const canManageLifecycle = membership?.canManageTeam === true;
 
       if (canManagePlayer) {
+        if (
+          !canManageLifecycle &&
+          touchesRestrictedPlayerAdminFields(currentPlayer, {
+            status: input.status,
+            linkedUserId: input.linkedUserId,
+            linkedEmail: input.linkedEmail,
+          })
+        ) {
+          throw createRepositoryError(
+            'Apenas o administrador do time pode alterar o status ou o vinculo da conta do jogador.',
+            'permission-denied',
+          );
+        }
+
         if (typeof input.jerseyNumber === 'number') {
           await assertJerseyAvailable(
             currentPlayer.teamId,
@@ -4025,15 +4046,61 @@ export const firebaseRepository: AppRepository = {
     }
   },
 
+  async unlinkPlayerAccount(playerId: string, actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      const { membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      const currentPlayer = await fetchPlayerByIdForTeam(activeTeamId, playerId);
+      const currentTeam = await fetchTeamById(currentPlayer.teamId);
+
+      if (!membership.canManageTeam) {
+        throw createRepositoryError(
+          'Apenas o administrador do time pode desvincular a conta do jogador.',
+          'permission-denied',
+        );
+      }
+
+      if (!currentPlayer.linkedUserId && !currentPlayer.linkedEmail) {
+        return currentPlayer;
+      }
+
+      const updatedAt = nowIso();
+      const updatedPlayer = normalizePlayerDocument({
+        ...buildUnlinkedPlayerState(currentPlayer, updatedAt),
+      });
+
+      await setDoc(
+        doc(firestore, FIRESTORE_COLLECTIONS.players, currentPlayer.id),
+        updatedPlayer,
+      );
+
+      if (currentPlayer.linkedUserId) {
+        await clearLinkedUserMembershipPlayer({
+          linkedUserId: currentPlayer.linkedUserId,
+          team: currentTeam,
+          playerId: currentPlayer.id,
+          updatedAt,
+        });
+      }
+
+      return updatedPlayer;
+    } catch (error) {
+      throw toFriendlyFirestoreError(
+        error,
+        'Não foi possível desvincular a conta do jogador agora.',
+      );
+    }
+  },
+
   async removePlayer(playerId: string, actorUserId: string) {
     try {
       const firestore = requireFirestore();
       const { membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
       const currentPlayer = await fetchPlayerByIdForTeam(activeTeamId, playerId);
       const currentTeam = await fetchTeamById(currentPlayer.teamId);
-      if (!membership.canManagePlayers) {
+      if (!membership.canManageTeam) {
         throw createRepositoryError(
-          'Apenas quem gerencia o elenco pode inativar um jogador.',
+          'Apenas o administrador do time pode inativar um jogador.',
           'permission-denied',
         );
       }
@@ -4061,10 +4128,7 @@ export const firebaseRepository: AppRepository = {
       );
 
       const updatedPlayer = normalizePlayerDocument({
-        ...currentPlayer,
-        status: 'inactive',
-        deletedAt: updatedAt,
-        updatedAt,
+        ...buildInactivatedPlayerState(currentPlayer, updatedAt),
       });
 
       const batch = writeBatch(firestore);
@@ -4175,9 +4239,9 @@ export const firebaseRepository: AppRepository = {
       const currentPlayer = await fetchPlayerByIdForTeam(activeTeamId, playerId);
       const currentTeam = await fetchTeamById(currentPlayer.teamId);
 
-      if (!membership.canManagePlayers) {
+      if (!membership.canManageTeam) {
         throw createRepositoryError(
-          'Apenas quem gerencia o elenco pode fazer essa acao.',
+          'Apenas o administrador do time pode reativar um jogador.',
           'permission-denied',
         );
       }
@@ -4212,12 +4276,16 @@ export const firebaseRepository: AppRepository = {
       });
       const now = nowIso();
       const updatedPlayer = normalizePlayerDocument({
-        ...currentPlayer,
+        ...buildReactivatedPlayerState(
+          {
+            ...currentPlayer,
+            linkedUserId: linkResult.linkedUserId,
+            linkedEmail: linkResult.linkedEmail,
+          },
+          now,
+        ),
         linkedUserId: linkResult.linkedUserId,
         linkedEmail: linkResult.linkedEmail,
-        status: 'active',
-        deletedAt: null,
-        updatedAt: now,
       });
 
       await setDoc(

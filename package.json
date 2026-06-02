@@ -8,7 +8,9 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "build:web": "expo export --platform web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./tests/run-tests.ts",
+    "test:watch": "node --watch --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./tests/run-tests.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",

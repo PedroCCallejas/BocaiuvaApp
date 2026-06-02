@@ -186,6 +186,8 @@ interface PlayerFormProps {
   variant: 'admin' | 'self';
   defaults: PlayerFormDefaults;
   submitLabel: string;
+  allowStatusEdit?: boolean;
+  allowLinkedEmailEdit?: boolean;
   loading?: boolean;
   helperText?: string;
   imageUploadProgress?: number | null;
@@ -197,6 +199,8 @@ export function PlayerForm({
   variant,
   defaults,
   submitLabel,
+  allowStatusEdit = variant === 'admin',
+  allowLinkedEmailEdit = variant === 'admin',
   loading,
   helperText,
   imageUploadProgress,
@@ -337,9 +341,12 @@ export function PlayerForm({
         variant === 'admin' || variant === 'self'
           ? (values.dominantFoot as FootPreference)
           : defaults.dominantFoot,
-      status: variant === 'admin' ? (values.status as PlayerStatus) : defaults.status,
+      status:
+        variant === 'admin' && allowStatusEdit
+          ? (values.status as PlayerStatus)
+          : defaults.status,
       linkedEmail:
-        variant === 'admin'
+        variant === 'admin' && allowLinkedEmailEdit
           ? values.linkedEmail?.trim() || null
           : defaults.linkedEmail ?? null,
       bio: values.bio?.trim() ?? '',
@@ -421,7 +428,7 @@ export function PlayerForm({
         disabled={loading || isSubmitting}
       />
 
-      {variant === 'admin' ? (
+      {variant === 'admin' && allowLinkedEmailEdit ? (
         <Controller
           control={control}
           name="linkedEmail"
@@ -555,16 +562,19 @@ export function PlayerForm({
         )}
       />
 
+      {variant === 'admin' && allowStatusEdit ? (
+        <ChoiceSection
+          title="Status"
+          options={PLAYER_STATUS_OPTIONS}
+          selected={[watch('status') as PlayerStatus]}
+          labelFor={(item) => PLAYER_STATUS_LABELS[item]}
+          onToggle={(value) => setValue('status', value)}
+          single
+        />
+      ) : null}
+
       {variant === 'admin' ? (
         <>
-          <ChoiceSection
-            title="Status"
-            options={PLAYER_STATUS_OPTIONS}
-            selected={[watch('status') as PlayerStatus]}
-            labelFor={(item) => PLAYER_STATUS_LABELS[item]}
-            onToggle={(value) => setValue('status', value)}
-            single
-          />
           <ChoiceSection
             title="Camisa editável pelo jogador"
             options={['allowed', 'locked']}

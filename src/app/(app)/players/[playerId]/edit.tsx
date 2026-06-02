@@ -10,6 +10,7 @@ import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { canEditPlayerProfile, isPlayerInactive } from '@/lib/player-management';
 import { getPlayerComputedStats } from '@/lib/stats';
 import { buildPlayerPhotoStoragePath, uploadImage } from '@/lib/uploadImage';
 import {
@@ -37,6 +38,7 @@ export default function EditPlayerScreen() {
   const currentPlayer = useAppStore(selectCurrentPlayer);
   const player = useAppStore((state) => findPlayerById(state, String(playerId)));
   const updatePlayer = useAppStore((state) => state.updatePlayer);
+  const unlinkPlayerAccount = useAppStore((state) => state.unlinkPlayerAccount);
   const removePlayer = useAppStore((state) => state.removePlayer);
   const reactivatePlayer = useAppStore((state) => state.reactivatePlayer);
   const [photoUploadProgress, setPhotoUploadProgress] = useState<number | null>(null);
@@ -60,8 +62,14 @@ export default function EditPlayerScreen() {
   }
 
   const editablePlayer = player;
-  const canSelfEdit = currentPlayer?.id === editablePlayer.id;
-  const variant = canManagePlayers ? 'admin' : canSelfEdit ? 'self' : null;
+  const canEditProfile = canEditPlayerProfile({
+    canManagePlayers,
+    currentPlayerId: currentPlayer?.id,
+    targetPlayerId: editablePlayer.id,
+  });
+  const variant = canManagePlayers ? 'admin' : canEditProfile ? 'self' : null;
+  const canManageLifecycle = variant === 'admin' && canManageTeam;
+  const canManageAccountLink = canManageLifecycle;
   const canManagePresentationVideo = variant === 'admin' && canManageTeam;
   const currentPresentationVideoUrl = removePresentationVideo
     ? null
@@ -84,19 +92,31 @@ export default function EditPlayerScreen() {
     );
   }
 
-  async function handleUnlinkAccount() {
-    try {
-      await updatePlayer(editablePlayer.id, {
-        linkedUserId: null,
-        linkedEmail: null,
-      });
-      Alert.alert('Conta desvinculada', 'O jogador voltou a ficar sem conta conectada.');
-    } catch (error) {
-      Alert.alert(
-        'Não foi possível desvincular',
-        error instanceof Error ? error.message : 'Tente novamente.',
-      );
-    }
+  function handleUnlinkAccount() {
+    Alert.alert(
+      'Desvincular conta',
+      'Essa ação remove a ligação entre este jogador e a conta atual. O histórico do jogador será preservado.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Desvincular conta',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await unlinkPlayerAccount(editablePlayer.id);
+                Alert.alert('Conta desvinculada', 'O jogador agora está sem conta vinculada.');
+              } catch (error) {
+                Alert.alert(
+                  'Não foi possível desvincular',
+                  error instanceof Error ? error.message : 'Tente novamente.',
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
   }
 
   async function handlePickPresentationVideo() {
@@ -200,19 +220,20 @@ export default function EditPlayerScreen() {
         />
       ) : null}
 
-      {variant === 'admin' && editablePlayer.linkedUserId ? (
+      {canManageAccountLink &&
+      (editablePlayer.linkedUserId || editablePlayer.linkedEmail) ? (
         <AppButton
           label="Desvincular conta deste jogador"
           variant="ghost"
-          onPress={() => void handleUnlinkAccount()}
+          onPress={handleUnlinkAccount}
         />
       ) : null}
 
-      {variant === 'admin' && editablePlayer.status !== 'inactive' && !editablePlayer.deletedAt ? (
+      {canManageLifecycle && !isPlayerInactive(editablePlayer) ? (
         <AppButton label="Inativar jogador" variant="danger" onPress={handleInactivatePlayer} />
       ) : null}
 
-      {variant === 'admin' && (editablePlayer.status === 'inactive' || editablePlayer.deletedAt) ? (
+      {canManageLifecycle && isPlayerInactive(editablePlayer) ? (
         <AppButton label="Reativar jogador" onPress={handleReactivatePlayer} />
       ) : null}
 
@@ -244,6 +265,8 @@ export default function EditPlayerScreen() {
       <PlayerForm
         variant={variant}
         submitLabel="Salvar alterações"
+        allowStatusEdit={canManageLifecycle}
+        allowLinkedEmailEdit={canManageAccountLink}
         imageUploadProgress={photoUploadProgress}
         computedStats={variant === 'admin' ? computedStats : undefined}
         helperText={

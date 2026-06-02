@@ -15,6 +15,7 @@ import { FOOT_LABELS, PLAYER_STATUS_LABELS, POSITION_LABELS } from '@/constants/
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatMatchDate, sortMatchesByDate } from '@/lib/date';
+import { isPlayerInactive } from '@/lib/player-management';
 import { buildPlayerAchievements, getTopPlayerAchievements } from '@/lib/player-achievements';
 import {
   buildPlayerAggregates,
@@ -399,8 +400,8 @@ export default function PlayerDetailsScreen() {
           {canManageTeam ? (
             <AppButton label="Copiar convite" variant="secondary" onPress={handleCopyInvite} />
           ) : null}
-          {canManagePlayers ? (
-            currentPlayerRecord.status === 'inactive' || currentPlayerRecord.deletedAt ? (
+          {canManageTeam ? (
+            isPlayerInactive(currentPlayerRecord) ? (
               <AppButton label="Reativar jogador" onPress={handleReactivatePlayer} />
             ) : (
               <AppButton label="Inativar jogador" variant="danger" onPress={handleRemovePlayer} />

@@ -78,6 +78,7 @@ export interface AppState {
   markAllNotificationsAsRead: () => Promise<void>;
   createPlayer: (input: CreatePlayerInput) => Promise<string>;
   updatePlayer: (playerId: string, input: UpdatePlayerInput) => Promise<void>;
+  unlinkPlayerAccount: (playerId: string) => Promise<void>;
   removePlayer: (playerId: string) => Promise<void>;
   reactivatePlayer: (playerId: string) => Promise<void>;
   createMatch: (input: CreateMatchInput) => Promise<string>;
@@ -554,6 +555,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     await repository.updatePlayer(playerId, input, userId);
+    await refreshCurrentSession(set, get);
+  },
+
+  async unlinkPlayerAccount(playerId) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    await repository.unlinkPlayerAccount(playerId, userId);
     await refreshCurrentSession(set, get);
   },
 

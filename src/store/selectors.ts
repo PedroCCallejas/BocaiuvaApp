@@ -206,9 +206,10 @@ function getDerivedSelectors(state: Slice): DerivedSnapshotSelectors {
         }),
       )
     : [];
+  const allowMembershipFallback = state.snapshot.accessNotice == null;
   const currentMembership =
     userMemberships.find((membership) => membership.teamId === currentUser?.activeTeamId) ??
-    userMemberships[0] ??
+    (allowMembershipFallback ? userMemberships[0] ?? null : null) ??
     null;
   const currentTeam =
     state.snapshot.teams.find((team) => team.id === currentMembership?.teamId) ?? null;

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -9,6 +9,7 @@ import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
+import { TEAM_ACCESS_PERMISSION_MESSAGE } from '@/constants/access-notices';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
@@ -16,6 +17,7 @@ import {
   normalizeInviteCode,
   OWNED_TEAMS_LIMIT_REACHED_MESSAGE,
 } from '@/lib/team';
+import { authService } from '@/services/auth';
 import { useAppStore } from '@/store/app-store';
 import {
   selectCanCreateTeam,
@@ -58,6 +60,7 @@ export default function TeamAccessScreen() {
   const ownedTeamsCount = useAppStore(selectOwnedTeamsCount);
   const memberships = useAppStore(selectUserMemberships);
   const teams = useAppStore((state) => state.snapshot.teams);
+  const accessNotice = useAppStore((state) => state.snapshot.accessNotice ?? null);
   const joinTeamWithInviteCode = useAppStore((state) => state.joinTeamWithInviteCode);
   const setActiveTeam = useAppStore((state) => state.setActiveTeam);
   const refreshAccess = useAppStore((state) => state.refreshAccess);
@@ -94,6 +97,113 @@ export default function TeamAccessScreen() {
         ),
     [memberships, teams],
   );
+  const isPermissionDeniedState = accessNotice === TEAM_ACCESS_PERMISSION_MESSAGE;
+  const emptyStateTitle = isPermissionDeniedState
+    ? 'Não foi possível carregar seus times'
+    : 'Você ainda não participa de nenhum time';
+  const emptyStateDescription = isPermissionDeniedState
+    ? TEAM_ACCESS_PERMISSION_MESSAGE
+    : 'Entre com um código de convite para começar a acompanhar seu elenco.';
+
+  useEffect(() => {
+    if (!__DEV__) {
+      return;
+    }
+
+    const authUser = authService.getCurrentUser();
+    const requestedTeamIds = [...new Set(memberships.map((membership) => membership.teamId))];
+    const returnedTeamIds = membershipCards.map((item) => item.team.id);
+    const missingTeamIds = requestedTeamIds.filter((teamId) => !returnedTeamIds.includes(teamId));
+    const resolvedReason =
+      membershipCards.length > 0
+        ? 'teams-resolved'
+        : isPermissionDeniedState
+          ? 'permission-denied-or-blocked'
+          : memberships.length === 0
+            ? 'no-memberships-found'
+            : missingTeamIds.length > 0
+              ? 'memberships-found-but-team-docs-missing-or-inaccessible'
+              : currentUser?.activeTeamId
+                ? 'active-team-not-resolved'
+                : 'no-active-team-and-no-visible-team';
+
+    console.log(
+      '[team-access-debug] auth-user',
+      JSON.stringify(
+        {
+          uid: authUser?.authId ?? null,
+          email: authUser?.email ?? null,
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(
+      '[team-access-debug] user-doc',
+      JSON.stringify(
+        {
+          exists: currentUser != null,
+          activeTeamId: currentUser?.activeTeamId ?? null,
+          error: isPermissionDeniedState ? accessNotice : null,
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(
+      '[team-access-debug] memberships-query',
+      JSON.stringify(
+        {
+          query: authUser?.authId
+            ? `teamMembers where userId == "${authUser.authId}"`
+            : 'teamMembers where userId == null',
+          count: memberships.length,
+          ids: memberships.map((membership) => membership.id),
+          teamIds: memberships.map((membership) => membership.teamId),
+          status: memberships.map((membership) => membership.status),
+          roles: memberships.map((membership) => membership.roles),
+          playerIds: memberships.map((membership) => membership.playerId),
+          error: isPermissionDeniedState ? accessNotice : null,
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(
+      '[team-access-debug] teams-query',
+      JSON.stringify(
+        {
+          requestedTeamIds,
+          countReturned: returnedTeamIds.length,
+          returnedIds: returnedTeamIds,
+          missingTeamIds,
+          error: isPermissionDeniedState ? accessNotice : null,
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(
+      '[team-access-debug] resolved-teams',
+      JSON.stringify(
+        {
+          currentTeam: currentTeam?.id ?? null,
+          availableTeams: returnedTeamIds,
+          activeTeamId: currentUser?.activeTeamId ?? null,
+          reason: resolvedReason,
+        },
+        null,
+        2,
+      ),
+    );
+  }, [
+    accessNotice,
+    currentTeam,
+    currentUser,
+    isPermissionDeniedState,
+    memberships,
+    membershipCards,
+  ]);
 
   async function handleJoin(values: JoinTeamValues) {
     setSubmittingJoin(true);
@@ -200,6 +310,20 @@ export default function TeamAccessScreen() {
             Você já administra 2 times.
           </Text>
         ) : null}
+        {accessNotice ? (
+          <View
+            style={[
+              styles.noticeCard,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.warning,
+              },
+            ]}>
+            <Text style={[styles.noticeText, { color: theme.colors.text }]}>
+              {accessNotice}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
       {membershipCards.length > 0 ? (
@@ -228,7 +352,7 @@ export default function TeamAccessScreen() {
                   </Text>
                 </View>
                 <AppButton
-                  label={isCurrent ? 'Abrir time atual' : 'Entrar'}
+                  label={isCurrent ? 'Acessar time atual' : 'Acessar time'}
                   variant={isCurrent ? 'secondary' : 'primary'}
                   onPress={() => void handleSelectTeam(team.id)}
                   loading={switchingTeamId === team.id}
@@ -240,8 +364,8 @@ export default function TeamAccessScreen() {
         </View>
       ) : (
         <EmptyState
-          title="Você ainda não faz parte de um time"
-          description="Entre com um código de convite para começar a acompanhar seu elenco."
+          title={emptyStateTitle}
+          description={emptyStateDescription}
         />
       )}
 
@@ -339,6 +463,17 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 13,
     lineHeight: 19,
+  },
+  noticeCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  noticeText: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
   },
   section: {
     gap: 12,

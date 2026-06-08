@@ -12,6 +12,7 @@ import {
   getOwnedTeamsCount,
   OWNED_TEAMS_LIMIT_REACHED_MESSAGE,
 } from '@/lib/team';
+import { TEAM_ACCESS_PERMISSION_MESSAGE } from '@/constants/access-notices';
 import { isTeamStorageCleanupWarning } from '@/lib/team-deletion';
 import { repository } from '@/services/repository';
 import { emptySnapshot } from '@/services/repository/types';
@@ -44,6 +45,14 @@ import type {
   LegacyMatchImportPreview,
 } from '@/types/match-import';
 import type { PublicTeamProfile, PublicTeamSummary, Team } from '@/types/domain';
+import {
+  buildBootstrapRecoverySnapshot,
+  extractRepositoryErrorCode,
+  extractRepositoryErrorContext,
+  extractRepositoryPartialSnapshot,
+  isRepositoryPermissionDeniedError,
+  resolveBootstrapAccessNotice,
+} from '@/store/bootstrap-recovery';
 
 type SyncStatus = 'idle' | 'connecting' | 'refreshing';
 
@@ -175,6 +184,61 @@ function resetRealtimeSubscription() {
   realtimeUserId = null;
 }
 
+function recoverFromPermissionDenied(
+  set: StoreSet,
+  get: StoreGet,
+  sessionUser: AuthSessionUser | null,
+  error: unknown,
+  source: 'bootstrap' | 'refresh' | 'realtime' | 'auth-refresh' | 'auth-realtime',
+) {
+  if (!isRepositoryPermissionDeniedError(error)) {
+    return false;
+  }
+
+  const currentUserId = resolveCurrentUserId(sessionUser);
+  const errorContext = extractRepositoryErrorContext(error);
+  const snapshot = buildBootstrapRecoverySnapshot(
+    sessionUser,
+    extractRepositoryPartialSnapshot(error),
+  );
+  const recoveredSnapshot = {
+    ...snapshot,
+    accessNotice: resolveBootstrapAccessNotice(error, snapshot),
+  };
+  const resolvedCurrentUserId = currentUserId ?? snapshot.users[0]?.id ?? null;
+
+  resetRealtimeSubscription();
+  applySnapshot(set, get, recoveredSnapshot, resolvedCurrentUserId);
+  set({
+    ready: true,
+    backendMode: repository.getMode(),
+    currentUserId: resolvedCurrentUserId,
+    hasLiveSync: false,
+    syncStatus: 'idle',
+  });
+
+  if (__DEV__) {
+    console.warn(
+      `[bootstrap] ${source} permission-denied fallback`,
+      JSON.stringify(
+        {
+          code: extractRepositoryErrorCode(error),
+          message: error instanceof Error ? error.message : 'Erro desconhecido.',
+          context: errorContext,
+          currentUserId: resolvedCurrentUserId,
+          partialSnapshot: extractRepositoryPartialSnapshot(error) != null,
+          teamAccessPermissionMessage:
+            recoveredSnapshot.accessNotice === TEAM_ACCESS_PERMISSION_MESSAGE,
+        },
+        null,
+        2,
+      ),
+    );
+  }
+
+  return true;
+}
+
 async function refreshSnapshot(
   set: StoreSet,
   get: StoreGet,
@@ -197,6 +261,12 @@ async function refreshSnapshot(
   try {
     const snapshot = await repository.getSnapshot();
     applySnapshot(set, get, snapshot, currentUserId);
+  } catch (error) {
+    if (recoverFromPermissionDenied(set, get, sessionUser, error, 'refresh')) {
+      return;
+    }
+
+    throw error;
   } finally {
     if (options?.showRefreshing) {
       set({ syncStatus: 'idle' });
@@ -262,6 +332,10 @@ async function ensureRealtimeSubscription(
       set({ hasLiveSync: false, syncStatus: 'idle' });
     }
 
+    if (recoverFromPermissionDenied(set, get, sessionUser, error, 'realtime')) {
+      return;
+    }
+
     throw error;
   }
 }
@@ -272,8 +346,24 @@ function ensureAuthSubscription(set: StoreSet, get: StoreGet) {
   }
 
   authSubscription = authService.subscribe((sessionUser) => {
-    void ensureRealtimeSubscription(set, get, sessionUser);
-    void refreshSnapshot(set, get, sessionUser);
+    void ensureRealtimeSubscription(set, get, sessionUser).catch((error) => {
+      if (recoverFromPermissionDenied(set, get, sessionUser, error, 'auth-realtime')) {
+        return;
+      }
+
+      if (__DEV__) {
+        console.warn('[bootstrap] auth realtime sync failed.', error);
+      }
+    });
+    void refreshSnapshot(set, get, sessionUser).catch((error) => {
+      if (recoverFromPermissionDenied(set, get, sessionUser, error, 'auth-refresh')) {
+        return;
+      }
+
+      if (__DEV__) {
+        console.warn('[bootstrap] auth snapshot refresh failed.', error);
+      }
+    });
   });
 }
 
@@ -328,7 +418,19 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const sessionUser = await authService.restoreSession();
     const currentUserId = resolveCurrentUserId(sessionUser);
-    const snapshot = await repository.getInitialSnapshot();
+    let snapshot: AppSnapshot;
+
+    try {
+      snapshot = await repository.getInitialSnapshot();
+    } catch (error) {
+      if (recoverFromPermissionDenied(set, get, sessionUser, error, 'bootstrap')) {
+        ensureAuthSubscription(set, get);
+        return;
+      }
+
+      throw error;
+    }
+
     applySnapshot(set, get, snapshot, currentUserId);
     set({
       ready: true,
@@ -336,7 +438,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       currentUserId,
     });
     ensureAuthSubscription(set, get);
-    await ensureRealtimeSubscription(set, get, sessionUser);
+    try {
+      await ensureRealtimeSubscription(set, get, sessionUser);
+    } catch (error) {
+      if (recoverFromPermissionDenied(set, get, sessionUser, error, 'realtime')) {
+        return;
+      }
+
+      if (__DEV__) {
+        console.warn('[bootstrap] failed to start realtime subscription.', error);
+      }
+      set({ hasLiveSync: false, syncStatus: 'idle' });
+    }
     await syncPushTokenForUser(currentUserId);
   },
 

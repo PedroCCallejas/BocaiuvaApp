@@ -196,6 +196,7 @@ function snapshotFromDatabase(source: MockDatabase, currentUserId: string | null
     seasons: activeTeamId
       ? source.seasons.filter((season) => season.teamId === activeTeamId)
       : [],
+    accessNotice: null,
   });
 }
 

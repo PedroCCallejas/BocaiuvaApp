@@ -50,6 +50,7 @@ export interface AppSnapshot {
   ratingCriteria: TeamRatingCriterion[];
   notifications: AppNotification[];
   seasons: Season[];
+  accessNotice?: string | null;
 }
 
 export interface UserCredential {
@@ -77,6 +78,7 @@ export const emptySnapshot: AppSnapshot = {
   ratingCriteria: [],
   notifications: [],
   seasons: [],
+  accessNotice: null,
 };
 
 export interface LoginInput {

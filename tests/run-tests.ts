@@ -21,14 +21,27 @@ import {
 import {
   findPlayerById,
   selectCanManageTeam,
+  selectCurrentTeam,
   selectTeamHistoricalPlayers,
   selectTeamPlayers,
 } from '@/store/selectors';
+import {
+  buildBootstrapRecoverySnapshot,
+  extractRepositoryPartialSnapshot,
+  isRepositoryPermissionDeniedError,
+  resolveBootstrapAccessNotice,
+  shouldShowTeamAccessPermissionMessage,
+} from '@/store/bootstrap-recovery';
 import {
   canCreateTeamFromOwnedTeamsCount,
   getOwnedTeamsCount,
   OWNED_TEAMS_LIMIT_REACHED_MESSAGE,
 } from '@/lib/team';
+import { normalizeTeamMemberStatus } from '@/lib/team-membership';
+import {
+  LOST_TEAM_ACCESS_MESSAGE,
+  TEAM_ACCESS_PERMISSION_MESSAGE,
+} from '@/constants/access-notices';
 
 import {
   createAttendance,
@@ -223,6 +236,107 @@ const testCases: TestCase[] = [
         }),
         true,
       );
+    },
+  },
+  {
+    name: 'user com activeTeamId valido e membership ativa mostra o time em team-access',
+    run() {
+      const team = createTeam({ id: 'team-active' });
+      const user = createUser({
+        id: 'user-active-team',
+        activeTeamId: team.id,
+        teamId: team.id,
+      });
+      const membership = createTeamMember({
+        id: 'membership-active-team',
+        userId: user.id,
+        teamId: team.id,
+        roles: ['player'],
+      });
+
+      assert.equal(
+        selectCurrentTeam({
+          currentUserId: user.id,
+          snapshot: createSnapshot({
+            users: [user],
+            teams: [team],
+            teamMembers: [membership],
+          }),
+        })?.id,
+        team.id,
+      );
+    },
+  },
+  {
+    name: 'selector usa a primeira membership ativa quando activeTeamId ainda esta vazio',
+    run() {
+      const team = createTeam({ id: 'team-fallback' });
+      const user = createUser({
+        id: 'user-fallback',
+        activeTeamId: null,
+        teamId: null,
+        playerId: null,
+      });
+      const membership = createTeamMember({
+        id: 'membership-fallback',
+        userId: user.id,
+        teamId: team.id,
+        playerId: 'player-fallback',
+        roles: ['player'],
+      });
+
+      assert.equal(
+        selectCurrentTeam({
+          currentUserId: user.id,
+          snapshot: createSnapshot({
+            users: [user],
+            teams: [team],
+            teamMembers: [membership],
+            accessNotice: null,
+          }),
+        })?.id,
+        team.id,
+      );
+    },
+  },
+  {
+    name: 'membership com doc id aleatorio continua resolvendo o teamId correto',
+    run() {
+      const team = createTeam({ id: 'team-random-membership' });
+      const user = createUser({
+        id: 'user-random-membership',
+        activeTeamId: null,
+        teamId: null,
+      });
+      const membership = createTeamMember({
+        id: 'L8gP2nQx9ZkA41f',
+        userId: user.id,
+        teamId: team.id,
+        playerId: 'player-random-membership',
+      });
+
+      assert.equal(
+        selectCurrentTeam({
+          currentUserId: user.id,
+          snapshot: createSnapshot({
+            users: [user],
+            teams: [team],
+            teamMembers: [membership],
+            accessNotice: null,
+          }),
+        })?.id,
+        team.id,
+      );
+    },
+  },
+  {
+    name: 'status legado de membership e normalizado como ativo quando esperado',
+    run() {
+      assert.equal(normalizeTeamMemberStatus('accepted'), 'active');
+      assert.equal(normalizeTeamMemberStatus('joined'), 'active');
+      assert.equal(normalizeTeamMemberStatus('ativo'), 'active');
+      assert.equal(normalizeTeamMemberStatus('member'), 'active');
+      assert.equal(normalizeTeamMemberStatus('pending'), 'inactive');
     },
   },
   {
@@ -522,6 +636,146 @@ const testCases: TestCase[] = [
 
       assert.equal(visibleProfile?.publicRosterEnabled, true);
       assert.deepEqual(visibleProfile?.roster.map((player) => player.id), [activePlayer.id]);
+    },
+  },
+  {
+    name: 'permission-denied em users teamMembers e teams vira aviso de permissoes no team-access',
+    run() {
+      for (const collection of ['users', 'teamMembers', 'teams']) {
+        const error = Object.assign(new Error('Missing or insufficient permissions'), {
+          code: 'permission-denied',
+          context: {
+            collection,
+          },
+        });
+
+        assert.equal(shouldShowTeamAccessPermissionMessage(error), true);
+        assert.equal(
+          resolveBootstrapAccessNotice(error, createSnapshot()),
+          TEAM_ACCESS_PERMISSION_MESSAGE,
+        );
+      }
+    },
+  },
+  {
+    name: 'permission-denied fora do vinculo auth-team preserva aviso padrao de acesso perdido',
+    run() {
+      const error = Object.assign(new Error('Missing or insufficient permissions'), {
+        code: 'permission-denied',
+        context: {
+          collection: 'players',
+        },
+      });
+      const snapshot = createSnapshot({
+        accessNotice: LOST_TEAM_ACCESS_MESSAGE,
+      });
+
+      assert.equal(shouldShowTeamAccessPermissionMessage(error), false);
+      assert.equal(resolveBootstrapAccessNotice(error, snapshot), LOST_TEAM_ACCESS_MESSAGE);
+    },
+  },
+  {
+    name: 'bootstrap com permission-denied limpa contexto do time sem quebrar o snapshot',
+    run() {
+      const team = createTeam({ id: 'team-bootstrap' });
+      const sessionUser = {
+        authId: 'user-bootstrap',
+        email: 'bootstrap@professo.test',
+        displayName: 'Bootstrap User',
+        avatarUrl: null,
+      };
+      const storedUser = createUser({
+        id: sessionUser.authId,
+        email: sessionUser.email,
+        displayName: sessionUser.displayName,
+        activeTeamId: team.id,
+        teamId: team.id,
+        playerId: 'player-bootstrap',
+      });
+      const membership = createTeamMember({
+        id: 'membership-bootstrap',
+        userId: storedUser.id,
+        teamId: team.id,
+        playerId: 'player-bootstrap',
+        roles: ['player'],
+      });
+      const player = createPlayer({
+        id: 'player-bootstrap',
+        teamId: team.id,
+      });
+      const match = createMatch({
+        id: 'match-bootstrap',
+        teamId: team.id,
+      });
+      const partialSnapshot = createSnapshot({
+        users: [storedUser],
+        teams: [team],
+        teamMembers: [membership],
+        players: [player],
+        matches: [match],
+        attendance: [
+          createAttendance({
+            id: 'attendance-bootstrap',
+            teamId: team.id,
+            matchId: match.id,
+            playerId: player.id,
+          }),
+        ],
+        matchStats: [
+          createMatchStat({
+            id: 'stat-bootstrap',
+            teamId: team.id,
+            matchId: match.id,
+            playerId: player.id,
+          }),
+        ],
+        ratingCriteria: [
+          createCriterion({
+            id: 'criterion-bootstrap',
+            teamId: team.id,
+          }),
+        ],
+      });
+      const permissionDeniedError = Object.assign(
+        new Error('Missing or insufficient permissions'),
+        {
+          code: 'permission-denied',
+          partialSnapshot,
+        },
+      );
+
+      assert.equal(isRepositoryPermissionDeniedError(permissionDeniedError), true);
+
+      const recovered = buildBootstrapRecoverySnapshot(
+        sessionUser,
+        extractRepositoryPartialSnapshot(permissionDeniedError),
+      );
+
+      assert.equal(recovered.users[0]?.id, sessionUser.authId);
+      assert.equal(recovered.users[0]?.activeTeamId, null);
+      assert.equal(recovered.users[0]?.teamId, null);
+      assert.equal(recovered.users[0]?.playerId, null);
+      assert.equal(recovered.accessNotice, LOST_TEAM_ACCESS_MESSAGE);
+      assert.deepEqual(recovered.teamMembers.map((item) => item.id), [membership.id]);
+      assert.deepEqual(recovered.teams.map((item) => item.id), [team.id]);
+      assert.deepEqual(recovered.players, []);
+      assert.deepEqual(recovered.matches, []);
+      assert.deepEqual(recovered.lineups, []);
+      assert.deepEqual(recovered.attendance, []);
+      assert.deepEqual(recovered.matchStats, []);
+      assert.deepEqual(recovered.mvpVotes, []);
+      assert.deepEqual(recovered.playerRatings, []);
+      assert.deepEqual(recovered.ratingCriteria, []);
+      assert.deepEqual(recovered.notifications, []);
+      assert.deepEqual(recovered.matchDiaryEntries, []);
+      assert.deepEqual(recovered.seasons, []);
+      assert.equal(
+        selectCurrentTeam({
+          currentUserId: sessionUser.authId,
+          snapshot: recovered,
+        }),
+        null,
+      );
     },
   },
 ];

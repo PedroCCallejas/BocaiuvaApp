@@ -26,7 +26,10 @@ import {
   calculateMatchResult,
   getMvpSummary,
 } from '@/lib/match';
-import { TEAM_ACCESS_PERMISSION_MESSAGE } from '@/constants/access-notices';
+import {
+  TEAM_ACCESS_PERMISSION_MESSAGE,
+  USER_ACCOUNT_PERMISSION_MESSAGE,
+} from '@/constants/access-notices';
 import {
   buildMatchFieldCost,
   buildMatchFieldPayment,
@@ -93,11 +96,16 @@ import {
   TEAM_STORAGE_CLEANUP_WARNING_MESSAGE,
 } from '@/lib/team-deletion';
 import {
-  buildPublicTeamProfile,
-  buildPublicTeamSummary,
+  buildPublicTeamDocument,
+  buildTeamInviteDocument,
   normalizeTeamPublicProfileFields,
   validateTeamPublicProfileFields,
 } from '@/lib/public-team';
+import {
+  buildTeamMembershipIndexDocument,
+  normalizeTeamMembershipIndexDocument,
+  TEAM_MEMBERSHIP_INDEX_MEMBERS_SUBCOLLECTION,
+} from '@/lib/team-membership-index';
 import { deleteTeamStorageAssets } from '@/lib/team-storage';
 import { authService } from '@/services/auth';
 import type { AuthSessionUser } from '@/services/auth';
@@ -109,10 +117,13 @@ import {
   type FirestoreMatchStatDocument,
   type FirestoreMvpVoteDocument,
   type FirestoreNotificationDocument,
+  type FirestorePublicTeamDocument,
   type FirestorePlayerRatingDocument,
   FIRESTORE_COLLECTIONS,
   type FirestorePlayerDocument,
+  type FirestoreTeamMembershipIndexDocument,
   type FirestoreTeamRatingCriterionDocument,
+  type FirestoreTeamInviteDocument,
   type FirestoreSeasonDocument,
   type FirestoreTeamDocument,
   type FirestoreTeamMemberDocument,
@@ -242,6 +253,18 @@ interface FirestoreBatchMutation {
 }
 
 const bootstrapTraceStack: BootstrapTraceContext[] = [];
+
+function applyFirestoreBatchMutation(
+  batch: ReturnType<typeof writeBatch>,
+  mutation: FirestoreBatchMutation,
+) {
+  if (mutation.type === 'delete') {
+    batch.delete(mutation.ref);
+    return;
+  }
+
+  batch.set(mutation.ref, mutation.data!);
+}
 
 function extractErrorCode(error: unknown) {
   if (!(error instanceof Error)) {
@@ -638,6 +661,7 @@ function normalizeTeamMemberDocument(
   return {
     ...membership,
     playerId: membership.playerId ?? null,
+    inviteCodeUsed: membership.inviteCodeUsed ? normalizeInviteCode(membership.inviteCodeUsed) : null,
     roles: uniqueRoles,
     canManageTeam:
       membership.canManageTeam ?? uniqueRoles.includes('admin'),
@@ -672,6 +696,99 @@ function normalizeTeamDocument(
     publicDescription: team.publicDescription?.trim() ?? null,
     allowFriendlyContact: team.allowFriendlyContact ?? false,
     publicRosterEnabled: team.publicRosterEnabled ?? false,
+  };
+}
+
+function normalizePublicTeamDocument(
+  team: FirestorePublicTeamDocument,
+): FirestorePublicTeamDocument {
+  return {
+    ...team,
+    logoUrl: team.logoUrl ?? null,
+    bannerUrl: team.bannerUrl ?? null,
+    accentColor: team.accentColor ?? null,
+    neighborhood: team.neighborhood?.trim() ?? null,
+    homeFieldName: team.homeFieldName?.trim() ?? null,
+    publicDescription: team.publicDescription?.trim() ?? null,
+    contactName: team.contactName?.trim() ?? null,
+    contactPhone: team.contactPhone?.trim() ?? null,
+    contactWhatsapp: team.contactWhatsapp?.trim() ?? null,
+    presentationVideoUrl: team.presentationVideoUrl ?? null,
+    publicRosterEnabled: team.publicRosterEnabled ?? false,
+    roster: team.roster ?? [],
+  };
+}
+
+function normalizeTeamInviteDocument(
+  invite: FirestoreTeamInviteDocument,
+): FirestoreTeamInviteDocument {
+  return {
+    ...invite,
+    code: normalizeInviteCode(invite.code),
+    teamLogoUrl: invite.teamLogoUrl ?? null,
+    accentColor: invite.accentColor ?? null,
+  };
+}
+
+function toPublicTeamSummary(team: FirestorePublicTeamDocument): PublicTeamSummary {
+  const {
+    presentationVideoUrl: _presentationVideoUrl,
+    publicRosterEnabled: _publicRosterEnabled,
+    roster: _roster,
+    adminUserId: _adminUserId,
+    sourceTeamUpdatedAt: _sourceTeamUpdatedAt,
+    syncedAt: _syncedAt,
+    ...summary
+  } = team;
+
+  return summary;
+}
+
+function toPublicTeamProfile(team: FirestorePublicTeamDocument): PublicTeamProfile {
+  const {
+    adminUserId: _adminUserId,
+    sourceTeamUpdatedAt: _sourceTeamUpdatedAt,
+    syncedAt: _syncedAt,
+    ...profile
+  } = team;
+
+  return profile;
+}
+
+function buildTeamMembershipIndexRef(firestore: ReturnType<typeof requireFirestore>, teamId: string, userId: string) {
+  return doc(
+    firestore,
+    FIRESTORE_COLLECTIONS.teamMembershipIndex,
+    teamId,
+    TEAM_MEMBERSHIP_INDEX_MEMBERS_SUBCOLLECTION,
+    userId,
+  );
+}
+
+function buildTeamMembershipIndexMutation(membership: TeamMember) {
+  const firestore = requireFirestore();
+  const ref = buildTeamMembershipIndexRef(firestore, membership.teamId, membership.userId);
+
+  if (membership.status !== 'active') {
+    return {
+      type: 'delete' as const,
+      ref,
+    };
+  }
+
+  return {
+    type: 'set' as const,
+    ref,
+    data: buildTeamMembershipIndexDocument(membership),
+  };
+}
+
+function buildTeamMembershipIndexDeleteMutation(teamId: string, userId: string) {
+  const firestore = requireFirestore();
+
+  return {
+    type: 'delete' as const,
+    ref: buildTeamMembershipIndexRef(firestore, teamId, userId),
   };
 }
 
@@ -896,20 +1013,28 @@ async function fetchUserByEmail(email: string) {
     return null;
   }
 
-  const firestore = requireFirestore();
-  const snapshot = await getDocs(
-    query(
-      collection(firestore, FIRESTORE_COLLECTIONS.users),
-      where('email', '==', normalizedEmail),
-    ),
-  );
-  const userDocument = snapshot.docs[0];
+  try {
+    const firestore = requireFirestore();
+    const snapshot = await getDocs(
+      query(
+        collection(firestore, FIRESTORE_COLLECTIONS.users),
+        where('email', '==', normalizedEmail),
+      ),
+    );
+    const userDocument = snapshot.docs[0];
 
-  if (!userDocument) {
-    return null;
+    if (!userDocument) {
+      return null;
+    }
+
+    return normalizeUserDocument(parseDoc<FirestoreUserDocument>(userDocument));
+  } catch (error) {
+    throw attachErrorContext(error, {
+      collection: FIRESTORE_COLLECTIONS.users,
+      operation: 'where-email',
+      query: 'fetchUserByEmail',
+    });
   }
-
-  return normalizeUserDocument(parseDoc<FirestoreUserDocument>(userDocument));
 }
 
 async function fetchTeamById(teamId: string) {
@@ -927,19 +1052,7 @@ async function fetchTeamById(teamId: string) {
     throw createRepositoryError('Time não encontrado.', 'not-found');
   }
 
-  const team = normalizeTeamDocument(parseDoc<FirestoreTeamDocument>(snapshot));
-
-  if (!team.inviteCode) {
-    const migratedTeam = normalizeTeamDocument({
-      ...team,
-      inviteCode: createInviteCode(),
-      inviteCodeUpdatedAt: nowIso(),
-    });
-    await setDoc(doc(firestore, FIRESTORE_COLLECTIONS.teams, team.id), migratedTeam);
-    return migratedTeam;
-  }
-
-  return team;
+  return normalizeTeamDocument(parseDoc<FirestoreTeamDocument>(snapshot));
 }
 
 async function fetchPlayerByIdForTeam(teamId: string, playerId: string) {
@@ -963,17 +1076,26 @@ async function fetchMatchByIdForTeam(teamId: string, matchId: string) {
 }
 
 async function fetchUsersByTeamId(teamId: string) {
-  const firestore = requireFirestore();
-  const snapshot = await getDocs(
-    query(
-      collection(firestore, FIRESTORE_COLLECTIONS.users),
-      where('teamId', '==', teamId),
-    ),
-  );
+  try {
+    const firestore = requireFirestore();
+    const snapshot = await getDocs(
+      query(
+        collection(firestore, FIRESTORE_COLLECTIONS.users),
+        where('teamId', '==', teamId),
+      ),
+    );
 
-  return snapshot.docs.map((item) =>
-    normalizeUserDocument(parseDoc<FirestoreUserDocument>(item)),
-  );
+    return snapshot.docs.map((item) =>
+      normalizeUserDocument(parseDoc<FirestoreUserDocument>(item)),
+    );
+  } catch (error) {
+    throw attachErrorContext(error, {
+      collection: FIRESTORE_COLLECTIONS.users,
+      operation: 'where-teamId',
+      query: 'fetchUsersByTeamId',
+      teamId,
+    });
+  }
 }
 
 async function fetchTeamMembersByUserId(userId: string) {
@@ -1081,18 +1203,20 @@ async function fetchAccessibleTeamsResultByIds(teamIds: string[], userId: string
 }
 
 async function getOwnedTeamsCount(userId: string) {
-  const firestore = requireFirestore();
-  const snapshot = await getDocs(
-    query(
-      collection(firestore, FIRESTORE_COLLECTIONS.teams),
-      where('adminUserId', '==', userId),
-    ),
+  const memberships = sortMembershipsByPriority(await fetchTeamMembersByUserId(userId)).filter(
+    (membership) => membership.status === 'active' && membership.roles.includes('admin'),
   );
 
-  return getOwnedTeamsCountFromTeams(
-    snapshot.docs.map((item) => normalizeTeamDocument(parseDoc<FirestoreTeamDocument>(item))),
+  if (memberships.length === 0) {
+    return 0;
+  }
+
+  const { teams } = await fetchAccessibleTeamsResultByIds(
+    memberships.map((membership) => membership.teamId),
     userId,
   );
+
+  return getOwnedTeamsCountFromTeams(teams, userId);
 }
 
 async function fetchPlayersByTeamId(teamId: string) {
@@ -1622,22 +1746,105 @@ async function fetchSeasonsByTeamId(teamId: string) {
   return snapshot.docs.map((item) => parseDoc<FirestoreSeasonDocument>(item)) as Season[];
 }
 
-async function fetchTeamByInviteCode(inviteCode: string) {
+async function fetchPublicTeamById(teamId: string) {
   const firestore = requireFirestore();
-  const normalizedInviteCode = normalizeInviteCode(inviteCode);
-  const snapshot = await getDocs(
-    query(
-      collection(firestore, FIRESTORE_COLLECTIONS.teams),
-      where('inviteCode', '==', normalizedInviteCode),
-    ),
-  );
+  const snapshot = await getDoc(doc(firestore, FIRESTORE_COLLECTIONS.publicTeams, teamId));
 
-  const teamDocument = snapshot.docs[0];
-  if (!teamDocument) {
+  if (!snapshot.exists()) {
     return null;
   }
 
-  return normalizeTeamDocument(parseDoc<FirestoreTeamDocument>(teamDocument));
+  return normalizePublicTeamDocument(parseDoc<FirestorePublicTeamDocument>(snapshot));
+}
+
+async function fetchTeamInviteByCode(inviteCode: string) {
+  const firestore = requireFirestore();
+  const normalizedInviteCode = normalizeInviteCode(inviteCode);
+
+  if (!normalizedInviteCode) {
+    return null;
+  }
+
+  const snapshot = await getDoc(
+    doc(firestore, FIRESTORE_COLLECTIONS.teamInvites, normalizedInviteCode),
+  );
+
+  if (!snapshot.exists()) {
+    return null;
+  }
+
+  return normalizeTeamInviteDocument(parseDoc<FirestoreTeamInviteDocument>(snapshot));
+}
+
+async function buildPublicTeamProjection(team: Team, syncedAt = nowIso()) {
+  const [matches, players] = await Promise.all([
+    fetchMatchesByTeamId(team.id),
+    team.publicRosterEnabled ? fetchPlayersByTeamId(team.id) : Promise.resolve([] as Player[]),
+  ]);
+
+  return buildPublicTeamDocument({
+    team,
+    matches,
+    players,
+    syncedAt,
+  });
+}
+
+function buildPublicTeamSyncMutations(
+  teamId: string,
+  publicTeam: FirestorePublicTeamDocument | null,
+) {
+  const firestore = requireFirestore();
+
+  if (!publicTeam) {
+    return [
+      {
+        type: 'delete' as const,
+        ref: doc(firestore, FIRESTORE_COLLECTIONS.publicTeams, teamId),
+      },
+    ];
+  }
+
+  return [
+    {
+      type: 'set' as const,
+      ref: doc(firestore, FIRESTORE_COLLECTIONS.publicTeams, teamId),
+      data: publicTeam,
+    },
+  ];
+}
+
+function buildTeamInviteSyncMutations(
+  team: Team,
+  options?: {
+    previousInviteCode?: string | null;
+  },
+) {
+  const firestore = requireFirestore();
+  const invite = buildTeamInviteDocument(team, team.updatedAt);
+  const previousInviteCode = normalizeInviteCode(options?.previousInviteCode ?? '');
+  const mutations: FirestoreBatchMutation[] = [];
+
+  if (previousInviteCode && previousInviteCode !== invite.code) {
+    mutations.push({
+      type: 'delete',
+      ref: doc(firestore, FIRESTORE_COLLECTIONS.teamInvites, previousInviteCode),
+    });
+  }
+
+  mutations.push({
+    type: 'set',
+    ref: doc(firestore, FIRESTORE_COLLECTIONS.teamInvites, invite.code),
+    data: invite,
+  });
+
+  return mutations;
+}
+
+async function syncPublicTeamProjection(team: Team, syncedAt = nowIso()) {
+  const publicTeam = await buildPublicTeamProjection(team, syncedAt);
+  await commitFirestoreBatchMutations(buildPublicTeamSyncMutations(team.id, publicTeam));
+  return publicTeam;
 }
 
 async function loadTeamRatingCriteria(teamId: string) {
@@ -1668,7 +1875,45 @@ async function persistTeamRatingCriteria(
   return normalizedCriteria;
 }
 
-async function ensureCurrentUserDocument(sessionUserOverride?: AuthSessionUser | null) {
+function buildCurrentUserDocumentWithSessionProfile(
+  currentUser: User,
+  sessionUser: AuthSessionUser,
+  now: string,
+) {
+  const seedUser = buildCurrentUserSeedDocument(sessionUser, currentUser.createdAt);
+
+  return normalizeUserDocument({
+    ...currentUser,
+    email: seedUser.email,
+    displayName: seedUser.displayName,
+    avatarUrl: seedUser.avatarUrl,
+    updatedAt: now,
+  });
+}
+
+function buildCurrentUserRulesError(
+  sessionUser: AuthSessionUser,
+  error: unknown,
+  operation: string,
+) {
+  return createRepositoryError(USER_ACCOUNT_PERMISSION_MESSAGE, 'permission-denied', {
+    cause: error,
+    context: mergeErrorContext(
+      error instanceof Error ? (error as ErrorWithCode).context : undefined,
+      {
+        collection: FIRESTORE_COLLECTIONS.users,
+        operation,
+        userId: sessionUser.authId,
+      },
+    ),
+    partialSnapshot:
+      error instanceof Error ? (error as ErrorWithCode).partialSnapshot : undefined,
+  });
+}
+
+async function loadCurrentUserDocumentForBootstrap(
+  sessionUserOverride?: AuthSessionUser | null,
+) {
   const sessionUser =
     sessionUserOverride ??
     authService.getCurrentUser() ??
@@ -1706,41 +1951,18 @@ async function ensureCurrentUserDocument(sessionUserOverride?: AuthSessionUser |
       context: error instanceof Error ? (error as ErrorWithCode).context : undefined,
     });
 
-    try {
-      await setDoc(userRef, seedUser, { merge: true });
-      logAuthLink('user-doc', {
-        userId: sessionUser.authId,
-        exists: 'unknown',
-        repairedBy: 'merge-upsert-after-read-denied',
-        activeTeamId: null,
-      });
-      return seedUser;
-    } catch (writeError) {
-      logAuthLink('permission-denied', {
-        stage: 'upsert-current-user',
-        userId: sessionUser.authId,
-        code: extractErrorCode(writeError),
-        message: writeError instanceof Error ? writeError.message : 'Erro desconhecido.',
-        context:
-          writeError instanceof Error
-            ? (writeError as ErrorWithCode).context
-            : undefined,
-      });
-      throw writeError;
-    }
+    throw buildCurrentUserRulesError(sessionUser, error, 'get-current-user');
   }
 
   if (!existing.exists()) {
-    const user: FirestoreUserDocument = seedUser;
-
-    await setDoc(userRef, user);
     logAuthLink('user-doc', {
       userId: sessionUser.authId,
       exists: false,
-      created: true,
-      activeTeamId: user.activeTeamId,
+      created: false,
+      source: 'session-seed-no-write',
+      activeTeamId: seedUser.activeTeamId,
     });
-    return user;
+    return seedUser;
   }
 
   const rawUser = existing.data() as LegacyCompatibleUserDocument | undefined;
@@ -1762,22 +1984,145 @@ async function ensureCurrentUserDocument(sessionUserOverride?: AuthSessionUser |
     currentUser.avatarUrl !== seedUser.avatarUrl ||
     needsMigration
   ) {
-    const updatedUser = normalizeUserDocument({
-      ...currentUser,
-      email: seedUser.email,
-      displayName: seedUser.displayName,
-      avatarUrl: seedUser.avatarUrl,
-      updatedAt: now,
+    logAuthLink('user-doc', {
+      userId: sessionUser.authId,
+      exists: true,
+      migrated: false,
+      pendingSync: true,
+      activeTeamId: currentUser.activeTeamId ?? null,
     });
+    return buildCurrentUserDocumentWithSessionProfile(currentUser, sessionUser, now);
+  }
 
-    await setDoc(userRef, updatedUser);
+  logAuthLink('user-doc', {
+    userId: sessionUser.authId,
+    exists: true,
+    migrated: false,
+    activeTeamId: currentUser.activeTeamId ?? null,
+  });
+  return currentUser;
+}
+
+async function ensureCurrentUserDocumentAfterLogin(
+  sessionUserOverride?: AuthSessionUser | null,
+) {
+  const sessionUser =
+    sessionUserOverride ??
+    authService.getCurrentUser() ??
+    (await authService.restoreSession());
+
+  if (!sessionUser) {
+    return null;
+  }
+
+  const firestore = requireFirestore();
+  const userRef = doc(firestore, FIRESTORE_COLLECTIONS.users, sessionUser.authId);
+  const now = nowIso();
+  const seedUser = buildCurrentUserSeedDocument(sessionUser, now);
+  let existing: DocumentSnapshot<DocumentData>;
+
+  try {
+    existing = await runLoggedBootstrapQuery(
+      {
+        collection: FIRESTORE_COLLECTIONS.users,
+        operation: 'ensure-current-user-after-login',
+        userId: sessionUser.authId,
+      },
+      async () => await getDoc(userRef),
+    );
+  } catch (error) {
+    if (extractErrorCode(error) === 'permission-denied') {
+      logAuthLink('permission-denied', {
+        stage: 'ensure-current-user-after-login',
+        userId: sessionUser.authId,
+        code: extractErrorCode(error),
+        message: error instanceof Error ? error.message : 'Erro desconhecido.',
+        context: error instanceof Error ? (error as ErrorWithCode).context : undefined,
+      });
+      throw buildCurrentUserRulesError(sessionUser, error, 'ensure-current-user-after-login');
+    }
+
+    throw error;
+  }
+
+  if (!existing.exists()) {
+    try {
+      await setDoc(userRef, seedUser);
+    } catch (error) {
+      if (extractErrorCode(error) === 'permission-denied') {
+        logAuthLink('permission-denied', {
+          stage: 'create-current-user-after-login',
+          userId: sessionUser.authId,
+          code: extractErrorCode(error),
+          message: error instanceof Error ? error.message : 'Erro desconhecido.',
+          context: error instanceof Error ? (error as ErrorWithCode).context : undefined,
+        });
+        throw buildCurrentUserRulesError(sessionUser, error, 'create-current-user-after-login');
+      }
+
+      throw error;
+    }
+
+    logAuthLink('user-doc', {
+      userId: sessionUser.authId,
+      exists: false,
+      created: true,
+      activeTeamId: seedUser.activeTeamId,
+    });
+    return seedUser;
+  }
+
+  const rawUser = existing.data() as LegacyCompatibleUserDocument | undefined;
+  const currentUser = normalizeUserDocument(
+    parseDoc<LegacyCompatibleUserDocument>(existing),
+  );
+  const nextUser = buildCurrentUserDocumentWithSessionProfile(currentUser, sessionUser, now);
+  const needsMigration =
+    rawUser?.appRole == null ||
+    rawUser?.canCreateTeam == null ||
+    rawUser?.activeTeamId === undefined ||
+    rawUser?.teamId === undefined ||
+    rawUser?.playerId === undefined ||
+    rawUser?.avatarUrl === undefined ||
+    rawUser?.notificationTokens === undefined;
+  const shouldPersist =
+    currentUser.email !== nextUser.email ||
+    currentUser.displayName !== nextUser.displayName ||
+    currentUser.avatarUrl !== nextUser.avatarUrl ||
+    currentUser.appRole !== nextUser.appRole ||
+    currentUser.canCreateTeam !== nextUser.canCreateTeam ||
+    currentUser.activeTeamId !== nextUser.activeTeamId ||
+    currentUser.teamId !== nextUser.teamId ||
+    currentUser.playerId !== nextUser.playerId ||
+    JSON.stringify(currentUser.notificationTokens ?? []) !==
+      JSON.stringify(nextUser.notificationTokens ?? []) ||
+    needsMigration;
+
+  if (shouldPersist) {
+    try {
+      await setDoc(userRef, nextUser);
+    } catch (error) {
+      if (extractErrorCode(error) === 'permission-denied') {
+        logAuthLink('permission-denied', {
+          stage: 'update-current-user-after-login',
+          userId: sessionUser.authId,
+          code: extractErrorCode(error),
+          message: error instanceof Error ? error.message : 'Erro desconhecido.',
+          context: error instanceof Error ? (error as ErrorWithCode).context : undefined,
+        });
+        throw buildCurrentUserRulesError(sessionUser, error, 'update-current-user-after-login');
+      }
+
+      throw error;
+    }
+
     logAuthLink('user-doc', {
       userId: sessionUser.authId,
       exists: true,
       migrated: true,
-      activeTeamId: updatedUser.activeTeamId ?? null,
+      activeTeamId: nextUser.activeTeamId ?? null,
     });
-    return updatedUser;
+    return nextUser;
   }
 
   logAuthLink('user-doc', {
@@ -1794,6 +2139,7 @@ function buildTeamMemberDocument(input: {
   userId: string;
   teamId: string;
   playerId: string | null;
+  inviteCodeUsed?: string | null;
   roles: TeamMember['roles'];
   canManageTeam: boolean;
   canManagePlayers: boolean;
@@ -1807,6 +2153,7 @@ function buildTeamMemberDocument(input: {
     userId: input.userId,
     teamId: input.teamId,
     playerId: input.playerId,
+    inviteCodeUsed: input.inviteCodeUsed ?? null,
     roles: input.roles,
     canManageTeam: input.canManageTeam,
     canManagePlayers: input.canManagePlayers,
@@ -1877,6 +2224,7 @@ async function reconcileDuplicateMemberships(
       doc(firestore, FIRESTORE_COLLECTIONS.teamMembers, mergedMembership.id),
       mergedMembership,
     );
+    applyFirestoreBatchMutation(batch, buildTeamMembershipIndexMutation(mergedMembership));
     normalizedById.set(mergedMembership.id, mergedMembership);
 
     for (const duplicate of sortedItems.slice(1)) {
@@ -1891,6 +2239,7 @@ async function reconcileDuplicateMemberships(
         doc(firestore, FIRESTORE_COLLECTIONS.teamMembers, inactiveMembership.id),
         inactiveMembership,
       );
+      applyFirestoreBatchMutation(batch, buildTeamMembershipIndexMutation(inactiveMembership));
       normalizedById.set(inactiveMembership.id, inactiveMembership);
     }
   }
@@ -1933,6 +2282,38 @@ async function persistUserContext(
 
   await setDoc(doc(firestore, FIRESTORE_COLLECTIONS.users, user.id), updatedUser);
   return updatedUser;
+}
+
+async function repairActiveTeam(user: User) {
+  const memberships = sortMembershipsByPriority(await fetchTeamMembersByUserId(user.id)).filter(
+    (membership) => membership.status === 'active',
+  );
+  const { teams } = await fetchAccessibleTeamsResultByIds(
+    memberships.map((membership) => membership.teamId),
+    user.id,
+  );
+  const teamsById = new Map(teams.map((team) => [team.id, team]));
+  const nextActiveMembership =
+    memberships.find(
+      (membership) =>
+        membership.teamId === user.activeTeamId && teamsById.has(membership.teamId),
+    ) ??
+    memberships.find((membership) => teamsById.has(membership.teamId)) ??
+    null;
+
+  logAuthLink('repair-active-team', {
+    userId: user.id,
+    previousActiveTeamId: user.activeTeamId ?? null,
+    nextActiveTeamId: nextActiveMembership?.teamId ?? null,
+    reason: nextActiveMembership ? 'login-sync' : 'no-active-membership',
+  });
+
+  return await persistUserContext(user, nextActiveMembership, teamsById);
+}
+
+async function repairUserContext(user: User) {
+  await repairCurrentUserMembershipsByLinkedPlayers(user);
+  return await repairActiveTeam(user);
 }
 
 async function repairCurrentUserMembershipsByLinkedPlayers(user: User) {
@@ -2117,13 +2498,26 @@ async function buildSafeSnapshotWithoutActiveTeam(
   });
 }
 
+type EnsureMembershipsForUserOptions = {
+  allowActiveTeamFallback?: boolean;
+  allowLocalContextFallbackOnWriteFailure?: boolean;
+  allowMembershipNormalizationWrites?: boolean;
+  allowRepairMembershipsFromLinkedPlayers?: boolean;
+  allowRepairMembershipPlayerLink?: boolean;
+  allowPersistUserContext?: boolean;
+};
+
 async function ensureMembershipsForUser(
   user: User,
-  options?: {
-    allowActiveTeamFallback?: boolean;
-    allowLocalContextFallbackOnWriteFailure?: boolean;
-  },
+  options?: EnsureMembershipsForUserOptions,
 ) {
+  const allowMembershipNormalizationWrites =
+    options?.allowMembershipNormalizationWrites !== false;
+  const allowRepairMembershipsFromLinkedPlayers =
+    options?.allowRepairMembershipsFromLinkedPlayers !== false;
+  const allowRepairMembershipPlayerLink =
+    options?.allowRepairMembershipPlayerLink !== false;
+  const allowPersistUserContext = options?.allowPersistUserContext !== false;
   let accessNotice: string | null = null;
   let fetchedMemberships: TeamMember[];
 
@@ -2143,10 +2537,9 @@ async function ensureMembershipsForUser(
     throw error;
   }
 
-  let memberships = await reconcileDuplicateMemberships(
-    user.id,
-    fetchedMemberships,
-  );
+  let memberships = allowMembershipNormalizationWrites
+    ? await reconcileDuplicateMemberships(user.id, fetchedMemberships)
+    : fetchedMemberships;
   const legacyTeamId = user.activeTeamId ?? user.teamId ?? null;
 
   logAuthLink('memberships', {
@@ -2157,7 +2550,7 @@ async function ensureMembershipsForUser(
     teamIds: [...new Set(memberships.map((membership) => membership.teamId))],
   });
 
-  if (memberships.length === 0) {
+  if (memberships.length === 0 && allowRepairMembershipsFromLinkedPlayers) {
     try {
       await repairCurrentUserMembershipsByLinkedPlayers(user);
       memberships = await reconcileDuplicateMemberships(
@@ -2287,7 +2680,7 @@ async function ensureMembershipsForUser(
     });
   }
 
-  if (activeMembership?.roles.includes('player')) {
+  if (allowRepairMembershipPlayerLink && activeMembership?.roles.includes('player')) {
     const activeTeam = teamsById.get(activeMembership.teamId) ?? null;
 
     if (activeTeam) {
@@ -2311,35 +2704,39 @@ async function ensureMembershipsForUser(
   let syncedUser = currentUser;
 
   if (contextOutOfSync) {
-    try {
-      syncedUser = await persistUserContext(currentUser, activeMembership, teamsById);
-    } catch (error) {
-      if (
-        extractErrorCode(error) !== 'permission-denied' ||
-        options?.allowLocalContextFallbackOnWriteFailure !== true
-      ) {
-        throw error;
-      }
-
-      accessNotice = accessNotice ?? LOST_TEAM_ACCESS_MESSAGE;
+    if (!allowPersistUserContext) {
       syncedUser = buildUserContextDocument(currentUser, activeMembership, teamsById);
+    } else {
+      try {
+        syncedUser = await persistUserContext(currentUser, activeMembership, teamsById);
+      } catch (error) {
+        if (
+          extractErrorCode(error) !== 'permission-denied' ||
+          options?.allowLocalContextFallbackOnWriteFailure !== true
+        ) {
+          throw error;
+        }
 
-      if (__DEV__) {
-        console.warn(
-          '[bootstrap-firestore] local-only user context fallback',
-          JSON.stringify(
-            {
-              userId: user.id,
-              activeTeamId: currentUser.activeTeamId ?? null,
-              nextActiveTeamId: activeMembership?.teamId ?? null,
-              code: extractErrorCode(error),
-              message: error instanceof Error ? error.message : 'Erro desconhecido.',
-              context: error instanceof Error ? (error as ErrorWithCode).context : undefined,
-            },
-            null,
-            2,
-          ),
-        );
+        accessNotice = accessNotice ?? LOST_TEAM_ACCESS_MESSAGE;
+        syncedUser = buildUserContextDocument(currentUser, activeMembership, teamsById);
+
+        if (__DEV__) {
+          console.warn(
+            '[bootstrap-firestore] local-only user context fallback',
+            JSON.stringify(
+              {
+                userId: user.id,
+                activeTeamId: currentUser.activeTeamId ?? null,
+                nextActiveTeamId: activeMembership?.teamId ?? null,
+                code: extractErrorCode(error),
+                message: error instanceof Error ? error.message : 'Erro desconhecido.',
+                context: error instanceof Error ? (error as ErrorWithCode).context : undefined,
+              },
+              null,
+              2,
+            ),
+          );
+        }
       }
     }
   }
@@ -2364,7 +2761,10 @@ async function buildSnapshotForResolvedUser(currentUser: User): Promise<AppSnaps
   try {
     resolvedMemberships = await ensureMembershipsForUser(currentUser, {
       allowActiveTeamFallback: true,
-      allowLocalContextFallbackOnWriteFailure: true,
+      allowMembershipNormalizationWrites: false,
+      allowRepairMembershipsFromLinkedPlayers: false,
+      allowRepairMembershipPlayerLink: false,
+      allowPersistUserContext: false,
     });
   } catch (error) {
     if (extractErrorCode(error) !== 'permission-denied') {
@@ -2499,7 +2899,7 @@ async function buildSnapshotForCurrentUser(): Promise<AppSnapshot> {
       activeTeamId: null,
     },
     async () => {
-      const currentUser = await ensureCurrentUserDocument(sessionUser);
+      const currentUser = await loadCurrentUserDocumentForBootstrap(sessionUser);
 
       if (!currentUser) {
         return emptySnapshot;
@@ -2520,7 +2920,7 @@ async function buildSnapshotForUserId(userId: string): Promise<AppSnapshot> {
     async () => {
       const currentUser =
         sessionUser?.authId === userId
-          ? await ensureCurrentUserDocument(sessionUser)
+          ? await loadCurrentUserDocumentForBootstrap(sessionUser)
           : await fetchUserById(userId);
 
       if (!currentUser) {
@@ -2611,8 +3011,8 @@ async function createUniqueInviteCode(excludedTeamId?: string) {
   let inviteCode = createInviteCode();
 
   while (true) {
-    const team = await fetchTeamByInviteCode(inviteCode);
-    if (!team || team.id === excludedTeamId) {
+    const invite = await fetchTeamInviteByCode(inviteCode);
+    if (!invite || invite.teamId === excludedTeamId) {
       return inviteCode;
     }
 
@@ -2991,6 +3391,7 @@ async function createFinishedMatchRecord(input: {
   }
 
   await batch.commit();
+  await syncPublicTeamProjection(input.team, updatedAt);
   return match;
 }
 
@@ -3144,6 +3545,7 @@ async function ensureMembershipPlayerLink(input: {
     membership = buildTeamMemberDocument({
       ...membership,
       playerId: player.id,
+      inviteCodeUsed: membership.inviteCodeUsed ?? null,
       roles: nextMembershipRoles,
       canManageTeam: membership.canManageTeam,
       canManagePlayers: membership.canManagePlayers,
@@ -3153,6 +3555,7 @@ async function ensureMembershipPlayerLink(input: {
       doc(firestore, FIRESTORE_COLLECTIONS.teamMembers, membership.id),
       membership,
     );
+    applyFirestoreBatchMutation(batch, buildTeamMembershipIndexMutation(membership));
     hasChanges = true;
   }
 
@@ -3344,12 +3747,7 @@ async function commitFirestoreBatchMutations(mutations: FirestoreBatchMutation[]
     const batch = writeBatch(firestore);
 
     for (const mutation of mutations.slice(index, index + FIRESTORE_BATCH_WRITE_LIMIT)) {
-      if (mutation.type === 'delete') {
-        batch.delete(mutation.ref);
-        continue;
-      }
-
-      batch.set(mutation.ref, mutation.data!);
+      applyFirestoreBatchMutation(batch, mutation);
     }
 
     await batch.commit();
@@ -3376,6 +3774,7 @@ async function upsertTeamMemberDocument(input: {
   userId: string;
   teamId: string;
   playerId: string | null;
+  inviteCodeUsed?: string | null;
   roles: TeamMember['roles'];
   canManageTeam?: boolean;
   canManagePlayers?: boolean;
@@ -3400,6 +3799,10 @@ async function upsertTeamMemberDocument(input: {
     userId: input.userId,
     teamId: input.teamId,
     playerId: input.playerId,
+    inviteCodeUsed:
+      input.inviteCodeUsed !== undefined
+        ? input.inviteCodeUsed
+        : existingMembership?.inviteCodeUsed ?? null,
     roles,
     canManageTeam:
       input.canManageTeam ?? existingMembership?.canManageTeam ?? roles.includes('admin'),
@@ -3413,7 +3816,10 @@ async function upsertTeamMemberDocument(input: {
     status: input.status ?? existingMembership?.status ?? 'active',
   });
 
-  await setDoc(membershipRef, membership);
+  const batch = writeBatch(firestore);
+  batch.set(membershipRef, membership);
+  applyFirestoreBatchMutation(batch, buildTeamMembershipIndexMutation(membership));
+  await batch.commit();
   return membership;
 }
 
@@ -3443,7 +3849,32 @@ async function linkPlayerToUserIfEmailMatches(input: {
   }
 
   if (!linkedUser && normalizedLinkedEmail) {
-    linkedUser = await fetchUserByEmail(normalizedLinkedEmail);
+    try {
+      linkedUser = await fetchUserByEmail(normalizedLinkedEmail);
+    } catch (error) {
+      if (extractErrorCode(error) !== 'permission-denied') {
+        throw error;
+      }
+
+      if (__DEV__) {
+        console.warn(
+          '[auth-link] permission-denied',
+          JSON.stringify(
+            {
+              stage: 'fetch-user-by-email-for-player-link',
+              email: normalizedLinkedEmail,
+              code: extractErrorCode(error),
+              message: error instanceof Error ? error.message : 'Erro desconhecido.',
+              context: error instanceof Error ? (error as ErrorWithCode).context : undefined,
+            },
+            null,
+            2,
+          ),
+        );
+      }
+
+      linkedUser = null;
+    }
   }
 
   if (!linkedUser) {
@@ -3522,10 +3953,14 @@ async function clearLinkedUserMembershipPlayer(input: {
     playerId: null,
     updatedAt: input.updatedAt,
   });
-  await setDoc(
-    doc(firestore, FIRESTORE_COLLECTIONS.teamMembers, membership.id),
-    updatedMembership,
-  );
+  await commitFirestoreBatchMutations([
+    {
+      type: 'set',
+      ref: doc(firestore, FIRESTORE_COLLECTIONS.teamMembers, membership.id),
+      data: updatedMembership,
+    },
+    buildTeamMembershipIndexMutation(updatedMembership),
+  ]);
 
   const linkedUser = await fetchUserById(input.linkedUserId);
   if (
@@ -3570,24 +4005,15 @@ export const firebaseRepository: AppRepository = {
   async listPublicTeams(actorUserId: string) {
     try {
       const firestore = requireFirestore();
-      await fetchUserById(actorUserId);
+      void actorUserId;
       const publicTeamsSnapshot = await getDocs(
-        query(
-          collection(firestore, FIRESTORE_COLLECTIONS.teams),
-          where('isPublic', '==', true),
-        ),
+        collection(firestore, FIRESTORE_COLLECTIONS.publicTeams),
       );
       const publicTeams = publicTeamsSnapshot.docs.map((item) =>
-        normalizeTeamDocument(parseDoc<FirestoreTeamDocument>(item)),
+        normalizePublicTeamDocument(parseDoc<FirestorePublicTeamDocument>(item)),
       );
-      const summaries = (
-        await Promise.all(
-          publicTeams.map(async (team) =>
-            buildPublicTeamSummary(team, await fetchMatchesByTeamId(team.id)),
-          ),
-        )
-      )
-        .filter((team): team is PublicTeamSummary => Boolean(team))
+      const summaries = publicTeams
+        .map((team) => toPublicTeamSummary(team))
         .sort((left, right) => {
           const stateOrder = left.state.localeCompare(right.state);
 
@@ -3615,14 +4041,9 @@ export const firebaseRepository: AppRepository = {
 
   async getPublicTeamProfile(teamId: string, actorUserId: string) {
     try {
-      await fetchUserById(actorUserId);
-      const team = await fetchTeamById(teamId);
-      const [matches, players] = await Promise.all([
-        fetchMatchesByTeamId(team.id),
-        fetchPlayersByTeamId(team.id),
-      ]);
-
-      return buildPublicTeamProfile(team, matches, players);
+      void actorUserId;
+      const team = await fetchPublicTeamById(teamId);
+      return team ? toPublicTeamProfile(team) : null;
     } catch (error) {
       throw toFriendlyFirestoreError(
         error,
@@ -3971,10 +4392,18 @@ export const firebaseRepository: AppRepository = {
   async login(input) {
     try {
       await authService.login(input);
-      const user = await ensureCurrentUserDocument();
+      let user = await ensureCurrentUserDocumentAfterLogin();
 
       if (!user) {
         throw createRepositoryError('Não foi possível abrir a sessão do usuário.');
+      }
+
+      try {
+        user = await repairActiveTeam(user);
+      } catch (error) {
+        if (extractErrorCode(error) !== 'permission-denied') {
+          throw error;
+        }
       }
 
       return user;
@@ -3989,10 +4418,18 @@ export const firebaseRepository: AppRepository = {
   async loginWithGoogle(input: GoogleLoginInput) {
     try {
       await authService.loginWithGoogle(input);
-      const user = await ensureCurrentUserDocument();
+      let user = await ensureCurrentUserDocumentAfterLogin();
 
       if (!user) {
         throw createRepositoryError('Não foi possível abrir a sessão do usuário.');
+      }
+
+      try {
+        user = await repairActiveTeam(user);
+      } catch (error) {
+        if (extractErrorCode(error) !== 'permission-denied') {
+          throw error;
+        }
       }
 
       return user;
@@ -4007,10 +4444,18 @@ export const firebaseRepository: AppRepository = {
   async register(input) {
     try {
       await authService.register(input);
-      const user = await ensureCurrentUserDocument();
+      let user = await ensureCurrentUserDocumentAfterLogin();
 
       if (!user) {
         throw createRepositoryError('Não foi possível criar a conta agora.');
+      }
+
+      try {
+        user = await repairActiveTeam(user);
+      } catch (error) {
+        if (extractErrorCode(error) !== 'permission-denied') {
+          throw error;
+        }
       }
 
       return user;
@@ -4089,6 +4534,7 @@ export const firebaseRepository: AppRepository = {
         userId: admin.id,
         teamId: team.id,
         playerId: ownerPlayer.id,
+        inviteCodeUsed: null,
         roles: ['admin', 'player'],
         canManageTeam: true,
         canManagePlayers: true,
@@ -4108,8 +4554,14 @@ export const firebaseRepository: AppRepository = {
 
       const batch = writeBatch(firestore);
       batch.set(teamRef, team);
+      for (const mutation of buildTeamInviteSyncMutations(team)) {
+        if (mutation.type === 'set' && mutation.data) {
+          batch.set(mutation.ref, mutation.data);
+        }
+      }
       batch.set(ownerPlayerRef, ownerPlayer);
       batch.set(membershipRef, membership);
+      applyFirestoreBatchMutation(batch, buildTeamMembershipIndexMutation(membership));
       for (const criterion of ratingCriteria) {
         batch.set(
           doc(firestore, FIRESTORE_COLLECTIONS.ratingCriteria, criterion.id),
@@ -4201,8 +4653,18 @@ export const firebaseRepository: AppRepository = {
         publicRosterEnabled: publicProfile.publicRosterEnabled,
         updatedAt,
       });
+      const publicTeam = await buildPublicTeamProjection(updatedTeam, updatedAt);
+      const batch = writeBatch(firestore);
+      batch.set(doc(firestore, FIRESTORE_COLLECTIONS.teams, currentTeam.id), updatedTeam);
+      for (const mutation of buildPublicTeamSyncMutations(updatedTeam.id, publicTeam)) {
+        if (mutation.type === 'set' && mutation.data) {
+          batch.set(mutation.ref, mutation.data);
+          continue;
+        }
 
-      await setDoc(doc(firestore, FIRESTORE_COLLECTIONS.teams, currentTeam.id), updatedTeam);
+        batch.delete(mutation.ref);
+      }
+      await batch.commit();
       return updatedTeam;
     } catch (error) {
       throw toFriendlyFirestoreError(
@@ -4301,9 +4763,24 @@ export const firebaseRepository: AppRepository = {
           type: 'delete' as const,
           ref: doc(firestore, FIRESTORE_COLLECTIONS.teamMembers, membership.id),
         })),
+        ...teamMembers.map((membership) =>
+          buildTeamMembershipIndexDeleteMutation(membership.teamId, membership.userId),
+        ),
         {
           type: 'delete' as const,
           ref: doc(firestore, FIRESTORE_COLLECTIONS.teams, team.id),
+        },
+        {
+          type: 'delete' as const,
+          ref: doc(firestore, FIRESTORE_COLLECTIONS.publicTeams, team.id),
+        },
+        {
+          type: 'delete' as const,
+          ref: doc(
+            firestore,
+            FIRESTORE_COLLECTIONS.teamInvites,
+            normalizeInviteCode(team.inviteCode),
+          ),
         },
         ...players.map((player) => ({
           type: 'delete' as const,
@@ -4383,8 +4860,19 @@ export const firebaseRepository: AppRepository = {
         inviteCodeUpdatedAt: updatedAt,
         updatedAt,
       });
+      const batch = writeBatch(firestore);
+      batch.set(doc(firestore, FIRESTORE_COLLECTIONS.teams, currentTeam.id), updatedTeam);
+      for (const mutation of buildTeamInviteSyncMutations(updatedTeam, {
+        previousInviteCode: currentTeam.inviteCode,
+      })) {
+        if (mutation.type === 'set' && mutation.data) {
+          batch.set(mutation.ref, mutation.data);
+          continue;
+        }
 
-      await setDoc(doc(firestore, FIRESTORE_COLLECTIONS.teams, currentTeam.id), updatedTeam);
+        batch.delete(mutation.ref);
+      }
+      await batch.commit();
       return updatedTeam;
     } catch (error) {
       throw toFriendlyFirestoreError(
@@ -4574,74 +5062,35 @@ export const firebaseRepository: AppRepository = {
       const sessionUser = await fetchUserById(userId);
       const { user } = await ensureMembershipsForUser(sessionUser);
 
-      const team = await fetchTeamByInviteCode(inviteCode);
-      if (!team) {
+      const invite = await fetchTeamInviteByCode(inviteCode);
+      if (!invite) {
         throw createRepositoryError(
           'Não encontramos um time com esse código.',
           'not-found',
         );
       }
 
-      const existingMembership = await fetchTeamMemberByUserAndTeam(user.id, team.id);
+      const existingMembership = await fetchTeamMemberByUserAndTeam(user.id, invite.teamId);
       if (existingMembership?.status === 'active') {
-        await persistUserContext(
-          user,
-          existingMembership,
-          new Map([[team.id, team]]),
-        );
+        await persistUserContext(user, existingMembership, new Map());
+        const team = await fetchTeamById(invite.teamId);
         return {
           team,
           alreadyMember: true,
         };
       }
 
-      const teamPlayers = (await fetchPlayersByTeamId(team.id)).filter(isActivePlayer);
-      const normalizedUserEmail = normalizeEmail(user.email);
-      const existingPlayer =
-        teamPlayers.find((player) => player.linkedUserId === user.id) ??
-        teamPlayers.find(
-          (player) =>
-            !player.linkedUserId &&
-            normalizeEmail(player.linkedEmail ?? '') === normalizedUserEmail,
-        ) ??
-        null;
       const updatedAt = nowIso();
       const batch = writeBatch(firestore);
-      let playerId = existingPlayer?.id ?? null;
-
-      if (existingPlayer) {
-        const updatedPlayer = normalizePlayerDocument({
-          ...existingPlayer,
-          linkedUserId: user.id,
-          linkedEmail: normalizedUserEmail,
-          updatedAt,
-        });
-
-        batch.set(doc(firestore, FIRESTORE_COLLECTIONS.players, existingPlayer.id), updatedPlayer);
-        playerId = existingPlayer.id;
-      } else {
-        const playerRef = doc(collection(firestore, FIRESTORE_COLLECTIONS.players));
-        const basicPlayer = buildBasicPlayerFromUser(
-          team.id,
-          user,
-          await nextJerseyNumber(team.id),
-        );
-        const createdPlayer = normalizePlayerDocument({
-          ...basicPlayer,
-          id: playerRef.id,
-        });
-
-        batch.set(playerRef, createdPlayer);
-        playerId = createdPlayer.id;
-      }
 
       const membership = buildTeamMemberDocument({
         id:
           existingMembership?.id ??
           doc(collection(firestore, FIRESTORE_COLLECTIONS.teamMembers)).id,
         userId: user.id,
-        teamId: team.id,
-        playerId,
+        teamId: invite.teamId,
+        playerId: existingMembership?.playerId ?? null,
+        inviteCodeUsed: invite.code,
         roles: existingMembership?.roles.includes('admin')
           ? ['admin', 'player']
           : ['player'],
@@ -4654,23 +5103,23 @@ export const firebaseRepository: AppRepository = {
       });
       const updatedUser = normalizeUserDocument({
         ...user,
-        appRole: resolveTeamAppRole(user, team, membership),
-        activeTeamId: team.id,
-        teamId: team.id,
-        playerId,
+        appRole:
+          user.appRole === 'owner'
+            ? 'owner'
+            : membership.roles.includes('admin') || membership.canManageTeam
+              ? 'team_admin'
+              : 'player',
+        activeTeamId: invite.teamId,
+        teamId: invite.teamId,
+        playerId: membership.playerId ?? null,
         updatedAt,
       });
 
       batch.set(doc(firestore, FIRESTORE_COLLECTIONS.teamMembers, membership.id), membership);
+      applyFirestoreBatchMutation(batch, buildTeamMembershipIndexMutation(membership));
       batch.set(doc(firestore, FIRESTORE_COLLECTIONS.users, user.id), updatedUser);
       await batch.commit();
-
-      if (playerId) {
-        await ensureOpenMatchAttendanceForPlayer(
-          await fetchPlayerByIdForTeam(team.id, playerId),
-          updatedAt,
-        );
-      }
+      const team = await fetchTeamById(invite.teamId);
 
       return {
         team,
@@ -4751,6 +5200,7 @@ export const firebaseRepository: AppRepository = {
       }
 
       await ensureOpenMatchAttendanceForPlayer(player, now);
+      await syncPublicTeamProjection(team, now);
 
       return player;
     } catch (error) {
@@ -4912,6 +5362,7 @@ export const firebaseRepository: AppRepository = {
         }
 
         await ensureOpenMatchAttendanceForPlayer(updatedPlayer, now);
+        await syncPublicTeamProjection(currentTeam, now);
 
         return updatedPlayer;
       }
@@ -4974,6 +5425,7 @@ export const firebaseRepository: AppRepository = {
       });
 
       await setDoc(playerRef, updatedPlayer);
+      await syncPublicTeamProjection(currentTeam, now);
       return updatedPlayer;
     } catch (error) {
       throw toFriendlyFirestoreError(
@@ -5020,6 +5472,7 @@ export const firebaseRepository: AppRepository = {
         });
       }
 
+      await syncPublicTeamProjection(currentTeam, updatedAt);
       return updatedPlayer;
     } catch (error) {
       throw toFriendlyFirestoreError(
@@ -5123,6 +5576,7 @@ export const firebaseRepository: AppRepository = {
             doc(firestore, FIRESTORE_COLLECTIONS.teamMembers, updatedMembership.id),
             updatedMembership,
           );
+          applyFirestoreBatchMutation(batch, buildTeamMembershipIndexMutation(updatedMembership));
 
           const nextMemberships = (await fetchTeamMembersByUserId(linkedUser.id)).map(
             (membership) =>
@@ -5160,6 +5614,7 @@ export const firebaseRepository: AppRepository = {
         );
       }
 
+      await syncPublicTeamProjection(currentTeam, updatedAt);
       return updatedPlayer;
     } catch (error) {
       throw toFriendlyFirestoreError(
@@ -5253,6 +5708,7 @@ export const firebaseRepository: AppRepository = {
       }
 
       await ensureOpenMatchAttendanceForPlayer(updatedPlayer, now);
+      await syncPublicTeamProjection(currentTeam, now);
 
       return updatedPlayer;
     } catch (error) {
@@ -5427,6 +5883,7 @@ export const firebaseRepository: AppRepository = {
         }),
       );
       await batch.commit();
+      await syncPublicTeamProjection(await fetchTeamById(activeTeamId), updatedAt);
       return updatedMatch;
     } catch (error) {
       throw toFriendlyFirestoreError(
@@ -5879,6 +6336,7 @@ export const firebaseRepository: AppRepository = {
       }
 
       await batch.commit();
+      await syncPublicTeamProjection(await fetchTeamById(activeTeamId), updatedAt);
       return updatedMatch;
     } catch (error) {
       throw toFriendlyFirestoreError(

@@ -9,7 +9,10 @@ import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
-import { TEAM_ACCESS_PERMISSION_MESSAGE } from '@/constants/access-notices';
+import {
+  TEAM_ACCESS_PERMISSION_MESSAGE,
+  USER_ACCOUNT_PERMISSION_MESSAGE,
+} from '@/constants/access-notices';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
@@ -97,13 +100,19 @@ export default function TeamAccessScreen() {
         ),
     [memberships, teams],
   );
-  const isPermissionDeniedState = accessNotice === TEAM_ACCESS_PERMISSION_MESSAGE;
-  const emptyStateTitle = isPermissionDeniedState
-    ? 'Não foi possível carregar seus times'
-    : 'Você ainda não participa de nenhum time';
-  const emptyStateDescription = isPermissionDeniedState
-    ? TEAM_ACCESS_PERMISSION_MESSAGE
-    : 'Entre com um código de convite para começar a acompanhar seu elenco.';
+  const isUserAccountPermissionState = accessNotice === USER_ACCOUNT_PERMISSION_MESSAGE;
+  const isPermissionDeniedState =
+    isUserAccountPermissionState || accessNotice === TEAM_ACCESS_PERMISSION_MESSAGE;
+  const emptyStateTitle = isUserAccountPermissionState
+    ? 'Não foi possível carregar sua conta'
+    : isPermissionDeniedState
+      ? 'Não foi possível carregar seus times'
+      : 'Você ainda não participa de nenhum time';
+  const emptyStateDescription = isUserAccountPermissionState
+    ? USER_ACCOUNT_PERMISSION_MESSAGE
+    : isPermissionDeniedState
+      ? TEAM_ACCESS_PERMISSION_MESSAGE
+      : 'Entre com um código de convite para começar a acompanhar seu elenco.';
 
   useEffect(() => {
     if (!__DEV__) {

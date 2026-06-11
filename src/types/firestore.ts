@@ -8,9 +8,11 @@ import type {
   MvpVote,
   Player,
   PlayerRating,
+  PublicTeamProfile,
   Season,
   Team,
   TeamMember,
+  TeamMemberRole,
   TeamRatingCriterion,
   User,
 } from '@/types/domain';
@@ -18,6 +20,9 @@ import type {
 export const FIRESTORE_COLLECTIONS = {
   users: 'users',
   teams: 'teams',
+  publicTeams: 'publicTeams',
+  teamInvites: 'teamInvites',
+  teamMembershipIndex: 'teamMembershipIndex',
   teamMembers: 'teamMembers',
   players: 'players',
   matches: 'matches',
@@ -43,6 +48,41 @@ export type FirestoreCollectionName =
 
 export type FirestoreUserDocument = User;
 export type FirestoreTeamDocument = Team;
+export type FirestorePublicTeamDocument = PublicTeamProfile & {
+  adminUserId: string;
+  sourceTeamUpdatedAt: string;
+  syncedAt: string;
+};
+export type FirestoreTeamInviteDocument = {
+  id: string;
+  code: string;
+  teamId: string;
+  teamName: string;
+  teamSlug: string;
+  teamLogoUrl?: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor?: string | null;
+  adminUserId: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type FirestoreTeamMembershipIndexDocument = {
+  id: string;
+  membershipId: string;
+  sourceTeamMemberId: string;
+  teamId: string;
+  userId: string;
+  playerId: string | null;
+  role: TeamMemberRole | null;
+  roles: TeamMember['roles'];
+  canManageTeam: boolean;
+  canManagePlayers: boolean;
+  joinedAt: string;
+  status: TeamMember['status'];
+  createdAt: string;
+  updatedAt: string;
+};
 export type FirestoreTeamMemberDocument = TeamMember;
 export type FirestoreTeamRatingCriterionDocument = TeamRatingCriterion;
 export type FirestorePlayerDocument = Player;

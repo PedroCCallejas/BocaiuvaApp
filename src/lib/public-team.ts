@@ -1,4 +1,9 @@
 import { buildPublicTeamStatsFromMatches } from '@/lib/stats';
+import { normalizeInviteCode } from '@/lib/team';
+import type {
+  FirestorePublicTeamDocument,
+  FirestoreTeamInviteDocument,
+} from '@/types/firestore';
 import type {
   Match,
   Player,
@@ -214,6 +219,61 @@ export function buildPublicTeamProfile(
     presentationVideoUrl: team.presentationVideoUrl ?? null,
     publicRosterEnabled: team.publicRosterEnabled === true,
     roster: team.publicRosterEnabled === true ? buildRoster(players) : [],
+  };
+}
+
+export function buildPublicTeamDocument(input: {
+  team: Team;
+  matches: Match[];
+  players: Player[];
+  syncedAt?: string;
+}): FirestorePublicTeamDocument | null {
+  const profile = buildPublicTeamProfile(input.team, input.matches, input.players);
+
+  if (!profile) {
+    return null;
+  }
+
+  return {
+    ...profile,
+    adminUserId: input.team.adminUserId,
+    sourceTeamUpdatedAt: input.team.updatedAt,
+    syncedAt: input.syncedAt ?? input.team.updatedAt,
+  };
+}
+
+export function buildTeamInviteDocument(
+  team: Pick<
+    Team,
+    | 'id'
+    | 'inviteCode'
+    | 'inviteCodeUpdatedAt'
+    | 'name'
+    | 'slug'
+    | 'logoUrl'
+    | 'primaryColor'
+    | 'secondaryColor'
+    | 'accentColor'
+    | 'adminUserId'
+    | 'updatedAt'
+  >,
+  updatedAt = team.updatedAt,
+): FirestoreTeamInviteDocument {
+  const code = normalizeInviteCode(team.inviteCode);
+
+  return {
+    id: code,
+    code,
+    teamId: team.id,
+    teamName: team.name,
+    teamSlug: team.slug,
+    teamLogoUrl: team.logoUrl ?? null,
+    primaryColor: team.primaryColor,
+    secondaryColor: team.secondaryColor,
+    accentColor: team.accentColor ?? null,
+    adminUserId: team.adminUserId,
+    createdAt: team.inviteCodeUpdatedAt ?? updatedAt,
+    updatedAt,
   };
 }
 

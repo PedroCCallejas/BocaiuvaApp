@@ -5,6 +5,7 @@ import type { User } from '@/types/domain';
 import {
   LOST_TEAM_ACCESS_MESSAGE,
   TEAM_ACCESS_PERMISSION_MESSAGE,
+  USER_ACCOUNT_PERMISSION_MESSAGE,
 } from '@/constants/access-notices';
 
 type RepositoryPermissionDeniedError = Error & {
@@ -68,17 +69,24 @@ export function shouldShowTeamAccessPermissionMessage(error: unknown) {
   const collection =
     typeof context?.collection === 'string' ? context.collection : null;
 
-  return (
-    collection === 'users' ||
-    collection === 'teamMembers' ||
-    collection === 'teams'
-  );
+  return collection === 'teamMembers' || collection === 'teams';
+}
+
+export function shouldShowUserAccountPermissionMessage(error: unknown) {
+  const context = extractRepositoryErrorContext(error);
+  return context?.collection === 'users';
 }
 
 export function resolveBootstrapAccessNotice(error: unknown, snapshot: AppSnapshot) {
-  return shouldShowTeamAccessPermissionMessage(error)
-    ? TEAM_ACCESS_PERMISSION_MESSAGE
-    : snapshot.accessNotice;
+  if (shouldShowUserAccountPermissionMessage(error)) {
+    return USER_ACCOUNT_PERMISSION_MESSAGE;
+  }
+
+  if (shouldShowTeamAccessPermissionMessage(error)) {
+    return TEAM_ACCESS_PERMISSION_MESSAGE;
+  }
+
+  return snapshot.accessNotice;
 }
 
 export function extractRepositoryPartialSnapshot(error: unknown) {

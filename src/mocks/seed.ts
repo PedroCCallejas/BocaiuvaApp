@@ -1,6 +1,12 @@
 import { createDefaultTeamRatingCriteria } from '@/lib/rating-criteria';
+import { buildPublicTeamDocument, buildTeamInviteDocument } from '@/lib/public-team';
+import { buildTeamMembershipIndexDocument } from '@/lib/team-membership-index';
 import type { LegacyRatingCriterionId } from '@/types/domain';
 import type { MockDatabase } from '@/services/repository/types';
+import type {
+  FirestorePublicTeamDocument,
+  FirestoreTeamMembershipIndexDocument,
+} from '@/types/firestore';
 
 const criteriaKeys: LegacyRatingCriterionId[] = [
   'dedicacao',
@@ -25,7 +31,7 @@ const makeCriteria = (
   }, {} as Record<LegacyRatingCriterionId, number>);
 
 export function createSeedDatabase(): MockDatabase {
-  return {
+  const seed: MockDatabase = {
     users: [
       {
         id: 'user-admin',
@@ -762,5 +768,28 @@ export function createSeedDatabase(): MockDatabase {
         updatedAt: stamp('2026-04-24'),
       },
     ],
+    publicTeams: [],
+    teamInvites: [],
+    teamMembershipIndex: [],
   };
+
+  seed.publicTeams = seed.teams
+    .map((team) =>
+      buildPublicTeamDocument({
+        team,
+        matches: seed.matches.filter((match) => match.teamId === team.id),
+        players: seed.players.filter((player) => player.teamId === team.id),
+        syncedAt: team.updatedAt,
+      }),
+    )
+    .filter((team): team is FirestorePublicTeamDocument => team !== null);
+  seed.teamInvites = seed.teams.map((team) => buildTeamInviteDocument(team, team.updatedAt));
+  seed.teamMembershipIndex = seed.teamMembers
+    .filter((membership) => membership.status === 'active')
+    .map((membership) => buildTeamMembershipIndexDocument(membership))
+    .filter(
+      (membership): membership is FirestoreTeamMembershipIndexDocument => membership != null,
+    );
+
+  return seed;
 }

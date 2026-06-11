@@ -1,4 +1,9 @@
 import type {
+  FirestorePublicTeamDocument,
+  FirestoreTeamMembershipIndexDocument,
+  FirestoreTeamInviteDocument,
+} from '@/types/firestore';
+import type {
   AppNotification,
   AttendanceRecord,
   AttendanceStatus,
@@ -61,6 +66,9 @@ export interface UserCredential {
 
 export interface MockDatabase extends AppSnapshot {
   credentials: UserCredential[];
+  publicTeams: FirestorePublicTeamDocument[];
+  teamInvites: FirestoreTeamInviteDocument[];
+  teamMembershipIndex: FirestoreTeamMembershipIndexDocument[];
 }
 
 export const emptySnapshot: AppSnapshot = {

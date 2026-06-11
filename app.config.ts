@@ -1,43 +1,86 @@
 import type { ExpoConfig } from 'expo/config';
-import appJson from './app.json';
 
 const APP_NAME = 'Professô FC';
-const APP_SHORT_NAME = 'Professô FC';
 const APP_DESCRIPTION =
   'Organize seu time, monte escalações, acompanhe estatísticas e marque amistosos.';
 
-const baseConfig = appJson.expo as ExpoConfig;
-const basePlugins = (baseConfig.plugins ?? []).filter((plugin) => {
-  if (typeof plugin === 'string') {
-    return (
-      plugin !== 'react-native-google-mobile-ads' &&
-      plugin !== 'expo-build-properties'
-    );
-  }
-
-  return (
-    plugin[0] !== 'react-native-google-mobile-ads' &&
-    plugin[0] !== 'expo-build-properties'
-  );
-});
+const googleMobileAdsPlugin =
+  process.env.EXPO_PUBLIC_ADMOB_ANDROID_APP_ID != null
+    ? ([
+        'react-native-google-mobile-ads',
+        {
+          androidAppId: process.env.EXPO_PUBLIC_ADMOB_ANDROID_APP_ID,
+          iosAppId: process.env.EXPO_PUBLIC_ADMOB_IOS_APP_ID,
+        },
+      ] as [string, { androidAppId: string; iosAppId?: string }])
+    : null;
 
 export default (): ExpoConfig => ({
-  ...baseConfig,
   name: APP_NAME,
+  slug: 'appboca',
   description: APP_DESCRIPTION,
+  version: '1.0.0',
+  orientation: 'portrait',
+  icon: './assets/images/icon.png',
+  scheme: 'appboca',
+  userInterfaceStyle: 'automatic',
+  ios: {
+    icon: './assets/expo.icon',
+    bundleIdentifier: 'com.seuapp.bocaiuva',
+    supportsTablet: false,
+  },
+  android: {
+    adaptiveIcon: {
+      backgroundColor: '#E6F4FE',
+      foregroundImage: './assets/images/android-icon-foreground.png',
+      backgroundImage: './assets/images/android-icon-background.png',
+      monochromeImage: './assets/images/android-icon-monochrome.png',
+    },
+    package: 'com.seuapp.bocaiuva',
+    googleServicesFile: './google-services.json',
+    predictiveBackGestureEnabled: false,
+    softwareKeyboardLayoutMode: 'resize',
+  },
   web: {
-    ...baseConfig.web,
+    output: 'static',
+    bundler: 'metro',
+    favicon: './assets/images/favicon.png',
     name: APP_NAME,
-    shortName: APP_SHORT_NAME,
+    shortName: APP_NAME,
+    themeColor: '#051108',
+    backgroundColor: '#051108',
   },
   plugins: [
-    ...basePlugins,
+    'expo-router',
     [
-      'react-native-google-mobile-ads',
+      'expo-image-picker',
       {
-        androidAppId: process.env.EXPO_PUBLIC_ADMOB_ANDROID_APP_ID,
+        photosPermission:
+          'O app precisa acessar suas fotos para enviar imagens de jogadores e do time.',
+        cameraPermission:
+          'O app precisa usar a camera para tirar fotos de jogadores e do time.',
       },
     ],
+    [
+      'expo-notifications',
+      {
+        icon: './assets/images/android-icon-monochrome.png',
+        color: '#0E7A43',
+        defaultChannel: 'default',
+      },
+    ],
+    [
+      'expo-splash-screen',
+      {
+        backgroundColor: '#208AEF',
+        android: {
+          image: './assets/images/splash-icon.png',
+          imageWidth: 76,
+        },
+      },
+    ],
+    'expo-web-browser',
+    ...(googleMobileAdsPlugin ? [googleMobileAdsPlugin] : []),
     [
       'expo-build-properties',
       {
@@ -47,4 +90,14 @@ export default (): ExpoConfig => ({
       },
     ],
   ],
+  experiments: {
+    typedRoutes: true,
+    reactCompiler: true,
+  },
+  extra: {
+    router: {},
+    eas: {
+      projectId: 'ba99f492-9047-44f6-a2b6-682dbd19d998',
+    },
+  },
 });

@@ -31,16 +31,32 @@ import {
   isRepositoryPermissionDeniedError,
   resolveBootstrapAccessNotice,
   shouldShowTeamAccessPermissionMessage,
+  shouldShowUserAccountPermissionMessage,
 } from '@/store/bootstrap-recovery';
 import {
   canCreateTeamFromOwnedTeamsCount,
   getOwnedTeamsCount,
   OWNED_TEAMS_LIMIT_REACHED_MESSAGE,
 } from '@/lib/team';
+import {
+  buildTeamMembershipIndexDocument,
+  canCreateOwnMvpVote,
+  canCreateOwnPlayerRating,
+  canEditOwnPrivatePlayer,
+  canManagePrivateTeamData,
+  canManagePrivateTeamPlayers,
+  canReadPrivateTeamData,
+  canUpdateOwnAttendance,
+} from '@/lib/team-membership-index';
+import {
+  mockRepository,
+  resetMockRepositoryState,
+} from '@/services/repository/mock-repository';
 import { normalizeTeamMemberStatus } from '@/lib/team-membership';
 import {
   LOST_TEAM_ACCESS_MESSAGE,
   TEAM_ACCESS_PERMISSION_MESSAGE,
+  USER_ACCOUNT_PERMISSION_MESSAGE,
 } from '@/constants/access-notices';
 
 import {
@@ -235,6 +251,169 @@ const testCases: TestCase[] = [
           targetPlayerId: 'player-99',
         }),
         true,
+      );
+    },
+  },
+  {
+    name: 'membership index libera leitura apenas para o proprio time privado',
+    run() {
+      const membership = createTeamMember({
+        userId: 'user-private-reader',
+        teamId: 'team-private-reader',
+        playerId: 'player-private-reader',
+        roles: ['player'],
+      });
+      const membershipIndex = buildTeamMembershipIndexDocument(membership);
+
+      assert.equal(
+        canReadPrivateTeamData({
+          teamId: 'team-private-reader',
+          userId: 'user-private-reader',
+          membershipIndex,
+        }),
+        true,
+      );
+      assert.equal(membershipIndex.role, 'player');
+      assert.equal(membershipIndex.sourceTeamMemberId, membership.id);
+      assert.equal(
+        canReadPrivateTeamData({
+          teamId: 'team-other',
+          userId: 'user-private-reader',
+          membershipIndex,
+        }),
+        false,
+      );
+    },
+  },
+  {
+    name: 'admin do time gerencia dados privados sem depender de activeTeamId no users',
+    run() {
+      assert.equal(
+        canManagePrivateTeamData({
+          teamId: 'team-admin-private',
+          userId: 'user-admin-private',
+          teamAdminUserId: 'user-admin-private',
+        }),
+        true,
+      );
+      assert.equal(
+        canManagePrivateTeamPlayers({
+          teamId: 'team-admin-private',
+          userId: 'user-admin-private',
+          teamAdminUserId: 'user-admin-private',
+        }),
+        true,
+      );
+    },
+  },
+  {
+    name: 'jogador comum fica restrito ao proprio perfil, presenca e acoes de jogador',
+    run() {
+      const membership = createTeamMember({
+        userId: 'user-common-player',
+        teamId: 'team-common-player',
+        playerId: 'player-common-player',
+        roles: ['player'],
+        canManageTeam: false,
+        canManagePlayers: false,
+      });
+      const membershipIndex = buildTeamMembershipIndexDocument(membership);
+      const input = {
+        teamId: 'team-common-player',
+        userId: 'user-common-player',
+        membershipIndex,
+      };
+
+      assert.equal(canManagePrivateTeamData(input), false);
+      assert.equal(canManagePrivateTeamPlayers(input), false);
+      assert.equal(
+        canEditOwnPrivatePlayer({
+          ...input,
+          playerId: 'player-common-player',
+        }),
+        true,
+      );
+      assert.equal(
+        canEditOwnPrivatePlayer({
+          ...input,
+          playerId: 'player-other',
+        }),
+        false,
+      );
+      assert.equal(
+        canUpdateOwnAttendance({
+          ...input,
+          playerId: 'player-common-player',
+        }),
+        true,
+      );
+      assert.equal(
+        canUpdateOwnAttendance({
+          ...input,
+          playerId: 'player-other',
+        }),
+        false,
+      );
+      assert.equal(
+        canCreateOwnMvpVote({
+          ...input,
+          voterPlayerId: 'player-common-player',
+        }),
+        true,
+      );
+      assert.equal(
+        canCreateOwnPlayerRating({
+          ...input,
+          raterPlayerId: 'player-common-player',
+        }),
+        true,
+      );
+    },
+  },
+  {
+    name: 'membership inativo perde acesso privado e nao pode votar ou avaliar',
+    run() {
+      const membership = createTeamMember({
+        userId: 'user-inactive-private',
+        teamId: 'team-inactive-private',
+        playerId: 'player-inactive-private',
+        status: 'inactive',
+      });
+      const membershipIndex = buildTeamMembershipIndexDocument(membership);
+      const input = {
+        teamId: 'team-inactive-private',
+        userId: 'user-inactive-private',
+        membershipIndex,
+      };
+
+      assert.equal(canReadPrivateTeamData(input), false);
+      assert.equal(canManagePrivateTeamData(input), false);
+      assert.equal(
+        canCreateOwnMvpVote({
+          ...input,
+          voterPlayerId: 'player-inactive-private',
+        }),
+        false,
+      );
+      assert.equal(
+        canCreateOwnPlayerRating({
+          ...input,
+          raterPlayerId: 'player-inactive-private',
+        }),
+        false,
+      );
+    },
+  },
+  {
+    name: 'usuario sem membership index nao acessa dados privados do time',
+    run() {
+      assert.equal(
+        canReadPrivateTeamData({
+          teamId: 'team-without-membership',
+          userId: 'user-without-membership',
+          membershipIndex: null,
+        }),
+        false,
       );
     },
   },
@@ -639,9 +818,27 @@ const testCases: TestCase[] = [
     },
   },
   {
-    name: 'permission-denied em users teamMembers e teams vira aviso de permissoes no team-access',
+    name: 'permission-denied em users vira aviso especifico da conta',
     run() {
-      for (const collection of ['users', 'teamMembers', 'teams']) {
+      const error = Object.assign(new Error('Missing or insufficient permissions'), {
+        code: 'permission-denied',
+        context: {
+          collection: 'users',
+        },
+      });
+
+      assert.equal(shouldShowTeamAccessPermissionMessage(error), false);
+      assert.equal(shouldShowUserAccountPermissionMessage(error), true);
+      assert.equal(
+        resolveBootstrapAccessNotice(error, createSnapshot()),
+        USER_ACCOUNT_PERMISSION_MESSAGE,
+      );
+    },
+  },
+  {
+    name: 'permission-denied em teamMembers e teams vira aviso de permissoes no team-access',
+    run() {
+      for (const collection of ['teamMembers', 'teams']) {
         const error = Object.assign(new Error('Missing or insufficient permissions'), {
           code: 'permission-denied',
           context: {
@@ -650,6 +847,7 @@ const testCases: TestCase[] = [
         });
 
         assert.equal(shouldShowTeamAccessPermissionMessage(error), true);
+        assert.equal(shouldShowUserAccountPermissionMessage(error), false);
         assert.equal(
           resolveBootstrapAccessNotice(error, createSnapshot()),
           TEAM_ACCESS_PERMISSION_MESSAGE,
@@ -776,6 +974,133 @@ const testCases: TestCase[] = [
         }),
         null,
       );
+    },
+  },
+  {
+    name: 'usuario sem time consegue abrir a galeria publica sanitizada',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({
+        email: 'gestor@bocaiuva.app',
+        password: '123456',
+      });
+
+      const teams = await mockRepository.listPublicTeams('user-manager');
+      const privateProfile = await mockRepository.getPublicTeamProfile(
+        'team-bocaiuva',
+        'user-manager',
+      );
+
+      assert.deepEqual(teams.map((team) => team.id), ['team-serrano']);
+      assert.equal(privateProfile, null);
+    },
+  },
+  {
+    name: 'admin editando o time sincroniza publicTeams sem expor o time privado antes da hora',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({
+        email: 'admin@bocaiuva.app',
+        password: '123456',
+      });
+
+      await mockRepository.updateTeam(
+        'team-bocaiuva',
+        {
+          name: 'Bocaiuva FC',
+          coachName: 'Rafael Nogueira',
+          slug: 'bocaiuva-fc',
+          primaryColor: '#0E8A43',
+          secondaryColor: '#F4C542',
+          accentColor: '#113322',
+          description: 'Time organizado para amistosos e campeonatos locais.',
+          isPublic: true,
+          city: 'Bocaiuva',
+          state: 'mt',
+          neighborhood: 'Centro',
+          homeFieldName: 'Arena Bocaiuva',
+          contactName: 'Rafael Nogueira',
+          contactPhone: '65999990000',
+          contactWhatsapp: '65999990000',
+          publicDescription: 'Time pronto para amistosos de fim de semana.',
+          allowFriendlyContact: true,
+          publicRosterEnabled: true,
+        },
+        'user-admin',
+      );
+
+      const teams = await mockRepository.listPublicTeams('user-admin');
+      const profile = await mockRepository.getPublicTeamProfile(
+        'team-bocaiuva',
+        'user-admin',
+      );
+
+      assert.equal(teams.some((team) => team.id === 'team-bocaiuva'), true);
+      assert.equal(profile?.city, 'Bocaiuva');
+      assert.equal(profile?.state, 'MT');
+      assert.equal(profile?.publicRosterEnabled, true);
+      assert.equal((profile?.roster.length ?? 0) > 0, true);
+    },
+  },
+  {
+    name: 'entrada por inviteCode cria membership ativa e troca o contexto para o novo time',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({
+        email: 'atacante@bocaiuva.app',
+        password: '123456',
+      });
+
+      const result = await mockRepository.joinTeamWithInviteCode('SERR26', 'user-striker');
+      const snapshot = await mockRepository.getSnapshot();
+      const striker = snapshot.users[0];
+      const newMembership = snapshot.teamMembers.find(
+        (membership) => membership.teamId === 'team-serrano',
+      );
+
+      assert.equal(result.team.id, 'team-serrano');
+      assert.equal(result.alreadyMember, false);
+      assert.equal(striker?.activeTeamId, 'team-serrano');
+      assert.equal(striker?.teamId, 'team-serrano');
+      assert.equal(newMembership?.status, 'active');
+      assert.equal(newMembership?.inviteCodeUsed, 'SERR26');
+      assert.equal(
+        selectCurrentTeam({
+          currentUserId: 'user-striker',
+          snapshot,
+        })?.id,
+        'team-serrano',
+      );
+    },
+  },
+  {
+    name: 'regenerar inviteCode invalida o codigo antigo e publica o novo em teamInvites',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({
+        email: 'admin@bocaiuva.app',
+        password: '123456',
+      });
+
+      const updatedTeam = await mockRepository.regenerateTeamInviteCode(
+        'team-bocaiuva',
+        'user-admin',
+      );
+
+      await assert.rejects(
+        () => mockRepository.joinTeamWithInviteCode('BOCA26', 'user-manager'),
+        (error) =>
+          error instanceof Error &&
+          error.message === 'Não encontramos um time com esse código.',
+      );
+
+      const joinResult = await mockRepository.joinTeamWithInviteCode(
+        updatedTeam.inviteCode,
+        'user-manager',
+      );
+
+      assert.equal(joinResult.team.id, 'team-bocaiuva');
+      assert.equal(joinResult.alreadyMember, false);
     },
   },
 ];

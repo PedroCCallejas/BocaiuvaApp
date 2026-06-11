@@ -58,11 +58,18 @@ import {
   slugifyTeamName,
 } from '@/lib/team';
 import {
-  buildPublicTeamProfile,
-  buildPublicTeamSummary,
+  buildPublicTeamDocument,
+  buildTeamInviteDocument,
   normalizeTeamPublicProfileFields,
   validateTeamPublicProfileFields,
 } from '@/lib/public-team';
+import {
+  buildTeamMembershipIndexDocument,
+} from '@/lib/team-membership-index';
+import type {
+  FirestorePublicTeamDocument,
+  FirestoreTeamInviteDocument,
+} from '@/types/firestore';
 import type {
   AppNotification,
   AttendanceRecord,
@@ -122,6 +129,12 @@ export function resetMockRepositorySession() {
   mockSessionUserId = null;
 }
 
+export function resetMockRepositoryState() {
+  database = createSeedDatabase();
+  mockSessionUserId = null;
+  repairingMockUsers.clear();
+}
+
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -131,6 +144,103 @@ function canAccessNotification(
   userId: string | null | undefined,
 ) {
   return notification.targetUserId == null || notification.targetUserId === userId;
+}
+
+function toPublicTeamSummary(document: FirestorePublicTeamDocument): PublicTeamSummary {
+  const {
+    presentationVideoUrl: _presentationVideoUrl,
+    publicRosterEnabled: _publicRosterEnabled,
+    roster: _roster,
+    adminUserId: _adminUserId,
+    sourceTeamUpdatedAt: _sourceTeamUpdatedAt,
+    syncedAt: _syncedAt,
+    ...summary
+  } = document;
+
+  return summary;
+}
+
+function toPublicTeamProfile(document: FirestorePublicTeamDocument): PublicTeamProfile {
+  const {
+    adminUserId: _adminUserId,
+    sourceTeamUpdatedAt: _sourceTeamUpdatedAt,
+    syncedAt: _syncedAt,
+    ...profile
+  } = document;
+
+  return profile;
+}
+
+function findPublicTeamDocument(teamId: string) {
+  return database.publicTeams.find((team) => team.id === teamId) ?? null;
+}
+
+function findTeamInviteDocument(inviteCode: string) {
+  const normalizedInviteCode = normalizeInviteCode(inviteCode);
+  return (
+    database.teamInvites.find((invite) => invite.code === normalizedInviteCode) ?? null
+  );
+}
+
+function findTeamMembershipIndexDocument(teamId: string, userId: string) {
+  return (
+    database.teamMembershipIndex.find(
+      (membership) => membership.teamId === teamId && membership.userId === userId,
+    ) ?? null
+  );
+}
+
+function syncTeamMembershipIndexDocument(membership: TeamMember) {
+  database.teamMembershipIndex = database.teamMembershipIndex.filter(
+    (item) => !(item.teamId === membership.teamId && item.userId === membership.userId),
+  );
+
+  if (membership.status !== 'active') {
+    return null;
+  }
+
+  const indexDocument = buildTeamMembershipIndexDocument(membership);
+  database.teamMembershipIndex.push(indexDocument);
+  return indexDocument;
+}
+
+function removeTeamMembershipIndexDocument(teamId: string, userId: string) {
+  database.teamMembershipIndex = database.teamMembershipIndex.filter(
+    (item) => !(item.teamId === teamId && item.userId === userId),
+  );
+}
+
+function syncPublicTeamProjection(teamId: string, syncedAt = nowIso()) {
+  database.publicTeams = database.publicTeams.filter((team) => team.id !== teamId);
+  const team = database.teams.find((item) => item.id === teamId) ?? null;
+
+  if (!team) {
+    return null;
+  }
+
+  const publicTeam = buildPublicTeamDocument({
+    team,
+    matches: database.matches.filter((match) => match.teamId === teamId),
+    players: database.players.filter((player) => player.teamId === teamId),
+    syncedAt,
+  });
+
+  if (publicTeam) {
+    database.publicTeams.push(publicTeam);
+  }
+
+  return publicTeam;
+}
+
+function syncTeamInviteProjection(team: Team, updatedAt = nowIso()) {
+  database.teamInvites = database.teamInvites.filter((invite) => invite.teamId !== team.id);
+  const invite = buildTeamInviteDocument(team, updatedAt);
+  database.teamInvites.push(invite);
+  return invite;
+}
+
+function removeTeamInviteProjection(teamId: string) {
+  database.teamInvites = database.teamInvites.filter((invite) => invite.teamId !== teamId);
 }
 
 function snapshotFromDatabase(source: MockDatabase, currentUserId: string | null): AppSnapshot {
@@ -837,10 +947,13 @@ function syncUserActiveContext(user: User) {
 }
 
 function findTeamByInviteCode(inviteCode: string) {
-  const normalizedInviteCode = normalizeInviteCode(inviteCode);
-  return (
-    database.teams.find((team) => team.inviteCode === normalizedInviteCode) ?? null
-  );
+  const invite = findTeamInviteDocument(inviteCode);
+
+  if (!invite) {
+    return null;
+  }
+
+  return database.teams.find((team) => team.id === invite.teamId) ?? null;
 }
 
 function requireTeamAdmin(actorUserId: string, teamId: string) {
@@ -957,6 +1070,7 @@ function ensureMembershipPlayerLink(input: {
   input.membership.canManageTeam = input.membership.roles.includes('admin');
   input.membership.canManagePlayers = input.membership.roles.includes('admin');
   input.membership.updatedAt = nowIso();
+  syncTeamMembershipIndexDocument(input.membership);
 
   if (input.user.activeTeamId === input.team.id || input.user.activeTeamId == null) {
     input.user.activeTeamId = input.team.id;
@@ -1039,8 +1153,8 @@ function createUniqueInviteCode(excludedTeamId?: string) {
   let inviteCode = createInviteCode();
 
   while (
-    database.teams.some(
-      (team) => team.id !== excludedTeamId && team.inviteCode === inviteCode,
+    database.teamInvites.some(
+      (invite) => invite.teamId !== excludedTeamId && invite.code === inviteCode,
     )
   ) {
     inviteCode = createInviteCode();
@@ -1188,6 +1302,7 @@ function createMembership(input: {
     userId: input.userId,
     teamId: input.teamId,
     playerId: input.playerId,
+    inviteCodeUsed: null,
     roles: [...new Set(input.roles)],
     canManageTeam: input.canManageTeam,
     canManagePlayers: input.canManagePlayers,
@@ -1429,6 +1544,7 @@ function syncLinkedUser(
   membership.canManageTeam = membership.roles.includes('admin');
   membership.canManagePlayers = membership.roles.includes('admin');
   membership.updatedAt = nowIso();
+  syncTeamMembershipIndexDocument(membership);
   linkedUser.teamId = player.teamId;
   linkedUser.playerId = player.id;
   linkedUser.activeTeamId = linkedUser.activeTeamId ?? player.teamId;
@@ -1462,6 +1578,7 @@ function unlinkPlayerFromUser(player: Player) {
   if (membership?.playerId === player.id) {
     membership.playerId = null;
     membership.updatedAt = nowIso();
+    syncTeamMembershipIndexDocument(membership);
   }
   linkedUser.appRole = resolveTeamAppRole(linkedUser, team);
   linkedUser.updatedAt = nowIso();
@@ -1564,16 +1681,10 @@ export const mockRepository: AppRepository = {
   },
 
   async listPublicTeams(actorUserId: string) {
-    findUser(actorUserId);
+    void actorUserId;
 
-    const publicTeams = database.teams
-      .map((team) =>
-        buildPublicTeamSummary(
-          team,
-          database.matches.filter((match) => match.teamId === team.id),
-        ),
-      )
-      .filter((team): team is PublicTeamSummary => Boolean(team))
+    const publicTeams = database.publicTeams
+      .map((team) => toPublicTeamSummary(team))
       .sort((left, right) => {
         const stateOrder = left.state.localeCompare(right.state);
 
@@ -1594,15 +1705,10 @@ export const mockRepository: AppRepository = {
   },
 
   async getPublicTeamProfile(teamId: string, actorUserId: string) {
-    findUser(actorUserId);
-    const team = findTeam(teamId);
-    const profile = buildPublicTeamProfile(
-      team,
-      database.matches.filter((match) => match.teamId === team.id),
-      database.players.filter((player) => player.teamId === team.id),
-    );
+    void actorUserId;
+    const profile = findPublicTeamDocument(teamId);
 
-    return clone(profile as PublicTeamProfile | null);
+    return clone(profile ? toPublicTeamProfile(profile) : null);
   },
 
   async login(input: LoginInput) {
@@ -1748,7 +1854,9 @@ export const mockRepository: AppRepository = {
     owner.updatedAt = createdAt;
 
     database.teams.push(team);
+    syncTeamInviteProjection(team, createdAt);
     database.teamMembers.push(ownerMembership);
+    syncTeamMembershipIndexDocument(ownerMembership);
     database.seasons.push(season);
     database.ratingCriteria.push(...ratingCriteria);
     database.players.push(...players);
@@ -1820,6 +1928,7 @@ export const mockRepository: AppRepository = {
     team.allowFriendlyContact = publicProfile.allowFriendlyContact;
     team.publicRosterEnabled = publicProfile.publicRosterEnabled;
     team.updatedAt = updatedAt;
+    syncPublicTeamProjection(team.id, updatedAt);
 
     return clone(team);
   },
@@ -1848,7 +1957,12 @@ export const mockRepository: AppRepository = {
     ]);
 
     database.teams = database.teams.filter((team) => team.id !== teamId);
+    database.publicTeams = database.publicTeams.filter((team) => team.id !== teamId);
+    removeTeamInviteProjection(teamId);
     database.teamMembers = database.teamMembers.filter((membership) => membership.teamId !== teamId);
+    database.teamMembershipIndex = database.teamMembershipIndex.filter(
+      (membership) => membership.teamId !== teamId,
+    );
     database.players = database.players.filter((player) => player.teamId !== teamId);
     database.matches = database.matches.filter((match) => match.teamId !== teamId);
     database.lineups = database.lineups.filter((lineup) => lineup.teamId !== teamId);
@@ -1882,6 +1996,7 @@ export const mockRepository: AppRepository = {
     team.inviteCode = createUniqueInviteCode(team.id);
     team.inviteCodeUpdatedAt = updatedAt;
     team.updatedAt = updatedAt;
+    syncTeamInviteProjection(team, updatedAt);
 
     return clone(team);
   },
@@ -2012,11 +2127,12 @@ export const mockRepository: AppRepository = {
 
   async joinTeamWithInviteCode(inviteCode: string, userId: string) {
     const actor = findUser(userId);
-    const team = findTeamByInviteCode(inviteCode);
-    if (!team) {
+    const invite = findTeamInviteDocument(inviteCode);
+    if (!invite) {
       throw new Error('Não encontramos um time com esse código.');
     }
 
+    const team = findTeam(invite.teamId);
     const existingMembership = findAnyMembershipByUserAndTeam(actor.id, team.id);
     if (existingMembership?.status === 'active') {
       existingMembership.updatedAt = nowIso();
@@ -2031,34 +2147,45 @@ export const mockRepository: AppRepository = {
       };
     }
 
-    const normalizedActorEmail = normalizeEmail(actor.email);
-    const candidatePlayer =
-      findSelectableTeamPlayers(team.id).find(
-        (player) =>
-          !player.linkedUserId &&
-          normalizeEmail(player.linkedEmail ?? '') === normalizedActorEmail,
-      ) ?? null;
-
     const updatedAt = nowIso();
-    let player = candidatePlayer;
+    const membership =
+      existingMembership ??
+      createMembership({
+        userId: actor.id,
+        teamId: team.id,
+        playerId: null,
+        roles: ['player'],
+        canManageTeam: false,
+        canManagePlayers: false,
+      });
 
-    if (player) {
-      player.linkedUserId = actor.id;
-      player.linkedEmail = normalizedActorEmail;
-      player.updatedAt = updatedAt;
-      syncLinkedUser(player);
-    } else {
-      player = createBasicPlayer(team.id, actor);
-      database.players.push(player);
-      syncLinkedUser(player);
+    membership.playerId = existingMembership?.playerId ?? null;
+    membership.inviteCodeUsed = invite.code;
+    membership.roles = existingMembership?.roles.includes('admin')
+      ? ['admin', 'player']
+      : ['player'];
+    membership.canManageTeam = existingMembership?.canManageTeam ?? false;
+    membership.canManagePlayers = existingMembership?.canManagePlayers ?? false;
+    membership.status = 'active';
+    membership.joinedAt = existingMembership?.joinedAt ?? updatedAt;
+    membership.createdAt = existingMembership?.createdAt ?? updatedAt;
+    membership.updatedAt = updatedAt;
+
+    if (!existingMembership) {
+      database.teamMembers.push(membership);
     }
+    syncTeamMembershipIndexDocument(membership);
 
     actor.activeTeamId = team.id;
     actor.teamId = team.id;
-    actor.playerId = player.id;
-    actor.appRole = actor.appRole === 'owner' ? 'owner' : 'player';
+    actor.playerId = membership.playerId ?? null;
+    actor.appRole =
+      actor.appRole === 'owner'
+        ? 'owner'
+        : membership.canManageTeam
+          ? 'team_admin'
+          : 'player';
     actor.updatedAt = updatedAt;
-    ensureOpenMatchAttendanceForPlayer(player);
 
     return {
       team: clone(team),
@@ -2344,6 +2471,7 @@ export const mockRepository: AppRepository = {
         membership.canManagePlayers = keepAdminAccess;
         membership.status = keepAdminAccess ? 'active' : 'inactive';
         membership.updatedAt = updatedAt;
+        syncTeamMembershipIndexDocument(membership);
       }
 
       syncUserActiveContext(linkedUser);

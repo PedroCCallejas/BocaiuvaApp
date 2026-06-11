@@ -97,6 +97,7 @@ export interface TeamMember extends BaseEntity {
   userId: string;
   teamId: string;
   playerId: string | null;
+  inviteCodeUsed?: string | null;
   roles: TeamMemberRole[];
   canManageTeam: boolean;
   canManagePlayers: boolean;

@@ -1,0 +1,506 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function currentUserId() {
+      return request.auth.uid;
+    }
+
+    function currentUserEmail() {
+      return isSignedIn() && request.auth.token.email != null
+        ? request.auth.token.email.lower()
+        : null;
+    }
+
+    function isSelf(userId) {
+      return isSignedIn() && currentUserId() == userId;
+    }
+
+    function hasTeamId(teamId) {
+      return teamId is string && teamId.size() > 0;
+    }
+
+    function teamExists(teamId) {
+      return hasTeamId(teamId) &&
+        exists(/databases/$(database)/documents/teams/$(teamId));
+    }
+
+    function teamExistsAfter(teamId) {
+      return hasTeamId(teamId) &&
+        existsAfter(/databases/$(database)/documents/teams/$(teamId));
+    }
+
+    function teamDoc(teamId) {
+      return get(/databases/$(database)/documents/teams/$(teamId));
+    }
+
+    function teamDocAfter(teamId) {
+      return getAfter(/databases/$(database)/documents/teams/$(teamId));
+    }
+
+    function isTeamAdminNow(teamId) {
+      return teamExists(teamId) &&
+        teamDoc(teamId).data.adminUserId == currentUserId();
+    }
+
+    function isTeamAdminAfter(teamId) {
+      return teamExistsAfter(teamId) &&
+        teamDocAfter(teamId).data.adminUserId == currentUserId();
+    }
+
+    function isTeamAdminNowOrAfter(teamId) {
+      return isTeamAdminNow(teamId) || isTeamAdminAfter(teamId);
+    }
+
+    function membershipIndexExists(teamId, userId) {
+      return hasTeamId(teamId) &&
+        userId is string &&
+        userId.size() > 0 &&
+        exists(
+          /databases/$(database)/documents/teamMembershipIndex/$(teamId)/members/$(userId)
+        );
+    }
+
+    function membershipIndexDoc(teamId, userId) {
+      return get(
+        /databases/$(database)/documents/teamMembershipIndex/$(teamId)/members/$(userId)
+      );
+    }
+
+    function currentMembershipIndex(teamId) {
+      return membershipIndexDoc(teamId, currentUserId());
+    }
+
+    function hasActiveTeamMembership(teamId) {
+      return isSignedIn() &&
+        membershipIndexExists(teamId, currentUserId()) &&
+        currentMembershipIndex(teamId).data.userId == currentUserId() &&
+        currentMembershipIndex(teamId).data.teamId == teamId &&
+        currentMembershipIndex(teamId).data.status == 'active';
+    }
+
+    function canReadTeamScopedData(teamId) {
+      return hasActiveTeamMembership(teamId) || isTeamAdminNow(teamId);
+    }
+
+    function canManageTeamMembership(teamId) {
+      return hasActiveTeamMembership(teamId) &&
+        (currentMembershipIndex(teamId).data.canManageTeam == true ||
+          currentMembershipIndex(teamId).data.roles.hasAny(['admin']));
+    }
+
+    function canManageTeamData(teamId) {
+      return isTeamAdminNow(teamId) || canManageTeamMembership(teamId);
+    }
+
+    function canManageTeamDataNowOrAfter(teamId) {
+      return isTeamAdminNowOrAfter(teamId) || canManageTeamMembership(teamId);
+    }
+
+    function canManagePlayersData(teamId) {
+      return canManageTeamData(teamId) ||
+        (hasActiveTeamMembership(teamId) &&
+          currentMembershipIndex(teamId).data.canManagePlayers == true);
+    }
+
+    function canManagePlayersDataNowOrAfter(teamId) {
+      return isTeamAdminNowOrAfter(teamId) ||
+        canManagePlayersData(teamId);
+    }
+
+    function isLinkedPlayerForCurrentUser(playerData) {
+      return isSignedIn() &&
+        (
+          (playerData.linkedUserId is string &&
+            playerData.linkedUserId == currentUserId()) ||
+          (currentUserEmail() != null &&
+            playerData.linkedEmail is string &&
+            playerData.linkedEmail == currentUserEmail())
+        );
+    }
+
+    function isCurrentMembershipPlayer(teamId, playerId) {
+      return hasActiveTeamMembership(teamId) &&
+        currentMembershipIndex(teamId).data.playerId == playerId;
+    }
+
+    function validInviteForTeam(teamId, inviteCode) {
+      return isSignedIn() &&
+        hasTeamId(teamId) &&
+        inviteCode is string &&
+        inviteCode.size() > 0 &&
+        exists(/databases/$(database)/documents/teamInvites/$(inviteCode)) &&
+        get(/databases/$(database)/documents/teamInvites/$(inviteCode)).data.teamId == teamId;
+    }
+
+    function isSinglePlayerRole(roles) {
+      return roles is list &&
+        roles.size() == 1 &&
+        roles.hasAll(['player']);
+    }
+
+    function isSafeInviteMembershipCreate(membershipId) {
+      return request.resource.data.id == membershipId &&
+        request.resource.data.userId == currentUserId() &&
+        request.resource.data.playerId == null &&
+        isSinglePlayerRole(request.resource.data.roles) &&
+        request.resource.data.canManageTeam == false &&
+        request.resource.data.canManagePlayers == false &&
+        request.resource.data.status == 'active' &&
+        validInviteForTeam(
+          request.resource.data.teamId,
+          request.resource.data.inviteCodeUsed
+        );
+    }
+
+    function isSafeInviteMembershipReactivation(membershipId) {
+      return resource.data.id == membershipId &&
+        resource.data.userId == currentUserId() &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.teamId == resource.data.teamId &&
+        request.resource.data.playerId == resource.data.playerId &&
+        request.resource.data.roles == resource.data.roles &&
+        request.resource.data.canManageTeam == resource.data.canManageTeam &&
+        request.resource.data.canManagePlayers == resource.data.canManagePlayers &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.joinedAt == resource.data.joinedAt &&
+        request.resource.data.status == 'active' &&
+        validInviteForTeam(
+          request.resource.data.teamId,
+          request.resource.data.inviteCodeUsed
+        );
+    }
+
+    function membershipAfterExists(membershipId) {
+      return membershipId is string &&
+        membershipId.size() > 0 &&
+        existsAfter(/databases/$(database)/documents/teamMembers/$(membershipId));
+    }
+
+    function membershipAfterDoc(membershipId) {
+      return getAfter(/databases/$(database)/documents/teamMembers/$(membershipId));
+    }
+
+    function mirrorsMembershipIndex(teamId, userId) {
+      return request.resource.data.id == userId &&
+        request.resource.data.teamId == teamId &&
+        request.resource.data.userId == userId &&
+        membershipAfterExists(request.resource.data.membershipId) &&
+        membershipAfterDoc(request.resource.data.membershipId).data.teamId == teamId &&
+        membershipAfterDoc(request.resource.data.membershipId).data.userId == userId &&
+        membershipAfterDoc(request.resource.data.membershipId).data.playerId == request.resource.data.playerId &&
+        membershipAfterDoc(request.resource.data.membershipId).data.roles == request.resource.data.roles &&
+        membershipAfterDoc(request.resource.data.membershipId).data.canManageTeam == request.resource.data.canManageTeam &&
+        membershipAfterDoc(request.resource.data.membershipId).data.canManagePlayers == request.resource.data.canManagePlayers &&
+        membershipAfterDoc(request.resource.data.membershipId).data.joinedAt == request.resource.data.joinedAt &&
+        membershipAfterDoc(request.resource.data.membershipId).data.status == 'active' &&
+        membershipAfterDoc(request.resource.data.membershipId).data.createdAt == request.resource.data.createdAt &&
+        membershipAfterDoc(request.resource.data.membershipId).data.updatedAt == request.resource.data.updatedAt;
+    }
+
+    function canEditOwnPlayerProfile(playerData) {
+      return isCurrentMembershipPlayer(playerData.teamId, playerData.id) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'photoUrl',
+          'nickname',
+          'bio',
+          'jerseyNumber',
+          'secondaryPositions',
+          'dominantFoot',
+          'preferredPosition',
+          'introVideoUrl',
+          'celebrationVideoUrl',
+          'updatedAt',
+        ]) &&
+        request.resource.data.teamId == resource.data.teamId &&
+        request.resource.data.linkedUserId == resource.data.linkedUserId &&
+        request.resource.data.linkedEmail == resource.data.linkedEmail &&
+        request.resource.data.fullName == resource.data.fullName &&
+        request.resource.data.presentationVideoUrl == resource.data.presentationVideoUrl &&
+        request.resource.data.primaryPosition == resource.data.primaryPosition &&
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.allowSelfEditJerseyNumber == resource.data.allowSelfEditJerseyNumber &&
+        request.resource.data.manualStats == resource.data.manualStats &&
+        request.resource.data.deletedAt == resource.data.deletedAt &&
+        (
+          request.resource.data.jerseyNumber == resource.data.jerseyNumber ||
+          resource.data.allowSelfEditJerseyNumber == true ||
+          resource.data.jerseyNumber == null
+        );
+    }
+
+    function isOwnAttendanceWrite() {
+      return isCurrentMembershipPlayer(
+        request.resource.data.teamId,
+        request.resource.data.playerId
+      ) &&
+        request.resource.data.userId == currentUserId();
+    }
+
+    function notificationTargetsCurrentUser(notificationData) {
+      return notificationData.targetUserId == null ||
+        notificationData.targetUserId == currentUserId();
+    }
+
+    function canMarkNotificationAsRead() {
+      return notificationTargetsCurrentUser(resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'readByUserIds',
+        ]) &&
+        request.resource.data.readByUserIds.hasAll(resource.data.readByUserIds) &&
+        request.resource.data.readByUserIds.hasAny([currentUserId()]) &&
+        request.resource.data.readByUserIds.size() <= resource.data.readByUserIds.size() + 1;
+    }
+
+    function isFinishedMatch(teamId, matchId) {
+      return exists(/databases/$(database)/documents/matches/$(matchId)) &&
+        get(/databases/$(database)/documents/matches/$(matchId)).data.teamId == teamId &&
+        get(/databases/$(database)/documents/matches/$(matchId)).data.status == 'finished';
+    }
+
+    function isConfirmedAttendance(teamId, matchId, playerId) {
+      return exists(
+          /databases/$(database)/documents/attendance/$(matchId + '__' + playerId)
+        ) &&
+        get(
+          /databases/$(database)/documents/attendance/$(matchId + '__' + playerId)
+        ).data.teamId == teamId &&
+        get(
+          /databases/$(database)/documents/attendance/$(matchId + '__' + playerId)
+        ).data.matchId == matchId &&
+        get(
+          /databases/$(database)/documents/attendance/$(matchId + '__' + playerId)
+        ).data.playerId == playerId &&
+        get(
+          /databases/$(database)/documents/attendance/$(matchId + '__' + playerId)
+        ).data.status == 'confirmed';
+    }
+
+    match /users/{userId} {
+      allow get: if isSelf(userId) ||
+        (resource.data.teamId != null && canManageTeamData(resource.data.teamId));
+      allow list: if isSelf(resource.data.id) ||
+        (resource.data.teamId != null && canManageTeamData(resource.data.teamId));
+      allow create: if isSelf(userId) && request.resource.data.id == userId;
+      allow update: if (
+          isSelf(userId) && request.resource.data.id == userId
+        ) || (
+          resource.data.teamId != null &&
+          canManageTeamData(resource.data.teamId) &&
+          request.resource.data.id == resource.data.id &&
+          request.resource.data.email == resource.data.email
+        );
+      allow delete: if false;
+    }
+
+    match /teams/{teamId} {
+      allow get: if canReadTeamScopedData(teamId);
+      allow list: if false;
+      allow create: if isSignedIn() &&
+        request.resource.data.id == teamId &&
+        request.resource.data.adminUserId == currentUserId();
+      allow update: if canManageTeamData(teamId) &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.adminUserId == resource.data.adminUserId &&
+        request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isTeamAdminNow(teamId) &&
+        resource.data.adminUserId == currentUserId();
+    }
+
+    match /publicTeams/{teamId} {
+      allow get, list: if true;
+      allow create, update: if canManageTeamDataNowOrAfter(teamId) &&
+        request.resource.data.id == teamId;
+      allow delete: if canManageTeamData(teamId);
+    }
+
+    match /teamInvites/{inviteCode} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create, update: if canManageTeamDataNowOrAfter(
+          request.resource.data.teamId
+        ) &&
+        request.resource.data.id == inviteCode;
+      allow delete: if resource.data.teamId != null &&
+        canManageTeamData(resource.data.teamId);
+    }
+
+    match /teamMembershipIndex/{teamId} {
+      allow read, write: if false;
+
+      match /members/{userId} {
+        allow get, list: if false;
+        allow create, update: if mirrorsMembershipIndex(teamId, userId) &&
+          (
+            canManageTeamDataNowOrAfter(teamId) ||
+            request.resource.data.userId == currentUserId()
+          );
+        allow delete: if canManageTeamData(teamId);
+      }
+    }
+
+    match /teamMembers/{membershipId} {
+      allow get, list: if resource.data.userId == currentUserId() ||
+        canReadTeamScopedData(resource.data.teamId);
+      allow create: if request.resource.data.id == membershipId &&
+        (
+          canManageTeamDataNowOrAfter(request.resource.data.teamId) ||
+          isSafeInviteMembershipCreate(membershipId)
+        );
+      allow update: if request.resource.data.id == resource.data.id &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.teamId == resource.data.teamId &&
+        (
+          canManageTeamData(resource.data.teamId) ||
+          isSafeInviteMembershipReactivation(membershipId)
+        );
+      allow delete: if canManageTeamData(resource.data.teamId);
+    }
+
+    match /players/{playerId} {
+      allow get, list: if canReadTeamScopedData(resource.data.teamId) ||
+        isLinkedPlayerForCurrentUser(resource.data);
+      allow create: if request.resource.data.id == playerId &&
+        canManagePlayersDataNowOrAfter(request.resource.data.teamId);
+      allow update: if request.resource.data.id == resource.data.id &&
+        request.resource.data.teamId == resource.data.teamId &&
+        (
+          canManagePlayersData(resource.data.teamId) ||
+          canEditOwnPlayerProfile(resource.data)
+        );
+      allow delete: if canManageTeamData(resource.data.teamId);
+    }
+
+    match /matches/{matchId} {
+      allow get, list: if canReadTeamScopedData(resource.data.teamId);
+      allow create: if request.resource.data.id == matchId &&
+        canManageTeamData(request.resource.data.teamId);
+      allow update, delete: if canManageTeamData(resource.data.teamId);
+    }
+
+    match /attendance/{attendanceId} {
+      allow get, list: if canReadTeamScopedData(resource.data.teamId);
+      allow create: if request.resource.data.id == attendanceId &&
+        (
+          canManageTeamData(request.resource.data.teamId) ||
+          isOwnAttendanceWrite()
+        );
+      allow update: if request.resource.data.id == resource.data.id &&
+        request.resource.data.teamId == resource.data.teamId &&
+        request.resource.data.matchId == resource.data.matchId &&
+        request.resource.data.playerId == resource.data.playerId &&
+        (
+          canManageTeamData(resource.data.teamId) ||
+          isOwnAttendanceWrite()
+        );
+      allow delete: if canManageTeamData(resource.data.teamId);
+    }
+
+    match /lineups/{lineupId} {
+      allow get, list: if canReadTeamScopedData(resource.data.teamId);
+      allow create: if request.resource.data.id == lineupId &&
+        canManageTeamData(request.resource.data.teamId);
+      allow update, delete: if canManageTeamData(resource.data.teamId);
+    }
+
+    match /matchStats/{statId} {
+      allow get, list: if canReadTeamScopedData(resource.data.teamId);
+      allow create: if request.resource.data.id == statId &&
+        canManageTeamData(request.resource.data.teamId);
+      allow update, delete: if canManageTeamData(resource.data.teamId);
+    }
+
+    match /matchDiaryEntries/{entryId} {
+      allow get, list: if canReadTeamScopedData(resource.data.teamId);
+      allow create: if request.resource.data.id == entryId &&
+        canManageTeamData(request.resource.data.teamId);
+      allow update, delete: if canManageTeamData(resource.data.teamId);
+    }
+
+    match /mvpVotes/{voteId} {
+      allow get, list: if canReadTeamScopedData(resource.data.teamId);
+      allow create: if request.resource.data.id == voteId &&
+        hasActiveTeamMembership(request.resource.data.teamId) &&
+        request.resource.data.voterPlayerId != request.resource.data.targetPlayerId &&
+        isCurrentMembershipPlayer(
+          request.resource.data.teamId,
+          request.resource.data.voterPlayerId
+        ) &&
+        isFinishedMatch(
+          request.resource.data.teamId,
+          request.resource.data.matchId
+        ) &&
+        isConfirmedAttendance(
+          request.resource.data.teamId,
+          request.resource.data.matchId,
+          request.resource.data.voterPlayerId
+        ) &&
+        isConfirmedAttendance(
+          request.resource.data.teamId,
+          request.resource.data.matchId,
+          request.resource.data.targetPlayerId
+        );
+      allow update: if false;
+      allow delete: if canManageTeamData(resource.data.teamId);
+    }
+
+    match /playerRatings/{ratingId} {
+      allow get, list: if canReadTeamScopedData(resource.data.teamId);
+      allow create: if request.resource.data.id == ratingId &&
+        hasActiveTeamMembership(request.resource.data.teamId) &&
+        request.resource.data.raterPlayerId != request.resource.data.targetPlayerId &&
+        isCurrentMembershipPlayer(
+          request.resource.data.teamId,
+          request.resource.data.raterPlayerId
+        ) &&
+        isFinishedMatch(
+          request.resource.data.teamId,
+          request.resource.data.matchId
+        ) &&
+        isConfirmedAttendance(
+          request.resource.data.teamId,
+          request.resource.data.matchId,
+          request.resource.data.raterPlayerId
+        ) &&
+        isConfirmedAttendance(
+          request.resource.data.teamId,
+          request.resource.data.matchId,
+          request.resource.data.targetPlayerId
+        );
+      allow update: if false;
+      allow delete: if canManageTeamData(resource.data.teamId);
+    }
+
+    match /ratingCriteria/{criterionId} {
+      allow get, list: if canReadTeamScopedData(resource.data.teamId);
+      allow create: if request.resource.data.id == criterionId &&
+        canManageTeamDataNowOrAfter(request.resource.data.teamId);
+      allow update, delete: if canManageTeamData(resource.data.teamId);
+    }
+
+    match /notifications/{notificationId} {
+      allow get, list: if canReadTeamScopedData(resource.data.teamId) &&
+        notificationTargetsCurrentUser(resource.data);
+      allow create: if request.resource.data.id == notificationId &&
+        canManageTeamData(request.resource.data.teamId);
+      allow update: if canManageTeamData(resource.data.teamId) ||
+        (
+          canReadTeamScopedData(resource.data.teamId) &&
+          canMarkNotificationAsRead()
+        );
+      allow delete: if canManageTeamData(resource.data.teamId);
+    }
+
+    match /seasons/{seasonId} {
+      allow get, list: if canReadTeamScopedData(resource.data.teamId);
+      allow create: if request.resource.data.id == seasonId &&
+        canManageTeamDataNowOrAfter(request.resource.data.teamId);
+      allow update, delete: if canManageTeamData(resource.data.teamId);
+    }
+  }
+}

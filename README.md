@@ -47,11 +47,18 @@ EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=...
 EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
 EXPO_PUBLIC_FIREBASE_APP_ID=...
 EXPO_PUBLIC_DATA_SOURCE=firebase
+EXPO_PUBLIC_SUPABASE_URL=...
+EXPO_PUBLIC_SUPABASE_ANON_KEY=...
 EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=...
 EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=...
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=...
+EXPO_PUBLIC_ENABLE_ADS=false
 # opcional:
 # EXPO_PUBLIC_GOOGLE_CLIENT_ID=...
+# EXPO_PUBLIC_SUPABASE_KEY=... # fallback legado
+# EXPO_PUBLIC_ADMOB_ANDROID_APP_ID=...
+# EXPO_PUBLIC_ADMOB_ANDROID_BANNER_HOME_ID=...
+# EXPO_PUBLIC_ADMOB_ANDROID_INTERSTITIAL_AFTER_MATCH_CREATE_ID=...
 ```
 
 4. Reinicie o Expo depois de alterar o `.env`.
@@ -62,6 +69,8 @@ Observacoes:
 - Se os client IDs do Google não estiverem configurados, o botão de Google fica oculto.
 - Quando `EXPO_PUBLIC_DATA_SOURCE=mock`, o app usa o fluxo local de demonstração.
 - No navegador, a sessão do Firebase Auth usa persistência local do browser.
+- Para upload e mídia no Supabase, prefira `EXPO_PUBLIC_SUPABASE_ANON_KEY`. `EXPO_PUBLIC_SUPABASE_KEY` fica apenas como fallback legado.
+- Para beta web, `EXPO_PUBLIC_ENABLE_ADS=false` simplifica o build do Vercel e evita depender de IDs de AdMob.
 
 ## Criacao de time
 
@@ -162,12 +171,20 @@ O build web do Expo sai em `dist` por padrão. Esse diretório pode ser publicad
 
 ### Vercel
 
-1. Rode `npm run build:web`.
-2. Crie um projeto novo na Vercel apontando para este repositorio.
-3. Use:
-   - Build command: `npm run build:web`
+1. Este deploy beta sobe apenas o front web. Nao publique Firestore Rules novas antes do backfill de `teamMembershipIndex`.
+2. Rode `npx expo export -p web`.
+3. Crie um projeto novo na Vercel apontando para este repositorio.
+4. Use:
+   - Build command: `npx expo export -p web`
    - Output directory: `dist`
-4. Configure as variaveis `EXPO_PUBLIC_*` no painel da Vercel.
+5. Configure no painel da Vercel:
+   - Obrigatorias para web Firebase: `EXPO_PUBLIC_DATA_SOURCE`, `EXPO_PUBLIC_FIREBASE_API_KEY`, `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN`, `EXPO_PUBLIC_FIREBASE_PROJECT_ID`, `EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET`, `EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `EXPO_PUBLIC_FIREBASE_APP_ID`
+   - Obrigatorias para mídia Supabase: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+   - Opcional para login Google no navegador: `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`
+   - Opcional para ads: `EXPO_PUBLIC_ENABLE_ADS`, `EXPO_PUBLIC_ADMOB_ANDROID_APP_ID`, `EXPO_PUBLIC_ADMOB_ANDROID_BANNER_HOME_ID`, `EXPO_PUBLIC_ADMOB_ANDROID_INTERSTITIAL_AFTER_MATCH_CREATE_ID`
+6. Para o beta controlado, prefira:
+   - `EXPO_PUBLIC_ENABLE_ADS=false`
+   - conta nova ou time novo criado pelo fluxo atual
 
 ### Netlify
 

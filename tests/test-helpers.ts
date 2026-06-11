@@ -79,6 +79,7 @@ export function createTeamMember(overrides: Partial<TeamMember> = {}): TeamMembe
     userId: overrides.userId ?? 'user-owner',
     teamId: overrides.teamId ?? 'team-1',
     playerId: overrides.playerId ?? null,
+    inviteCodeUsed: overrides.inviteCodeUsed ?? null,
     roles: overrides.roles ?? ['player'],
     canManageTeam: overrides.canManageTeam ?? false,
     canManagePlayers: overrides.canManagePlayers ?? false,

@@ -22,6 +22,7 @@ expo-env.d.ts
 *.mobileprovision
 
 # Firebase / credentials / secrets
+
 .env
 .env.*
 !.env.example

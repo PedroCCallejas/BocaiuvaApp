@@ -1,4 +1,1 @@
-# Placeholder para ads.txt do beta web.
-# Preencha apenas depois da aprovacao do AdSense e do dominio final.
-# Exemplo:
-# google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0
+google.com, pub-1836203364600133, DIRECT, f08c47fec0942fa0

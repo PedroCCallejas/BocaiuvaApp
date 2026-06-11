@@ -5,12 +5,15 @@ import mobileAds, {
   TestIds,
 } from 'react-native-google-mobile-ads';
 
-import type { AdPlacement } from '@/constants/ads';
 import {
-  AD_PLACEMENTS,
   ADS_ENABLED,
-  MATCH_CREATE_INTERSTITIAL_COOLDOWN_MS,
-} from '@/constants/ads';
+  ADS_MOBILE_ENABLED,
+  getCurrentMobileAppId,
+  getCurrentMobileBannerId,
+  getCurrentMobileInterstitialId,
+} from '@/config/ads';
+import type { AdPlacement } from '@/constants/ads';
+import { AD_PLACEMENTS, MATCH_CREATE_INTERSTITIAL_COOLDOWN_MS } from '@/constants/ads';
 
 const LAST_MATCH_CREATE_INTERSTITIAL_AT_KEY =
   '@appboca/ads/last-match-create-interstitial-at';
@@ -25,25 +28,23 @@ let showPromise: Promise<void> | null = null;
 let reloadTimer: ReturnType<typeof setTimeout> | null = null;
 
 function isAdMobAvailable() {
-  return ADS_ENABLED;
+  return ADS_ENABLED && ADS_MOBILE_ENABLED && Boolean(getCurrentMobileAppId());
 }
 
-function getAndroidBannerHomeUnitId() {
+function getBannerUnitId() {
   if (__DEV__) {
     return TestIds.ADAPTIVE_BANNER;
   }
 
-  return process.env.EXPO_PUBLIC_ADMOB_ANDROID_BANNER_HOME_ID?.trim() || null;
+  return getCurrentMobileBannerId();
 }
 
-function getAndroidMatchCreateInterstitialUnitId() {
+function getMatchCreateInterstitialUnitId() {
   if (__DEV__) {
     return TestIds.INTERSTITIAL;
   }
 
-  return (
-    process.env.EXPO_PUBLIC_ADMOB_ANDROID_INTERSTITIAL_AFTER_MATCH_CREATE_ID?.trim() || null
-  );
+  return getCurrentMobileInterstitialId();
 }
 
 function clearInterstitialListeners() {
@@ -69,7 +70,7 @@ function scheduleInterstitialReload(delayMs = 0) {
 }
 
 function buildInterstitial() {
-  const unitId = getAndroidMatchCreateInterstitialUnitId();
+  const unitId = getMatchCreateInterstitialUnitId();
 
   if (!unitId || !isAdMobAvailable()) {
     return null;
@@ -121,7 +122,7 @@ export function getBannerAdUnitId(placement: AdPlacement): string | null {
     placement === AD_PLACEMENTS.HOME_AFTER_NEXT_MATCH ||
     placement === AD_PLACEMENTS.PUBLIC_TEAM_AFTER_STATS
   ) {
-    return getAndroidBannerHomeUnitId();
+    return getBannerUnitId();
   }
 
   return null;

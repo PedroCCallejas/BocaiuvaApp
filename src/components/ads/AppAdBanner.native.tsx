@@ -2,26 +2,30 @@ import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { BannerAd, BannerAdSize } from 'react-native-google-mobile-ads';
 
+import { ADS_ENABLED } from '@/config/ads';
 import type { AdPlacement } from '@/constants/ads';
-import { ADS_ENABLED } from '@/constants/ads';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   getBannerAdUnitId,
   initializeAdMob,
 } from '@/services/ads/admob-service';
 
-interface AdSlotProps {
+export interface AppAdBannerProps {
   placement: AdPlacement;
   compact?: boolean;
 }
 
-export function AdSlot({ placement, compact = false }: AdSlotProps) {
+export function AppAdBanner({ placement, compact = false }: AppAdBannerProps) {
   const theme = useAppTheme();
   const unitId = getBannerAdUnitId(placement);
 
   useEffect(() => {
+    if (!unitId) {
+      return;
+    }
+
     void initializeAdMob();
-  }, []);
+  }, [unitId]);
 
   if (!ADS_ENABLED || !unitId) {
     return null;
@@ -30,7 +34,7 @@ export function AdSlot({ placement, compact = false }: AdSlotProps) {
   return (
     <View
       accessibilityRole="summary"
-      accessibilityLabel={`Espaço de anúncio ${placement}`}
+      accessibilityLabel={`Espaco de anuncio ${placement}`}
       style={[
         styles.card,
         compact ? styles.cardCompact : null,

@@ -4,15 +4,40 @@ const APP_NAME = 'Professô FC';
 const APP_DESCRIPTION =
   'Organize seu time, monte escalações, acompanhe estatísticas e marque amistosos.';
 
+type GoogleMobileAdsPluginConfig = {
+  androidAppId?: string;
+  iosAppId?: string;
+};
+
+function readStringEnv(name: string) {
+  const value = process.env[name]?.trim();
+  return value ? value : null;
+}
+
+function readBooleanEnv(name: string) {
+  return process.env[name]?.trim().toLowerCase() === 'true';
+}
+
+const adsEnabled = readBooleanEnv('EXPO_PUBLIC_ADS_ENABLED');
+const mobileAdsEnabled = adsEnabled && readBooleanEnv('EXPO_PUBLIC_ADS_MOBILE_ENABLED');
+const buildPlatform = readStringEnv('EAS_BUILD_PLATFORM') ?? readStringEnv('EXPO_OS');
+const androidAdMobAppId = readStringEnv('EXPO_PUBLIC_ADMOB_ANDROID_APP_ID');
+const iosAdMobAppId = readStringEnv('EXPO_PUBLIC_ADMOB_IOS_APP_ID');
+const googleMobileAdsPluginConfig: GoogleMobileAdsPluginConfig = {
+  ...((!buildPlatform || buildPlatform === 'android') && androidAdMobAppId
+    ? { androidAppId: androidAdMobAppId }
+    : {}),
+  ...((!buildPlatform || buildPlatform === 'ios') && iosAdMobAppId
+    ? { iosAppId: iosAdMobAppId }
+    : {}),
+};
+
 const googleMobileAdsPlugin =
-  process.env.EXPO_PUBLIC_ADMOB_ANDROID_APP_ID != null
+  mobileAdsEnabled && Object.keys(googleMobileAdsPluginConfig).length > 0
     ? ([
         'react-native-google-mobile-ads',
-        {
-          androidAppId: process.env.EXPO_PUBLIC_ADMOB_ANDROID_APP_ID,
-          iosAppId: process.env.EXPO_PUBLIC_ADMOB_IOS_APP_ID,
-        },
-      ] as [string, { androidAppId: string; iosAppId?: string }])
+        googleMobileAdsPluginConfig,
+      ] as [string, GoogleMobileAdsPluginConfig])
     : null;
 
 export default (): ExpoConfig => ({
@@ -58,7 +83,7 @@ export default (): ExpoConfig => ({
         photosPermission:
           'O app precisa acessar suas fotos para enviar imagens de jogadores e do time.',
         cameraPermission:
-          'O app precisa usar a camera para tirar fotos de jogadores e do time.',
+          'O app precisa usar a câmera para tirar fotos de jogadores e do time.',
       },
     ],
     [

@@ -337,8 +337,11 @@ export interface AppRepository {
   getMode(): RepositoryMode;
   getInitialSnapshot(): Promise<AppSnapshot>;
   getSnapshot(): Promise<AppSnapshot>;
-  listPublicTeams(actorUserId: string): Promise<PublicTeamSummary[]>;
-  getPublicTeamProfile(teamId: string, actorUserId: string): Promise<PublicTeamProfile | null>;
+  listPublicTeams(actorUserId?: string | null): Promise<PublicTeamSummary[]>;
+  getPublicTeamProfile(
+    teamId: string,
+    actorUserId?: string | null,
+  ): Promise<PublicTeamProfile | null>;
   subscribeSnapshot?(
     currentUserId: string,
     handlers: SnapshotSubscriptionHandlers,

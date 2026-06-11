@@ -505,21 +505,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   async listPublicTeams() {
-    const userId = get().currentUserId;
-    if (!userId) {
-      throw new Error('Sessão expirada.');
-    }
-
-    return repository.listPublicTeams(userId);
+    return repository.listPublicTeams(get().currentUserId);
   },
 
   async getPublicTeamProfile(teamId) {
-    const userId = get().currentUserId;
-    if (!userId) {
-      throw new Error('Sessão expirada.');
-    }
-
-    return repository.getPublicTeamProfile(teamId, userId);
+    return repository.getPublicTeamProfile(teamId, get().currentUserId);
   },
 
   async createTeam(input) {

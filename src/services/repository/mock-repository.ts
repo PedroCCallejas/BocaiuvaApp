@@ -1680,7 +1680,7 @@ export const mockRepository: AppRepository = {
     return snapshotFromDatabase(database, mockSessionUserId);
   },
 
-  async listPublicTeams(actorUserId: string) {
+  async listPublicTeams(actorUserId?: string | null) {
     void actorUserId;
 
     const publicTeams = database.publicTeams
@@ -1704,7 +1704,7 @@ export const mockRepository: AppRepository = {
     return clone(publicTeams);
   },
 
-  async getPublicTeamProfile(teamId: string, actorUserId: string) {
+  async getPublicTeamProfile(teamId: string, actorUserId?: string | null) {
     void actorUserId;
     const profile = findPublicTeamDocument(teamId);
 

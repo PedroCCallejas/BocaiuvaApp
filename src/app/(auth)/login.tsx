@@ -10,10 +10,10 @@ import {
   getGoogleAuthRequestConfig,
   isGoogleSignInConfigured,
 } from '@/config/auth/google';
-import { Screen } from '@/components/ui/Screen';
+import { PublicPageShell } from '@/components/public/PublicPageShell';
 import { AppInput } from '@/components/ui/AppInput';
 import { AppButton } from '@/components/ui/AppButton';
-import { APP_NAME, APP_TAGLINE } from '@/constants/branding';
+import { APP_NAME } from '@/constants/branding';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
@@ -161,16 +161,33 @@ export default function LoginScreen() {
   }
 
   return (
-    <Screen formMode contentContainerStyle={styles.screen}>
-      <View style={styles.hero}>
-        <Text style={[styles.eyebrow, { color: theme.colors.secondary }]}>{APP_NAME}</Text>
-        <Text style={[styles.title, { color: theme.colors.text }]}>
-          {APP_TAGLINE} Monte seu elenco, cuide das partidas e acompanhe tudo em um só lugar.
+    <PublicPageShell
+      eyebrow="Acesso à plataforma"
+      title="Entre no Professô FC e retome a rotina do seu time"
+      description={
+        isMockMode
+          ? 'Use uma conta demonstrativa para conhecer a navegação do produto, entender a proposta e explorar a organização de um elenco completo.'
+          : `Entre com sua conta para abrir o ${APP_NAME}, receber convites, acompanhar partidas e acessar a galeria pública de times.`
+      }
+      actions={[
+        { label: 'Conhecer o projeto', href: '/' },
+        { label: 'Ver galeria pública', href: '/teams-gallery', variant: 'secondary' },
+        { label: 'Criar conta', href: '/register', variant: 'ghost' },
+      ]}>
+      <View
+        style={[
+          styles.helperCard,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.border,
+          },
+        ]}>
+        <Text style={[styles.helperTitle, { color: theme.colors.text }]}>
+          Como funciona o acesso
         </Text>
-        <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          {isMockMode
-            ? 'Use uma conta demonstrativa para explorar o fluxo completo e sentir como o time pode ficar.'
-            : 'Entre com sua conta para seguir de onde parou ou use o Google para acelerar o acesso.'}
+        <Text style={[styles.helperDescription, { color: theme.colors.textMuted }]}>
+          Entre com e-mail e senha para abrir seus times, usar convites e acompanhar elenco,
+          partidas, presença, estatísticas e perfis públicos.
         </Text>
       </View>
 
@@ -213,7 +230,7 @@ export default function LoginScreen() {
           )}
         />
         <AppButton
-          label="Entrar"
+          label="Entrar com e-mail"
           onPress={handleSubmit(onSubmit)}
           loading={isSubmitting}
           fullWidth
@@ -276,34 +293,25 @@ export default function LoginScreen() {
           </View>
         </View>
       ) : null}
-    </Screen>
+    </PublicPageShell>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flexGrow: 1,
-    justifyContent: 'center',
+  helperCard: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 18,
+    gap: 8,
   },
-  hero: {
-    gap: 10,
-  },
-  eyebrow: {
+  helperTitle: {
     fontFamily: fonts.heading,
-    fontSize: 12,
+    fontSize: 18,
     fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
   },
-  title: {
-    fontFamily: fonts.display,
-    fontSize: 38,
-    fontWeight: '900',
-    lineHeight: 42,
-  },
-  description: {
+  helperDescription: {
     fontFamily: fonts.body,
-    fontSize: 15,
+    fontSize: 14,
     lineHeight: 22,
   },
   card: {

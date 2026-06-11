@@ -4002,7 +4002,7 @@ export const firebaseRepository: AppRepository = {
     }
   },
 
-  async listPublicTeams(actorUserId: string) {
+  async listPublicTeams(actorUserId?: string | null) {
     try {
       const firestore = requireFirestore();
       void actorUserId;
@@ -4039,7 +4039,7 @@ export const firebaseRepository: AppRepository = {
     }
   },
 
-  async getPublicTeamProfile(teamId: string, actorUserId: string) {
+  async getPublicTeamProfile(teamId: string, actorUserId?: string | null) {
     try {
       void actorUserId;
       const team = await fetchPublicTeamById(teamId);

@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { router } from 'expo-router';
 import { z } from 'zod';
 
-import { Screen } from '@/components/ui/Screen';
+import { PublicPageShell } from '@/components/public/PublicPageShell';
 import { AppInput } from '@/components/ui/AppInput';
 import { AppButton } from '@/components/ui/AppButton';
 import { APP_NAME } from '@/constants/branding';
@@ -49,11 +49,29 @@ export default function RegisterScreen() {
   }
 
   return (
-    <Screen formMode contentContainerStyle={styles.screen}>
-      <View style={styles.hero}>
-        <Text style={[styles.title, { color: theme.colors.text }]}>Criar conta</Text>
-        <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          Crie sua conta no {APP_NAME} para montar seu time, entrar por convite e acompanhar tudo em um só lugar.
+    <PublicPageShell
+      eyebrow="Cadastro"
+      title="Crie sua conta e comece a organizar o seu time"
+      description={`Com uma conta no ${APP_NAME}, você pode receber convites, criar seu próprio elenco, acompanhar partidas e navegar pela área pública com mais contexto.`}
+      actions={[
+        { label: 'Conhecer o projeto', href: '/' },
+        { label: 'Ver galeria pública', href: '/teams-gallery', variant: 'secondary' },
+        { label: 'Entrar', href: '/login', variant: 'ghost' },
+      ]}>
+      <View
+        style={[
+          styles.helperCard,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.border,
+          },
+        ]}>
+        <Text style={[styles.helperTitle, { color: theme.colors.text }]}>
+          Depois do cadastro
+        </Text>
+        <Text style={[styles.helperDescription, { color: theme.colors.textMuted }]}>
+          Você poderá criar um time, entrar com um código de convite ou abrir a galeria pública
+          para conhecer elencos que decidiram se apresentar.
         </Text>
       </View>
 
@@ -114,28 +132,34 @@ export default function RegisterScreen() {
           loading={isSubmitting}
           fullWidth
         />
-        <AppButton label="Voltar para o login" variant="ghost" onPress={() => router.back()} />
+        <View style={styles.actionsRow}>
+          <AppButton label="Voltar para o login" variant="ghost" onPress={() => router.push('/login')} />
+          <AppButton
+            label="Ver galeria pública"
+            variant="secondary"
+            onPress={() => router.push('/teams-gallery')}
+          />
+        </View>
       </View>
-    </Screen>
+    </PublicPageShell>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
-  hero: {
+  helperCard: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 18,
     gap: 8,
   },
-  title: {
-    fontFamily: fonts.display,
-    fontSize: 34,
-    fontWeight: '900',
+  helperTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 18,
+    fontWeight: '800',
   },
-  description: {
+  helperDescription: {
     fontFamily: fonts.body,
-    fontSize: 15,
+    fontSize: 14,
     lineHeight: 22,
   },
   card: {
@@ -143,5 +167,10 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     padding: 20,
     gap: 14,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
   },
 });

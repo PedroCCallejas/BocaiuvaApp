@@ -29,6 +29,7 @@ import {
   validateRatingCriteriaSubmission,
 } from '@/lib/rating-criteria';
 import {
+  canSelfEditPlayerProfileWithMembershipLink,
   isPlayerAvailableForLinking,
   normalizeEmail,
   resolvePlayerForUser,
@@ -2370,9 +2371,14 @@ export const mockRepository: AppRepository = {
         player.manualStats = normalizeManualStats(input.manualStats);
       }
     } else {
-      const currentPlayerId = ensureCurrentUserPlayerForActiveTeam(actorUserId);
-
-      if (currentPlayerId !== player.id || actor.teamId !== player.teamId) {
+      if (
+        !canSelfEditPlayerProfileWithMembershipLink({
+          teamId: player.teamId,
+          user: actor,
+          membership,
+          player,
+        })
+      ) {
         throw new Error('Você não tem permissão para editar esse jogador.');
       }
 

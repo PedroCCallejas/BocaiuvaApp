@@ -11,6 +11,11 @@ import { SectionHeader } from '@/components/ui/SectionHeader';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { canEditPlayerProfile, isPlayerInactive } from '@/lib/player-management';
+import {
+  getProfilePhotoSaveErrorMessage,
+  getProfilePhotoUploadErrorMessage,
+  isPermissionDeniedError,
+} from '@/lib/profile-photo-errors';
 import { getPlayerComputedStats } from '@/lib/stats';
 import { buildPlayerPhotoStoragePath, uploadImage } from '@/lib/uploadImage';
 import {
@@ -330,17 +335,22 @@ export default function EditPlayerScreen() {
                 const uploadedPhoto = await uploadImage({
                   asset: pendingPhoto,
                   storagePath: buildPlayerPhotoStoragePath(editablePlayer.teamId, editablePlayer.id),
+                  cacheBustKey: Date.now(),
                   onProgress: setPhotoUploadProgress,
                 });
                 await updatePlayer(editablePlayer.id, {
                   photoUrl: uploadedPhoto.downloadUrl,
                 });
               } catch (error) {
+                if (__DEV__) {
+                  console.error('[player-photo] edit-upload', error);
+                }
+
                 Alert.alert(
                   'Alterações salvas sem trocar a foto',
-                  error instanceof Error
-                    ? error.message
-                    : 'O restante das alterações foi salvo, mas o upload da foto falhou.',
+                  isPermissionDeniedError(error)
+                    ? getProfilePhotoSaveErrorMessage(error)
+                    : getProfilePhotoUploadErrorMessage(error),
                 );
               } finally {
                 setPhotoUploadProgress(null);
@@ -377,9 +387,18 @@ export default function EditPlayerScreen() {
           } catch (error) {
             setPhotoUploadProgress(null);
             setPresentationVideoUploadProgress(null);
+
+            if (__DEV__) {
+              console.error('[player-profile] save', error);
+            }
+
             Alert.alert(
               'Não foi possível salvar',
-              error instanceof Error ? error.message : 'Tente novamente.',
+              isPermissionDeniedError(error)
+                ? getProfilePhotoSaveErrorMessage(error)
+                : error instanceof Error
+                  ? error.message
+                  : 'Tente novamente.',
             );
           }
         }}

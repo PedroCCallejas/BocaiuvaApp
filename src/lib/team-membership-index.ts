@@ -1,3 +1,4 @@
+import { normalizeEmail } from '@/lib/player-linking';
 import { normalizeTeamMemberStatus } from '@/lib/team-membership';
 import type { TeamMember } from '@/types/domain';
 import type { FirestoreTeamMembershipIndexDocument } from '@/types/firestore';
@@ -104,10 +105,38 @@ export function canManagePrivateTeamPlayers(input: TeamScopedAccessInput) {
   );
 }
 
-export function canEditOwnPrivatePlayer(input: TeamScopedAccessInput & { playerId: string }) {
-  return (
-    canReadPrivateTeamData(input) &&
-    input.membershipIndex?.playerId === input.playerId
+export function canEditOwnPrivatePlayer(
+  input: TeamScopedAccessInput & {
+    playerId: string;
+    playerLinkedUserId?: string | null;
+    playerLinkedEmail?: string | null;
+    userEmail?: string | null;
+  },
+) {
+  if (!canReadPrivateTeamData(input)) {
+    return false;
+  }
+
+  if (input.membershipIndex?.playerId === input.playerId) {
+    return true;
+  }
+
+  if (input.membershipIndex?.playerId != null) {
+    return false;
+  }
+
+  if (input.membershipIndex?.roles.includes('player') !== true) {
+    return false;
+  }
+
+  if (input.playerLinkedUserId && input.playerLinkedUserId === input.userId) {
+    return true;
+  }
+
+  const normalizedUserEmail = normalizeEmail(input.userEmail);
+  return Boolean(
+    normalizedUserEmail &&
+      normalizeEmail(input.playerLinkedEmail) === normalizedUserEmail,
   );
 }
 

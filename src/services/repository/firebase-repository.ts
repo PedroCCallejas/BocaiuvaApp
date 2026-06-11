@@ -60,6 +60,7 @@ import {
   validateRatingCriteriaSubmission,
 } from '@/lib/rating-criteria';
 import {
+  canSelfEditPlayerProfileWithMembershipLink,
   isPlayerAvailableForLinking,
   membershipIndicatesPlayer,
   normalizeEmail,
@@ -3756,11 +3757,15 @@ async function commitFirestoreBatchMutations(mutations: FirestoreBatchMutation[]
 
 async function ensureSelfPlayerEdit(userId: string, player: Player) {
   const { actor, membership } = await ensureMembershipContext(userId, player.teamId);
-  const ownPlayerId = membership?.roles.includes('player')
-    ? await ensureCurrentUserPlayerForActiveTeam(userId)
-    : null;
 
-  if (!membership?.roles.includes('player') || ownPlayerId !== player.id) {
+  if (
+    !canSelfEditPlayerProfileWithMembershipLink({
+      teamId: player.teamId,
+      user: actor,
+      membership,
+      player,
+    })
+  ) {
     throw createRepositoryError(
       'Você não tem permissão para editar esse jogador.',
       'permission-denied',

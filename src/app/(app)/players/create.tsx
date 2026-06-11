@@ -7,6 +7,11 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import {
+  getProfilePhotoSaveErrorMessage,
+  getProfilePhotoUploadErrorMessage,
+  isPermissionDeniedError,
+} from '@/lib/profile-photo-errors';
 import { buildPlayerPhotoStoragePath, uploadImage } from '@/lib/uploadImage';
 import { useAppStore } from '@/store/app-store';
 import {
@@ -96,17 +101,22 @@ export default function CreatePlayerScreen() {
                 const uploadedPhoto = await uploadImage({
                   asset: pendingPhoto,
                   storagePath: buildPlayerPhotoStoragePath(team.id, playerId),
+                  cacheBustKey: Date.now(),
                   onProgress: setPhotoUploadProgress,
                 });
                 await updatePlayer(playerId, {
                   photoUrl: uploadedPhoto.downloadUrl,
                 });
               } catch (error) {
+                if (__DEV__) {
+                  console.error('[player-photo] create-upload', error);
+                }
+
                 Alert.alert(
                   'Jogador salvo sem foto',
-                  error instanceof Error
-                    ? error.message
-                    : 'O jogador foi salvo, mas o upload da foto falhou.',
+                  isPermissionDeniedError(error)
+                    ? getProfilePhotoSaveErrorMessage(error)
+                    : getProfilePhotoUploadErrorMessage(error),
                 );
               } finally {
                 setPhotoUploadProgress(null);

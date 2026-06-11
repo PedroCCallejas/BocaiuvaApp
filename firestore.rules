@@ -128,6 +128,19 @@ service cloud.firestore {
         currentMembershipIndex(teamId).data.playerId == playerId;
     }
 
+    function currentMembershipHasPlayerRole(teamId) {
+      return hasActiveTeamMembership(teamId) &&
+        currentMembershipIndex(teamId).data.roles is list &&
+        currentMembershipIndex(teamId).data.roles.hasAny(['player']);
+    }
+
+    function isLinkedPlayerForCurrentMembership(playerData) {
+      return hasActiveTeamMembership(playerData.teamId) &&
+        currentMembershipIndex(playerData.teamId).data.playerId == null &&
+        currentMembershipHasPlayerRole(playerData.teamId) &&
+        isLinkedPlayerForCurrentUser(playerData);
+    }
+
     function validInviteForTeam(teamId, inviteCode) {
       return isSignedIn() &&
         hasTeamId(teamId) &&
@@ -204,7 +217,10 @@ service cloud.firestore {
     }
 
     function canEditOwnPlayerProfile(playerData) {
-      return isCurrentMembershipPlayer(playerData.teamId, playerData.id) &&
+      return (
+          isCurrentMembershipPlayer(playerData.teamId, playerData.id) ||
+          isLinkedPlayerForCurrentMembership(playerData)
+        ) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'photoUrl',
           'nickname',

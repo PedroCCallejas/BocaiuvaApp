@@ -7,6 +7,7 @@ import {
   supabaseConfigSummary,
   supabaseEnabled,
 } from '@/config/supabase/client';
+import { appendCacheBustParam } from '@/lib/storage-url';
 
 const DEFAULT_MAX_DIMENSION = 1600;
 const DEFAULT_COMPRESSION = 0.72;
@@ -27,6 +28,7 @@ interface UploadImageInput {
   storagePath: string;
   maxDimension?: number;
   compress?: number;
+  cacheBustKey?: string | number | null;
   onProgress?: (progress: number) => void;
 }
 
@@ -299,6 +301,7 @@ export async function uploadImage({
   storagePath,
   maxDimension,
   compress,
+  cacheBustKey,
   onProgress,
 }: UploadImageInput): Promise<UploadImageResult> {
   try {
@@ -349,11 +352,12 @@ export async function uploadImage({
       body,
       contentType,
     });
+    const downloadUrl = appendCacheBustParam(publicUrl, cacheBustKey);
     onProgress?.(normalizeProgress(1));
     onProgress?.(1);
 
     return {
-      downloadUrl: publicUrl,
+      downloadUrl,
       storagePath,
       usedLocalFallback: false,
     };

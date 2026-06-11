@@ -16,7 +16,13 @@
 - `EXPO_PUBLIC_SUPABASE_KEY` continua aceito apenas como fallback legado temporário.
 - Manter `EXPO_PUBLIC_SUPABASE_URL` apontando para a raiz do projeto: `https://PROJECT_REF.supabase.co`.
 
-## SQL sugerido para o MVP
+## Observação importante sobre escrita
+
+- No app atual, o upload vai direto do cliente para o Supabase usando chave pública (`anon`/`publishable`).
+- Nesse modelo, as policies conseguem restringir bucket, extensão e padrão de caminho, mas não conseguem garantir com segurança que apenas o dono real da foto escreva no próprio arquivo.
+- Para ter escrita realmente por usuário, sem abrir upload amplo no bucket, o app precisa migrar para `signed upload URLs` emitidas por backend confiável ou para uma autenticação do Supabase vinculada ao usuário do app.
+
+## SQL compatível com o upload direto atual
 
 ```sql
 insert into storage.buckets (id, name, public)

@@ -144,3 +144,44 @@ export function resolvePlayerForUser(input: {
 }) {
   return resolvePlayerForUserWithDiagnostics(input).player;
 }
+
+export function canSelfEditPlayerProfileWithMembershipLink(input: {
+  teamId: string;
+  user: Pick<User, 'id' | 'email'> | null;
+  membership?: Pick<TeamMember, 'teamId' | 'playerId' | 'roles' | 'status'> | null;
+  player?: Pick<Player, 'id' | 'teamId' | 'linkedUserId' | 'linkedEmail'> | null;
+}) {
+  if (!input.user || !input.membership || !input.player) {
+    return false;
+  }
+
+  if (
+    input.membership.status !== 'active' ||
+    input.membership.teamId !== input.teamId ||
+    input.player.teamId !== input.teamId
+  ) {
+    return false;
+  }
+
+  if (input.membership.playerId === input.player.id) {
+    return true;
+  }
+
+  if (input.membership.playerId != null) {
+    return false;
+  }
+
+  if (!input.membership.roles.includes('player')) {
+    return false;
+  }
+
+  if (input.player.linkedUserId === input.user.id) {
+    return true;
+  }
+
+  const normalizedUserEmail = normalizeEmail(input.user.email);
+  return Boolean(
+    normalizedUserEmail &&
+      normalizeEmail(input.player.linkedEmail) === normalizedUserEmail,
+  );
+}

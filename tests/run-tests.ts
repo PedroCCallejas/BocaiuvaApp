@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 
 import { buildMatchFieldCost, getMatchFieldPaymentSummary } from '@/lib/field-cost';
 import {
+  getProfilePhotoSaveErrorMessage,
+  getProfilePhotoUploadErrorMessage,
+} from '@/lib/profile-photo-errors';
+import {
   buildInactivatedPlayerState,
   buildReactivatedPlayerState,
   buildUnlinkedPlayerState,
@@ -11,6 +15,7 @@ import {
 } from '@/lib/player-management';
 import { buildPublicTeamProfile, buildPublicTeamSummary } from '@/lib/public-team';
 import { getActiveRatingCriteria } from '@/lib/rating-criteria';
+import { canSelfEditPlayerProfileWithMembershipLink } from '@/lib/player-linking';
 import {
   buildManualAdjustmentsFromDesiredTotals,
   buildPlayerAggregates,
@@ -21,6 +26,7 @@ import {
 import {
   findPlayerById,
   selectCanManageTeam,
+  selectCurrentPlayer,
   selectCurrentTeam,
   selectTeamHistoricalPlayers,
   selectTeamPlayers,
@@ -48,6 +54,7 @@ import {
   canReadPrivateTeamData,
   canUpdateOwnAttendance,
 } from '@/lib/team-membership-index';
+import { appendCacheBustParam } from '@/lib/storage-url';
 import {
   mockRepository,
   resetMockRepositoryState,
@@ -255,6 +262,43 @@ const testCases: TestCase[] = [
     },
   },
   {
+    name: 'selector currentPlayer encontra o jogador pelo linkedEmail quando o membership ainda nao tem playerId',
+    run() {
+      const team = createTeam({ id: 'team-linked-email' });
+      const user = createUser({
+        id: 'user-linked-email',
+        email: 'linked@professo.test',
+        activeTeamId: team.id,
+        teamId: team.id,
+      });
+      const membership = createTeamMember({
+        userId: user.id,
+        teamId: team.id,
+        playerId: null,
+        roles: ['player'],
+      });
+      const player = createPlayer({
+        id: 'player-linked-email',
+        teamId: team.id,
+        linkedUserId: null,
+        linkedEmail: user.email,
+      });
+
+      assert.equal(
+        selectCurrentPlayer({
+          currentUserId: user.id,
+          snapshot: createSnapshot({
+            users: [user],
+            teams: [team],
+            teamMembers: [membership],
+            players: [player],
+          }),
+        })?.id,
+        player.id,
+      );
+    },
+  },
+  {
     name: 'membership index libera leitura apenas para o proprio time privado',
     run() {
       const membership = createTeamMember({
@@ -318,6 +362,10 @@ const testCases: TestCase[] = [
         canManagePlayers: false,
       });
       const membershipIndex = buildTeamMembershipIndexDocument(membership);
+      const fallbackMembershipIndex = buildTeamMembershipIndexDocument({
+        ...membership,
+        playerId: null,
+      });
       const input = {
         teamId: 'team-common-player',
         userId: 'user-common-player',
@@ -330,6 +378,16 @@ const testCases: TestCase[] = [
         canEditOwnPrivatePlayer({
           ...input,
           playerId: 'player-common-player',
+        }),
+        true,
+      );
+      assert.equal(
+        canEditOwnPrivatePlayer({
+          ...input,
+          membershipIndex: fallbackMembershipIndex,
+          playerId: 'player-linked-fallback',
+          playerLinkedEmail: 'user-common-player@professo.test',
+          userEmail: 'user-common-player@professo.test',
         }),
         true,
       );
@@ -367,6 +425,80 @@ const testCases: TestCase[] = [
           raterPlayerId: 'player-common-player',
         }),
         true,
+      );
+    },
+  },
+  {
+    name: 'autoedicao do perfil aceita fallback por linkedEmail com membership ativo de jogador',
+    run() {
+      const membership = createTeamMember({
+        userId: 'user-fallback',
+        teamId: 'team-fallback',
+        playerId: null,
+        roles: ['player'],
+      });
+      const player = createPlayer({
+        id: 'player-fallback',
+        teamId: 'team-fallback',
+        linkedUserId: null,
+        linkedEmail: 'fallback@professo.test',
+      });
+
+      assert.equal(
+        canSelfEditPlayerProfileWithMembershipLink({
+          teamId: 'team-fallback',
+          user: { id: 'user-fallback', email: 'fallback@professo.test' },
+          membership,
+          player,
+        }),
+        true,
+      );
+      assert.equal(
+        canSelfEditPlayerProfileWithMembershipLink({
+          teamId: 'team-fallback',
+          user: { id: 'user-fallback', email: 'fallback@professo.test' },
+          membership,
+          player: createPlayer({
+            id: 'player-other-fallback',
+            teamId: 'team-fallback',
+            linkedUserId: null,
+            linkedEmail: 'other@professo.test',
+          }),
+        }),
+        false,
+      );
+      assert.equal(
+        canSelfEditPlayerProfileWithMembershipLink({
+          teamId: 'team-fallback',
+          user: { id: 'user-fallback', email: 'fallback@professo.test' },
+          membership: {
+            ...membership,
+            playerId: 'player-other-membership',
+          },
+          player,
+        }),
+        false,
+      );
+      assert.equal(
+        canSelfEditPlayerProfileWithMembershipLink({
+          teamId: 'team-fallback',
+          user: { id: 'user-fallback', email: 'fallback@professo.test' },
+          membership: null,
+          player,
+        }),
+        false,
+      );
+      assert.equal(
+        canSelfEditPlayerProfileWithMembershipLink({
+          teamId: 'team-fallback',
+          user: { id: 'user-fallback', email: 'fallback@professo.test' },
+          membership: {
+            ...membership,
+            status: 'inactive',
+          },
+          player,
+        }),
+        false,
       );
     },
   },
@@ -973,6 +1105,106 @@ const testCases: TestCase[] = [
           snapshot: recovered,
         }),
         null,
+      );
+    },
+  },
+  {
+    name: 'jogador comum consegue atualizar a propria foto no mock repository',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({
+        email: 'atacante@bocaiuva.app',
+        password: '123456',
+      });
+
+      await mockRepository.updatePlayer(
+        'player-9',
+        { photoUrl: 'https://cdn.professo.test/player-9-new.jpg?v=1' },
+        'user-striker',
+      );
+
+      const snapshot = await mockRepository.getSnapshot();
+      assert.equal(
+        snapshot.players.find((player) => player.id === 'player-9')?.photoUrl,
+        'https://cdn.professo.test/player-9-new.jpg?v=1',
+      );
+    },
+  },
+  {
+    name: 'jogador comum nao consegue atualizar a foto de outro jogador no mock repository',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({
+        email: 'atacante@bocaiuva.app',
+        password: '123456',
+      });
+
+      await assert.rejects(
+        () =>
+          mockRepository.updatePlayer(
+            'player-7',
+            { photoUrl: 'https://cdn.professo.test/player-7-new.jpg?v=1' },
+            'user-striker',
+          ),
+        (error) =>
+          error instanceof Error &&
+          error.message === 'Você não tem permissão para editar esse jogador.',
+      );
+    },
+  },
+  {
+    name: 'admin consegue atualizar a foto de qualquer jogador do proprio time no mock repository',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({
+        email: 'admin@bocaiuva.app',
+        password: '123456',
+      });
+
+      await mockRepository.updatePlayer(
+        'player-9',
+        { photoUrl: 'https://cdn.professo.test/player-9-admin.jpg?v=1' },
+        'user-admin',
+      );
+
+      const snapshot = await mockRepository.getSnapshot();
+      assert.equal(
+        snapshot.players.find((player) => player.id === 'player-9')?.photoUrl,
+        'https://cdn.professo.test/player-9-admin.jpg?v=1',
+      );
+    },
+  },
+  {
+    name: 'mensagem de upload da foto fica clara quando o Storage rejeita a policy',
+    run() {
+      assert.equal(
+        getProfilePhotoUploadErrorMessage(new Error('new row violates row-level security policy')),
+        'O Storage recusou o envio da foto. Revise as policies do bucket player-photos e tente novamente.',
+      );
+    },
+  },
+  {
+    name: 'permission-denied ao salvar a foto vira mensagem clara de vinculo',
+    run() {
+      const error = Object.assign(new Error('Missing or insufficient permissions'), {
+        code: 'permission-denied',
+      });
+
+      assert.equal(
+        getProfilePhotoSaveErrorMessage(error),
+        'Sua conta não tem permissão para salvar a foto neste perfil. Confirme se o membership ativo está vinculado ao seu jogador ou peça ao admin para revisar o vínculo.',
+      );
+    },
+  },
+  {
+    name: 'publicUrl da foto recebe cache bust para evitar imagem antiga apos overwrite',
+    run() {
+      assert.equal(
+        appendCacheBustParam(
+          'https://xepbopkhsprfemqjzrkm.supabase.co/storage/v1/object/public/player-photos/team/player.jpg',
+          123,
+        ),
+        'https://xepbopkhsprfemqjzrkm.supabase.co/storage/v1/object/public/player-photos/team/player.jpg?v=123',
       );
     },
   },

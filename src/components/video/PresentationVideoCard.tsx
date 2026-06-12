@@ -22,6 +22,17 @@ interface PresentationVideoCardProps {
   accentColors?: [string, string];
 }
 
+function isDirectVideoAssetUrl(videoUrl: string) {
+  const normalizedUrl = videoUrl.trim().toLowerCase();
+
+  try {
+    const parsedUrl = new URL(normalizedUrl);
+    return /\.(mp4|mov|m4v|webm|ogg)$/.test(parsedUrl.pathname);
+  } catch {
+    return /\.(mp4|mov|m4v|webm|ogg)(?:$|\?)/.test(normalizedUrl);
+  }
+}
+
 export function PresentationVideoCard({
   title,
   description,
@@ -32,6 +43,7 @@ export function PresentationVideoCard({
   const theme = useAppTheme();
   const [hasError, setHasError] = useState(false);
   const [opening, setOpening] = useState(false);
+  const canEmbedVideoOnWeb = Platform.OS === 'web' && isDirectVideoAssetUrl(videoUrl);
   const resolvedAccentColors = useMemo<[string, string]>(
     () => accentColors ?? [theme.colors.primary, theme.colors.secondary],
     [accentColors, theme.colors.primary, theme.colors.secondary],
@@ -75,7 +87,7 @@ export function PresentationVideoCard({
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.storyPanel}>
-        {Platform.OS === 'web' ? (
+        {canEmbedVideoOnWeb ? (
           <View style={styles.storyFrame}>
             {hasError ? (
               <View style={styles.errorShell}>
@@ -117,6 +129,12 @@ export function PresentationVideoCard({
                 <StoryOverlay
                   hasError={hasError}
                   loading={opening}
+                  actionLabel={Platform.OS === 'web' ? 'Clique para abrir' : 'Toque para reproduzir'}
+                  hintLabel={
+                    Platform.OS === 'web'
+                      ? 'Abre o link publico em uma nova aba'
+                      : 'Formato vertical pronto para celular'
+                  }
                   warningColor={theme.colors.warning}
                   textColor={theme.colors.text}
                   mutedColor={theme.colors.textMuted}
@@ -127,6 +145,12 @@ export function PresentationVideoCard({
                 <StoryOverlay
                   hasError={hasError}
                   loading={opening}
+                  actionLabel={Platform.OS === 'web' ? 'Clique para abrir' : 'Toque para reproduzir'}
+                  hintLabel={
+                    Platform.OS === 'web'
+                      ? 'Abre o link publico em uma nova aba'
+                      : 'Formato vertical pronto para celular'
+                  }
                   warningColor={theme.colors.warning}
                   textColor={theme.colors.text}
                   mutedColor={theme.colors.textMuted}
@@ -143,12 +167,16 @@ export function PresentationVideoCard({
 function StoryOverlay({
   hasError,
   loading,
+  actionLabel,
+  hintLabel,
   warningColor,
   textColor,
   mutedColor,
 }: {
   hasError: boolean;
   loading: boolean;
+  actionLabel: string;
+  hintLabel: string;
   warningColor: string;
   textColor: string;
   mutedColor: string;
@@ -163,14 +191,14 @@ function StoryOverlay({
         </Text>
       </View>
       <Text style={[styles.overlayTitle, { color: textColor }]}>
-        {hasError ? 'Falha ao carregar' : 'Toque para reproduzir'}
+        {hasError ? 'Falha ao carregar' : actionLabel}
       </Text>
       <Text
         style={[
           styles.overlayHint,
           { color: hasError ? warningColor : mutedColor },
         ]}>
-        {hasError ? 'Não foi possível abrir o vídeo.' : 'Formato vertical pronto para celular'}
+        {hasError ? 'Não foi possível abrir o vídeo.' : hintLabel}
       </Text>
     </LinearGradient>
   );

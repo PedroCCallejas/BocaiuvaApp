@@ -1,0 +1,55 @@
+[debug] [2026-06-12T01:50:23.287Z] ----------------------------------------------------------------------
+[debug] [2026-06-12T01:50:23.289Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\user\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\firebase-tools\lib\bin\firebase.js deploy --only firestore:rules --project bocaiuva-app
+[debug] [2026-06-12T01:50:23.290Z] CLI Version:   15.20.0
+[debug] [2026-06-12T01:50:23.290Z] Platform:      win32
+[debug] [2026-06-12T01:50:23.290Z] Node Version:  v22.14.0
+[debug] [2026-06-12T01:50:23.290Z] Time:          Thu Jun 11 2026 21:50:23 GMT-0400 (Horário Padrão do Amazonas)
+[debug] [2026-06-12T01:50:23.290Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-06-12T01:50:25.825Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-06-12T01:50:25.826Z] > authorizing via signed-in user (callehard42@gmail.com)
+[debug] [2026-06-12T01:50:25.826Z] [iam] checking project bocaiuva-app for permissions ["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get"]
+[debug] [2026-06-12T01:50:25.828Z] Checked if tokens are valid: true, expires at: 1781231665928
+[debug] [2026-06-12T01:50:25.828Z] Checked if tokens are valid: true, expires at: 1781231665928
+[debug] [2026-06-12T01:50:25.830Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/bocaiuva-app:testIamPermissions [none]
+[debug] [2026-06-12T01:50:25.830Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/bocaiuva-app:testIamPermissions  x-goog-user-project=bocaiuva-app
+[debug] [2026-06-12T01:50:25.830Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/bocaiuva-app:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get"]}
+[debug] [2026-06-12T01:50:26.866Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/bocaiuva-app:testIamPermissions 200
+[debug] [2026-06-12T01:50:26.866Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/bocaiuva-app:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get"]}
+[info] 
+[info] === Deploying to 'bocaiuva-app'...
+[info] 
+[info] i  deploying firestore 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[debug] [2026-06-12T01:50:26.871Z] Checked if tokens are valid: true, expires at: 1781231665928
+[debug] [2026-06-12T01:50:26.871Z] Checked if tokens are valid: true, expires at: 1781231665928
+[debug] [2026-06-12T01:50:26.871Z] >>> [apiv2][query] GET https://firestore.googleapis.com/v1/projects/bocaiuva-app/databases/(default) [none]
+[debug] [2026-06-12T01:50:27.122Z] <<< [apiv2][status] GET https://firestore.googleapis.com/v1/projects/bocaiuva-app/databases/(default) 200
+[debug] [2026-06-12T01:50:27.122Z] <<< [apiv2][body] GET https://firestore.googleapis.com/v1/projects/bocaiuva-app/databases/(default) {"name":"projects/bocaiuva-app/databases/(default)","uid":"12230943-ed1a-44f5-96ed-383596575238","createTime":"2026-05-06T03:16:58.476827Z","updateTime":"2026-05-06T03:16:58.476827Z","locationId":"southamerica-east1","type":"FIRESTORE_NATIVE","concurrencyMode":"PESSIMISTIC","versionRetentionPeriod":"3600s","earliestVersionTime":"2026-06-12T00:50:30.446557Z","appEngineIntegrationMode":"DISABLED","keyPrefix":"i","pointInTimeRecoveryEnablement":"POINT_IN_TIME_RECOVERY_DISABLED","deleteProtectionState":"DELETE_PROTECTION_DISABLED","databaseEdition":"STANDARD","freeTier":true,"realtimeUpdatesMode":"REALTIME_UPDATES_MODE_ENABLED","etag":"IIGm/pzLgJUDMOad2vLio5QD"}
+[info] i  cloud.firestore: checking firestore.rules for compilation errors... 
+[debug] [2026-06-12T01:50:27.124Z] Checked if tokens are valid: true, expires at: 1781231665928
+[debug] [2026-06-12T01:50:27.124Z] Checked if tokens are valid: true, expires at: 1781231665928
+[debug] [2026-06-12T01:50:27.124Z] >>> [apiv2][query] POST https://firebaserules.googleapis.com/v1/projects/bocaiuva-app:test [none]
+[debug] [2026-06-12T01:50:27.124Z] >>> [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/bocaiuva-app:test [omitted]
+[debug] [2026-06-12T01:50:28.200Z] <<< [apiv2][status] POST https://firebaserules.googleapis.com/v1/projects/bocaiuva-app:test 200
+[debug] [2026-06-12T01:50:28.200Z] <<< [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/bocaiuva-app:test {"issues":[{"sourcePosition":{"fileName":"firestore.rules","line":15,"column":9,"currentOffset":333,"endOffset":333},"description":"Ternary operator result if condition is true has a different type than if condition is false.","severity":"WARNING"}]}
+[warn] !  [W] 15:9 - Ternary operator result if condition is true has a different type than if condition is false. 
+[info] +  cloud.firestore: rules file firestore.rules compiled successfully 
+[debug] [2026-06-12T01:50:28.202Z] Checked if tokens are valid: true, expires at: 1781231665928
+[debug] [2026-06-12T01:50:28.202Z] Checked if tokens are valid: true, expires at: 1781231665928
+[debug] [2026-06-12T01:50:28.202Z] >>> [apiv2][query] GET https://firebaserules.googleapis.com/v1/projects/bocaiuva-app/releases pageSize=10&pageToken=
+[debug] [2026-06-12T01:50:29.319Z] <<< [apiv2][status] GET https://firebaserules.googleapis.com/v1/projects/bocaiuva-app/releases 200
+[debug] [2026-06-12T01:50:29.319Z] <<< [apiv2][body] GET https://firebaserules.googleapis.com/v1/projects/bocaiuva-app/releases {"releases":[{"name":"projects/bocaiuva-app/releases/cloud.firestore","rulesetName":"projects/bocaiuva-app/rulesets/fc1bd49a-1113-4c02-8434-0022bfd7711b","createTime":"2026-05-06T03:17:03.030918Z","updateTime":"2026-06-12T01:34:37.475758Z"}]}
+[debug] [2026-06-12T01:50:29.320Z] Checked if tokens are valid: true, expires at: 1781231665928
+[debug] [2026-06-12T01:50:29.320Z] Checked if tokens are valid: true, expires at: 1781231665928
+[debug] [2026-06-12T01:50:29.320Z] >>> [apiv2][query] GET https://firebaserules.googleapis.com/v1/projects/bocaiuva-app/rulesets/fc1bd49a-1113-4c02-8434-0022bfd7711b [none]
+[debug] [2026-06-12T01:50:29.802Z] <<< [apiv2][status] GET https://firebaserules.googleapis.com/v1/projects/bocaiuva-app/rulesets/fc1bd49a-1113-4c02-8434-0022bfd7711b 200
+[debug] [2026-06-12T01:50:29.802Z] <<< [apiv2][body] GET https://firebaserules.googleapis.com/v1/projects/bocaiuva-app/rulesets/fc1bd49a-1113-4c02-8434-0022bfd7711b [omitted]
+[info] i  firestore: latest version of firestore.rules already up to date, skipping upload... 
+[debug] [2026-06-12T01:50:29.803Z] [rules] releasing cloud.firestore with ruleset projects/bocaiuva-app/rulesets/fc1bd49a-1113-4c02-8434-0022bfd7711b
+[debug] [2026-06-12T01:50:29.804Z] Checked if tokens are valid: true, expires at: 1781231665928
+[debug] [2026-06-12T01:50:29.804Z] Checked if tokens are valid: true, expires at: 1781231665928
+[debug] [2026-06-12T01:50:29.804Z] >>> [apiv2][query] PATCH https://firebaserules.googleapis.com/v1/projects/bocaiuva-app/releases/cloud.firestore [none]
+[debug] [2026-06-12T01:50:29.804Z] >>> [apiv2][body] PATCH https://firebaserules.googleapis.com/v1/projects/bocaiuva-app/releases/cloud.firestore {"release":{"name":"projects/bocaiuva-app/releases/cloud.firestore","rulesetName":"projects/bocaiuva-app/rulesets/fc1bd49a-1113-4c02-8434-0022bfd7711b"}}
+[debug] [2026-06-12T01:50:31.448Z] <<< [apiv2][status] PATCH https://firebaserules.googleapis.com/v1/projects/bocaiuva-app/releases/cloud.firestore 200

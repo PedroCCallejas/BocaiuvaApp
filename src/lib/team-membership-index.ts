@@ -1,3 +1,4 @@
+import { canEditOwnPlayerProfile } from '@/lib/player-profile-access';
 import { normalizeEmail } from '@/lib/player-linking';
 import { normalizeTeamMemberStatus } from '@/lib/team-membership';
 import type { TeamMember } from '@/types/domain';
@@ -108,36 +109,31 @@ export function canManagePrivateTeamPlayers(input: TeamScopedAccessInput) {
 export function canEditOwnPrivatePlayer(
   input: TeamScopedAccessInput & {
     playerId: string;
+    playerStatus?: 'active' | 'injured' | 'suspended' | 'inactive';
+    playerDeletedAt?: string | null;
     playerLinkedUserId?: string | null;
     playerLinkedEmail?: string | null;
     userEmail?: string | null;
   },
 ) {
-  if (!canReadPrivateTeamData(input)) {
-    return false;
-  }
-
-  if (input.membershipIndex?.playerId === input.playerId) {
-    return true;
-  }
-
-  if (input.membershipIndex?.playerId != null) {
-    return false;
-  }
-
-  if (input.membershipIndex?.roles.includes('player') !== true) {
-    return false;
-  }
-
-  if (input.playerLinkedUserId && input.playerLinkedUserId === input.userId) {
-    return true;
-  }
-
-  const normalizedUserEmail = normalizeEmail(input.userEmail);
-  return Boolean(
-    normalizedUserEmail &&
-      normalizeEmail(input.playerLinkedEmail) === normalizedUserEmail,
-  );
+  return canEditOwnPlayerProfile({
+    teamId: input.teamId,
+    user: input.userId
+      ? {
+          id: input.userId,
+          email: input.userEmail ?? '',
+        }
+      : null,
+    membership: input.membershipIndex ?? null,
+    player: {
+      id: input.playerId,
+      teamId: input.teamId,
+      status: input.playerStatus ?? 'active',
+      deletedAt: input.playerDeletedAt ?? null,
+      linkedUserId: input.playerLinkedUserId ?? null,
+      linkedEmail: normalizeEmail(input.playerLinkedEmail) || null,
+    },
+  });
 }
 
 export function canUpdateOwnAttendance(input: TeamScopedAccessInput & { playerId: string }) {

@@ -16,6 +16,7 @@ import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatMatchDate, sortMatchesByDate } from '@/lib/date';
 import { isPlayerInactive } from '@/lib/player-management';
+import { canEditOwnPlayerProfile } from '@/lib/player-profile-access';
 import { buildPlayerAchievements, getTopPlayerAchievements } from '@/lib/player-achievements';
 import {
   buildPlayerAggregates,
@@ -31,9 +32,10 @@ import {
   selectActiveTeamRatingCriteria,
   selectCanManagePlayers,
   selectCanManageTeam,
-  selectCurrentPlayer,
+  selectCurrentMembership,
   selectCurrentTeam,
   selectCurrentTeamRatingCriteria,
+  selectCurrentUser,
 } from '@/store/selectors';
 import type { Match, PlayerRating } from '@/types/domain';
 
@@ -147,9 +149,10 @@ export default function PlayerDetailsScreen() {
   const theme = useAppTheme();
   const snapshot = useAppStore((state) => state.snapshot);
   const team = useAppStore(selectCurrentTeam);
+  const currentUser = useAppStore(selectCurrentUser);
+  const currentMembership = useAppStore(selectCurrentMembership);
   const canManagePlayers = useAppStore(selectCanManagePlayers);
   const canManageTeam = useAppStore(selectCanManageTeam);
-  const currentPlayer = useAppStore(selectCurrentPlayer);
   const teamCriteria = useAppStore(selectCurrentTeamRatingCriteria);
   const activeTeamCriteria = useAppStore(selectActiveTeamRatingCriteria);
   const player = useAppStore((state) => findPlayerById(state, String(playerId)));
@@ -200,8 +203,18 @@ export default function PlayerDetailsScreen() {
 
   const currentTeam = team;
   const currentPlayerRecord = player;
-  const canSelfAccess = currentPlayer?.id === currentPlayerRecord.id;
+  const canSelfAccess = canEditOwnPlayerProfile({
+    teamId: currentTeam.id,
+    user: currentUser,
+    membership: currentMembership,
+    player: currentPlayerRecord,
+  });
   const canEditPlayer = canManagePlayers || canSelfAccess;
+  const presentationVideoUrl =
+    currentPlayerRecord.introVideoUrl?.trim() ||
+    currentPlayerRecord.presentationVideoUrl?.trim() ||
+    null;
+  const celebrationVideoUrl = currentPlayerRecord.celebrationVideoUrl?.trim() || null;
 
   const aggregate = useMemo(
     () =>
@@ -410,13 +423,23 @@ export default function PlayerDetailsScreen() {
         </View>
       ) : null}
 
-      {currentPlayerRecord.presentationVideoUrl ? (
+      {presentationVideoUrl ? (
         <PresentationVideoCard
           title="Vídeo de apresentação"
           description="Um vídeo curto para apresentar o atleta e reforçar a identidade do elenco."
-          videoUrl={currentPlayerRecord.presentationVideoUrl}
+          videoUrl={presentationVideoUrl}
           posterUrl={currentPlayerRecord.photoUrl ?? currentTeam.logoUrl ?? null}
           accentColors={[currentTeam.primaryColor, currentTeam.secondaryColor]}
+        />
+      ) : null}
+
+      {celebrationVideoUrl && celebrationVideoUrl !== presentationVideoUrl ? (
+        <PresentationVideoCard
+          title="Video de comemoracao"
+          description="Um link publico para destacar o estilo do jogador nas comemoracoes."
+          videoUrl={celebrationVideoUrl}
+          posterUrl={currentPlayerRecord.photoUrl ?? currentTeam.logoUrl ?? null}
+          accentColors={[currentTeam.secondaryColor, currentTeam.primaryColor]}
         />
       ) : null}
 

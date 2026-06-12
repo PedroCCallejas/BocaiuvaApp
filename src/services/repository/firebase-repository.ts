@@ -61,13 +61,17 @@ import {
 } from '@/lib/rating-criteria';
 import {
   buildJoinTeamPlayerLinkResolution,
-  canSelfEditPlayerProfileWithMembershipLink,
   isPlayerAvailableForLinking,
   normalizeEmail,
   resolvePlayerForUser,
   resolvePlayerForUserWithDiagnostics,
   suggestPlayerLinksForUser,
 } from '@/lib/player-linking';
+import {
+  getInvalidSelfPlayerProfileUpdateFields,
+  logOwnPlayerProfileAccess,
+  resolveOwnPlayerProfileAccess,
+} from '@/lib/player-profile-access';
 import { normalizeTeamMemberStatus } from '@/lib/team-membership';
 import {
   buildNotificationId,
@@ -586,19 +590,9 @@ function sanitizeSecondaryPositions(
 }
 
 function allowedSelfUpdateFields(input: UpdatePlayerInput) {
-  const allowedKeys = new Set([
-    'photoUrl',
-    'nickname',
-    'bio',
-    'jerseyNumber',
-    'secondaryPositions',
-    'dominantFoot',
-    'preferredPosition',
-    'introVideoUrl',
-    'celebrationVideoUrl',
-  ]);
-
-  const invalid = Object.keys(input).filter((key) => !allowedKeys.has(key));
+  const invalid = getInvalidSelfPlayerProfileUpdateFields(
+    input as Record<string, unknown>,
+  );
   if (invalid.length > 0) {
     throw createRepositoryError(
       'Seu perfil permite editar apenas foto, apelido, bio, camisa quando liberada, posições, pé dominante e links de vídeo do jogador.',
@@ -3743,15 +3737,24 @@ async function commitFirestoreBatchMutations(mutations: FirestoreBatchMutation[]
 
 async function ensureSelfPlayerEdit(userId: string, player: Player) {
   const { actor, membership } = await ensureMembershipContext(userId, player.teamId);
+  const accessResult = resolveOwnPlayerProfileAccess({
+    teamId: player.teamId,
+    user: actor,
+    membership,
+    player,
+  });
 
-  if (
-    !canSelfEditPlayerProfileWithMembershipLink({
-      teamId: player.teamId,
-      user: actor,
-      membership,
-      player,
-    })
-  ) {
+  if (!accessResult.allowed) {
+    logOwnPlayerProfileAccess(
+      'firebase-repository.ensureSelfPlayerEdit',
+      {
+        teamId: player.teamId,
+        user: actor,
+        membership,
+        player,
+      },
+      accessResult,
+    );
     throw createRepositoryError(
       'Você não tem permissão para editar esse jogador.',
       'permission-denied',
@@ -5445,10 +5448,7 @@ export const firebaseRepository: AppRepository = {
           input.photoUrl !== undefined
             ? input.photoUrl
             : currentPlayer.photoUrl ?? null,
-        presentationVideoUrl:
-          input.presentationVideoUrl !== undefined
-            ? input.presentationVideoUrl
-            : currentPlayer.presentationVideoUrl ?? null,
+        presentationVideoUrl: currentPlayer.presentationVideoUrl ?? null,
         bio:
           input.bio !== undefined
             ? input.bio?.trim() ?? ''

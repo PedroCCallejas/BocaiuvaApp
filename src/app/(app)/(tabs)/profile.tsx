@@ -109,11 +109,16 @@ export default function ProfileScreen() {
         />
         {player ? (
           <AppButton
-            label="Ver meu perfil de jogador"
+            label="Editar meu perfil de jogador"
             variant="secondary"
-            onPress={() => router.push(`/players/${player.id}`)}
+            onPress={() => router.push(`/players/${player.id}/edit`)}
           />
-        ) : null}
+        ) : (
+          <Text style={[styles.note, { color: theme.colors.textMuted }]}>
+            Seu usuario ainda nao esta vinculado a um jogador do elenco. Peca para um
+            administrador revisar o vinculo ou entre pelo convite correto do time.
+          </Text>
+        )}
         <AppButton
           label="Sair"
           variant="danger"

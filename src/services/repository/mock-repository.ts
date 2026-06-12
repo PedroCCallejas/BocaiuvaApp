@@ -30,13 +30,17 @@ import {
 } from '@/lib/rating-criteria';
 import {
   buildJoinTeamPlayerLinkResolution,
-  canSelfEditPlayerProfileWithMembershipLink,
   isPlayerAvailableForLinking,
   normalizeEmail,
   resolvePlayerForUser,
   resolvePlayerForUserWithDiagnostics,
   suggestPlayerLinksForUser,
 } from '@/lib/player-linking';
+import {
+  getInvalidSelfPlayerProfileUpdateFields,
+  logOwnPlayerProfileAccess,
+  resolveOwnPlayerProfileAccess,
+} from '@/lib/player-profile-access';
 import {
   buildNotificationId,
   createAttendanceNotification,
@@ -1635,19 +1639,9 @@ function syncMvpWinnerNotification(
 }
 
 function allowedSelfUpdateFields(input: UpdatePlayerInput) {
-  const allowedKeys = new Set([
-    'photoUrl',
-    'nickname',
-    'bio',
-    'jerseyNumber',
-    'secondaryPositions',
-    'dominantFoot',
-    'preferredPosition',
-    'introVideoUrl',
-    'celebrationVideoUrl',
-  ]);
-
-  const invalid = Object.keys(input).filter((key) => !allowedKeys.has(key));
+  const invalid = getInvalidSelfPlayerProfileUpdateFields(
+    input as Record<string, unknown>,
+  );
   if (invalid.length > 0) {
     throw new Error(
       'Seu perfil permite editar apenas foto, apelido, bio, camisa quando liberada, posições, pé dominante e links de vídeo do jogador.',
@@ -2430,14 +2424,24 @@ export const mockRepository: AppRepository = {
         player.manualStats = normalizeManualStats(input.manualStats);
       }
     } else {
-      if (
-        !canSelfEditPlayerProfileWithMembershipLink({
-          teamId: player.teamId,
-          user: actor,
-          membership,
-          player,
-        })
-      ) {
+      const accessResult = resolveOwnPlayerProfileAccess({
+        teamId: player.teamId,
+        user: actor,
+        membership,
+        player,
+      });
+
+      if (!accessResult.allowed) {
+        logOwnPlayerProfileAccess(
+          'mock-repository.updatePlayer',
+          {
+            teamId: player.teamId,
+            user: actor,
+            membership,
+            player,
+          },
+          accessResult,
+        );
         throw new Error('Você não tem permissão para editar esse jogador.');
       }
 
@@ -2448,9 +2452,6 @@ export const mockRepository: AppRepository = {
       }
       if (input.photoUrl !== undefined) {
         player.photoUrl = input.photoUrl;
-      }
-      if (input.presentationVideoUrl !== undefined) {
-        player.presentationVideoUrl = input.presentationVideoUrl;
       }
       if (input.bio !== undefined) {
         player.bio = input.bio?.trim() ?? '';

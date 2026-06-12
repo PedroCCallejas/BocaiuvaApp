@@ -1,0 +1,270 @@
+import type { Player, TeamMember, User } from '@/types/domain';
+import type { FirestoreTeamMembershipIndexDocument } from '@/types/firestore';
+
+export const SELF_PLAYER_PROFILE_EDITABLE_FIELDS = [
+  'photoUrl',
+  'nickname',
+  'bio',
+  'jerseyNumber',
+  'secondaryPositions',
+  'dominantFoot',
+  'preferredPosition',
+  'introVideoUrl',
+  'celebrationVideoUrl',
+] as const;
+
+export type SelfPlayerProfileEditableField =
+  (typeof SELF_PLAYER_PROFILE_EDITABLE_FIELDS)[number];
+
+type MembershipLike =
+  | Pick<TeamMember, 'teamId' | 'playerId' | 'roles' | 'status'>
+  | Pick<FirestoreTeamMembershipIndexDocument, 'teamId' | 'playerId' | 'roles' | 'status'>;
+
+type PlayerLike = Pick<
+  Player,
+  'id' | 'teamId' | 'linkedUserId' | 'linkedEmail' | 'status' | 'deletedAt'
+>;
+
+type UserLike = Pick<User, 'id' | 'email'>;
+
+export type OwnPlayerProfileAccessSource =
+  | 'membership-player-id'
+  | 'linked-user-id'
+  | 'linked-email';
+
+export type OwnPlayerProfileAccessReason =
+  | 'allowed'
+  | 'missing-user'
+  | 'missing-membership'
+  | 'membership-inactive'
+  | 'membership-other-team'
+  | 'missing-player'
+  | 'player-other-team'
+  | 'player-inactive'
+  | 'player-linked-to-other-user'
+  | 'membership-player-mismatch'
+  | 'membership-without-player-role'
+  | 'missing-user-email'
+  | 'linked-email-mismatch'
+  | 'missing-player-link';
+
+export interface OwnPlayerProfileAccessResult {
+  allowed: boolean;
+  source: OwnPlayerProfileAccessSource | null;
+  reason: OwnPlayerProfileAccessReason;
+  diagnostics: string[];
+}
+
+function normalizeEmail(email?: string | null) {
+  return email?.trim().toLowerCase() ?? '';
+}
+
+function hasPlayerRole(membership: MembershipLike) {
+  return membership.roles.includes('player');
+}
+
+function buildDeniedResult(
+  reason: OwnPlayerProfileAccessReason,
+  diagnostics: string[],
+): OwnPlayerProfileAccessResult {
+  return {
+    allowed: false,
+    source: null,
+    reason,
+    diagnostics,
+  };
+}
+
+function buildAllowedResult(
+  source: OwnPlayerProfileAccessSource,
+  diagnostics: string[],
+): OwnPlayerProfileAccessResult {
+  return {
+    allowed: true,
+    source,
+    reason: 'allowed',
+    diagnostics,
+  };
+}
+
+export function resolveOwnPlayerProfileAccess(input: {
+  teamId: string;
+  user: UserLike | null;
+  membership?: MembershipLike | null;
+  player?: PlayerLike | null;
+}): OwnPlayerProfileAccessResult {
+  const diagnostics: string[] = [];
+
+  if (!input.user) {
+    diagnostics.push('Usuario autenticado ausente.');
+    return buildDeniedResult('missing-user', diagnostics);
+  }
+
+  if (!input.membership) {
+    diagnostics.push('Sem membership ativo no time.');
+    return buildDeniedResult('missing-membership', diagnostics);
+  }
+
+  if (input.membership.status !== 'active') {
+    diagnostics.push('Membership inativo.');
+    return buildDeniedResult('membership-inactive', diagnostics);
+  }
+
+  if (input.membership.teamId !== input.teamId) {
+    diagnostics.push('Membership de outro time.');
+    return buildDeniedResult('membership-other-team', diagnostics);
+  }
+
+  if (!input.player) {
+    diagnostics.push('Jogador alvo nao encontrado.');
+    return buildDeniedResult('missing-player', diagnostics);
+  }
+
+  if (input.player.teamId !== input.teamId) {
+    diagnostics.push('Usuario tentando editar jogador de outro time.');
+    return buildDeniedResult('player-other-team', diagnostics);
+  }
+
+  if (input.player.status === 'inactive' || Boolean(input.player.deletedAt)) {
+    diagnostics.push('Jogador inativo.');
+    return buildDeniedResult('player-inactive', diagnostics);
+  }
+
+  if (
+    input.player.linkedUserId &&
+    input.player.linkedUserId !== input.user.id
+  ) {
+    diagnostics.push('Jogador ja vinculado a outro usuario.');
+    return buildDeniedResult('player-linked-to-other-user', diagnostics);
+  }
+
+  if (input.membership.playerId === input.player.id) {
+    return buildAllowedResult('membership-player-id', diagnostics);
+  }
+
+  if (input.membership.playerId != null) {
+    diagnostics.push('playerId do membership difere do jogador editado.');
+    return buildDeniedResult('membership-player-mismatch', diagnostics);
+  }
+
+  diagnostics.push('Membership sem playerId.');
+
+  if (!hasPlayerRole(input.membership)) {
+    diagnostics.push('Membership ativo sem papel de jogador.');
+    return buildDeniedResult('membership-without-player-role', diagnostics);
+  }
+
+  if (input.player.linkedUserId === input.user.id) {
+    return buildAllowedResult('linked-user-id', diagnostics);
+  }
+
+  diagnostics.push('Jogador sem linkedUserId correspondente.');
+
+  const normalizedUserEmail = normalizeEmail(input.user.email);
+  if (!normalizedUserEmail) {
+    diagnostics.push('Usuario autenticado sem e-mail valido.');
+    return buildDeniedResult('missing-user-email', diagnostics);
+  }
+
+  if (!input.player.linkedEmail) {
+    diagnostics.push('Jogador sem linkedEmail.');
+    return buildDeniedResult('missing-player-link', diagnostics);
+  }
+
+  if (normalizeEmail(input.player.linkedEmail) === normalizedUserEmail) {
+    return buildAllowedResult('linked-email', diagnostics);
+  }
+
+  diagnostics.push('linkedEmail diferente do e-mail autenticado.');
+  return buildDeniedResult('linked-email-mismatch', diagnostics);
+}
+
+export function canEditOwnPlayerProfile(input: {
+  teamId: string;
+  user: UserLike | null;
+  membership?: MembershipLike | null;
+  player?: PlayerLike | null;
+}) {
+  return resolveOwnPlayerProfileAccess(input).allowed;
+}
+
+export function getInvalidSelfPlayerProfileUpdateFields(
+  input: Record<string, unknown>,
+) {
+  const allowedFields = new Set<string>(SELF_PLAYER_PROFILE_EDITABLE_FIELDS);
+  return Object.keys(input).filter((key) => !allowedFields.has(key));
+}
+
+export function pickSelfPlayerProfileEditableInput<T extends Record<string, unknown>>(
+  input: T,
+) {
+  const filtered: Partial<T> = {};
+
+  for (const key of SELF_PLAYER_PROFILE_EDITABLE_FIELDS) {
+    const typedKey = key as keyof T;
+    const value = input[typedKey];
+
+    if (value !== undefined) {
+      filtered[typedKey] = value;
+    }
+  }
+
+  return filtered;
+}
+
+export function logOwnPlayerProfileAccess(
+  scope: string,
+  input: {
+    teamId: string;
+    user: UserLike | null;
+    membership?: MembershipLike | null;
+    player?: PlayerLike | null;
+  },
+  result: OwnPlayerProfileAccessResult,
+) {
+  if (typeof __DEV__ === 'undefined' || !__DEV__) {
+    return;
+  }
+
+  console.warn(
+    `[own-player-profile] ${scope}`,
+    JSON.stringify(
+      {
+        allowed: result.allowed,
+        source: result.source,
+        reason: result.reason,
+        diagnostics: result.diagnostics,
+        teamId: input.teamId,
+        userId: input.user?.id ?? null,
+        hasUserEmail: Boolean(normalizeEmail(input.user?.email)),
+        membership: input.membership
+          ? {
+              teamId: input.membership.teamId,
+              playerId: input.membership.playerId ?? null,
+              roles: input.membership.roles,
+              status: input.membership.status,
+            }
+          : null,
+        player: input.player
+          ? {
+              id: input.player.id,
+              teamId: input.player.teamId,
+              status: input.player.status,
+              deletedAt: input.player.deletedAt ?? null,
+              linkedUserMatchesCurrentUser:
+                input.player.linkedUserId != null &&
+                input.player.linkedUserId === input.user?.id,
+              hasLinkedUserId: Boolean(input.player.linkedUserId),
+              hasLinkedEmail: Boolean(normalizeEmail(input.player.linkedEmail)),
+              linkedEmailMatchesCurrentUser:
+                normalizeEmail(input.player.linkedEmail) !== '' &&
+                normalizeEmail(input.player.linkedEmail) ===
+                  normalizeEmail(input.user?.email),
+            }
+          : null,
+      },
+      null,
+      2,
+    ),
+  );
+}

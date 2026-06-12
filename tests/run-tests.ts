@@ -13,6 +13,11 @@ import {
   canManagePlayerAccountLinking,
   canManagePlayerLifecycle,
 } from '@/lib/player-management';
+import {
+  canEditOwnPlayerProfile,
+  pickSelfPlayerProfileEditableInput,
+  resolveOwnPlayerProfileAccess,
+} from '@/lib/player-profile-access';
 import { buildPublicTeamProfile, buildPublicTeamSummary } from '@/lib/public-team';
 import { getActiveRatingCriteria } from '@/lib/rating-criteria';
 import {
@@ -403,6 +408,22 @@ const testCases: TestCase[] = [
         false,
       );
       assert.equal(
+        canEditOwnPrivatePlayer({
+          ...input,
+          playerId: 'player-common-player',
+          playerLinkedUserId: 'user-other-linked',
+        }),
+        false,
+      );
+      assert.equal(
+        canEditOwnPrivatePlayer({
+          ...input,
+          playerId: 'player-common-player',
+          playerStatus: 'inactive',
+        }),
+        false,
+      );
+      assert.equal(
         canUpdateOwnAttendance({
           ...input,
           playerId: 'player-common-player',
@@ -504,6 +525,105 @@ const testCases: TestCase[] = [
         }),
         false,
       );
+    },
+  },
+  {
+    name: 'autoedicao central bloqueia jogador inativo e jogador ja vinculado a outro usuario',
+    run() {
+      const membership = createTeamMember({
+        userId: 'user-central-access',
+        teamId: 'team-central-access',
+        playerId: 'player-central-access',
+        roles: ['player'],
+      });
+
+      assert.equal(
+        canEditOwnPlayerProfile({
+          teamId: 'team-central-access',
+          user: { id: 'user-central-access', email: 'central@professo.test' },
+          membership,
+          player: createPlayer({
+            id: 'player-central-access',
+            teamId: 'team-central-access',
+            status: 'inactive',
+            linkedUserId: 'user-central-access',
+          }),
+        }),
+        false,
+      );
+
+      assert.equal(
+        canEditOwnPlayerProfile({
+          teamId: 'team-central-access',
+          user: { id: 'user-central-access', email: 'central@professo.test' },
+          membership,
+          player: createPlayer({
+            id: 'player-central-access',
+            teamId: 'team-central-access',
+            linkedUserId: 'user-other',
+            linkedEmail: 'other@professo.test',
+          }),
+        }),
+        false,
+      );
+    },
+  },
+  {
+    name: 'diagnostico da autoedicao explica quando o linkedEmail nao confere',
+    run() {
+      const result = resolveOwnPlayerProfileAccess({
+        teamId: 'team-diagnostic',
+        user: { id: 'user-diagnostic', email: 'pedro@professo.test' },
+        membership: createTeamMember({
+          userId: 'user-diagnostic',
+          teamId: 'team-diagnostic',
+          playerId: null,
+          roles: ['player'],
+        }),
+        player: createPlayer({
+          id: 'player-diagnostic',
+          teamId: 'team-diagnostic',
+          linkedUserId: null,
+          linkedEmail: 'outro@professo.test',
+        }),
+      });
+
+      assert.equal(result.allowed, false);
+      assert.equal(result.reason, 'linked-email-mismatch');
+      assert.equal(
+        result.diagnostics.includes('Membership sem playerId.'),
+        true,
+      );
+      assert.equal(
+        result.diagnostics.includes('linkedEmail diferente do e-mail autenticado.'),
+        true,
+      );
+    },
+  },
+  {
+    name: 'filtro de autoedicao remove campos administrativos do payload antes do save',
+    run() {
+      const sanitized = pickSelfPlayerProfileEditableInput({
+        fullName: 'Pedro Centroavante',
+        nickname: 'Pedro',
+        photoUrl: 'https://cdn.professo.test/player.jpg',
+        status: 'active',
+        linkedEmail: 'pedro@professo.test',
+        bio: 'Camisa 9 do time',
+        preferredPosition: 'forward',
+        introVideoUrl: 'https://youtube.com/watch?v=pedro',
+        celebrationVideoUrl: 'https://instagram.com/pedro',
+        allowSelfEditJerseyNumber: false,
+      });
+
+      assert.deepEqual(sanitized, {
+        nickname: 'Pedro',
+        photoUrl: 'https://cdn.professo.test/player.jpg',
+        bio: 'Camisa 9 do time',
+        preferredPosition: 'forward',
+        introVideoUrl: 'https://youtube.com/watch?v=pedro',
+        celebrationVideoUrl: 'https://instagram.com/pedro',
+      });
     },
   },
   {
@@ -1226,6 +1346,68 @@ const testCases: TestCase[] = [
       assert.equal(
         snapshot.players.find((player) => player.id === 'player-9')?.photoUrl,
         'https://cdn.professo.test/player-9-new.jpg?v=1',
+      );
+    },
+  },
+  {
+    name: 'jogador comum consegue atualizar a propria bio e os proprios videos no mock repository',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({
+        email: 'atacante@bocaiuva.app',
+        password: '123456',
+      });
+
+      await mockRepository.updatePlayer(
+        'player-9',
+        {
+          bio: 'Centroavante de area.',
+          introVideoUrl: 'https://youtube.com/watch?v=pedro-centroavante',
+          celebrationVideoUrl: 'https://instagram.com/p/pedro-centroavante',
+        },
+        'user-striker',
+      );
+
+      const snapshot = await mockRepository.getSnapshot();
+      const updatedPlayer = snapshot.players.find((player) => player.id === 'player-9');
+
+      assert.equal(updatedPlayer?.bio, 'Centroavante de area.');
+      assert.equal(
+        updatedPlayer?.introVideoUrl,
+        'https://youtube.com/watch?v=pedro-centroavante',
+      );
+      assert.equal(
+        updatedPlayer?.celebrationVideoUrl,
+        'https://instagram.com/p/pedro-centroavante',
+      );
+    },
+  },
+  {
+    name: 'payload de autoedicao com campos administrativos continua bloqueado no mock repository',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({
+        email: 'atacante@bocaiuva.app',
+        password: '123456',
+      });
+
+      await assert.rejects(
+        () =>
+          mockRepository.updatePlayer(
+            'player-9',
+            {
+              fullName: 'Pedro Centroavante',
+              nickname: 'Pedro',
+              bio: 'Tentativa invalida',
+              status: 'active',
+              linkedEmail: 'pedro@professo.test',
+            },
+            'user-striker',
+          ),
+        (error) =>
+          error instanceof Error &&
+          error.message ===
+            'Seu perfil permite editar apenas foto, apelido, bio, camisa quando liberada, posições, pé dominante e links de vídeo do jogador.',
       );
     },
   },

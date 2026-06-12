@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
@@ -10,7 +10,12 @@ import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
-import { canEditPlayerProfile, isPlayerInactive } from '@/lib/player-management';
+import { isPlayerInactive } from '@/lib/player-management';
+import {
+  logOwnPlayerProfileAccess,
+  pickSelfPlayerProfileEditableInput,
+  resolveOwnPlayerProfileAccess,
+} from '@/lib/player-profile-access';
 import {
   getProfilePhotoSaveErrorMessage,
   getProfilePhotoUploadErrorMessage,
@@ -29,8 +34,9 @@ import {
   findPlayerById,
   selectCanManagePlayers,
   selectCanManageTeam,
-  selectCurrentPlayer,
+  selectCurrentMembership,
   selectCurrentTeam,
+  selectCurrentUser,
 } from '@/store/selectors';
 
 export default function EditPlayerScreen() {
@@ -38,9 +44,10 @@ export default function EditPlayerScreen() {
   const theme = useAppTheme();
   const snapshot = useAppStore((state) => state.snapshot);
   const team = useAppStore(selectCurrentTeam);
+  const currentUser = useAppStore(selectCurrentUser);
+  const currentMembership = useAppStore(selectCurrentMembership);
   const canManagePlayers = useAppStore(selectCanManagePlayers);
   const canManageTeam = useAppStore(selectCanManageTeam);
-  const currentPlayer = useAppStore(selectCurrentPlayer);
   const player = useAppStore((state) => findPlayerById(state, String(playerId)));
   const updatePlayer = useAppStore((state) => state.updatePlayer);
   const unlinkPlayerAccount = useAppStore((state) => state.unlinkPlayerAccount);
@@ -67,11 +74,17 @@ export default function EditPlayerScreen() {
   }
 
   const editablePlayer = player;
-  const canEditProfile = canEditPlayerProfile({
-    canManagePlayers,
-    currentPlayerId: currentPlayer?.id,
-    targetPlayerId: editablePlayer.id,
-  });
+  const ownProfileAccess = useMemo(
+    () =>
+      resolveOwnPlayerProfileAccess({
+        teamId: editablePlayer.teamId,
+        user: currentUser,
+        membership: currentMembership,
+        player: editablePlayer,
+      }),
+    [currentMembership, currentUser, editablePlayer],
+  );
+  const canEditProfile = canManagePlayers || ownProfileAccess.allowed;
   const variant = canManagePlayers ? 'admin' : canEditProfile ? 'self' : null;
   const canManageLifecycle = variant === 'admin' && canManageTeam;
   const canManageAccountLink = canManageLifecycle;
@@ -83,6 +96,29 @@ export default function EditPlayerScreen() {
     () => getPlayerComputedStats(snapshot, editablePlayer.teamId, editablePlayer.id),
     [editablePlayer.id, editablePlayer.teamId, snapshot],
   );
+
+  useEffect(() => {
+    if (canManagePlayers || ownProfileAccess.allowed) {
+      return;
+    }
+
+    logOwnPlayerProfileAccess(
+      'edit-player-screen',
+      {
+        teamId: editablePlayer.teamId,
+        user: currentUser,
+        membership: currentMembership,
+        player: editablePlayer,
+      },
+      ownProfileAccess,
+    );
+  }, [
+    canManagePlayers,
+    currentMembership,
+    currentUser,
+    editablePlayer,
+    ownProfileAccess,
+  ]);
 
   if (!variant) {
     return (
@@ -293,7 +329,8 @@ export default function EditPlayerScreen() {
           linkedEmail: editablePlayer.linkedEmail ?? '',
           bio: editablePlayer.bio ?? '',
           preferredPosition: editablePlayer.preferredPosition ?? null,
-          introVideoUrl: editablePlayer.introVideoUrl ?? '',
+          introVideoUrl:
+            editablePlayer.introVideoUrl ?? editablePlayer.presentationVideoUrl ?? '',
           celebrationVideoUrl: editablePlayer.celebrationVideoUrl ?? '',
           allowSelfEditJerseyNumber: editablePlayer.allowSelfEditJerseyNumber ?? false,
           manualStats: editablePlayer.manualStats,
@@ -301,7 +338,7 @@ export default function EditPlayerScreen() {
         onSubmit={async (payload) => {
           try {
             const { pendingPhoto, ...playerPayload } = payload;
-            await updatePlayer(editablePlayer.id, {
+            const baseUpdateInput = {
               fullName: playerPayload.fullName,
               nickname: playerPayload.nickname,
               photoUrl: pendingPhoto
@@ -327,7 +364,13 @@ export default function EditPlayerScreen() {
                       : currentPresentationVideoUrl,
                   }
                 : {}),
-            });
+            };
+            await updatePlayer(
+              editablePlayer.id,
+              variant === 'self'
+                ? pickSelfPlayerProfileEditableInput(baseUpdateInput)
+                : baseUpdateInput,
+            );
 
             if (pendingPhoto) {
               try {

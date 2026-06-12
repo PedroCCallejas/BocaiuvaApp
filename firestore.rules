@@ -117,10 +117,16 @@ service cloud.firestore {
         (
           (playerData.linkedUserId is string &&
             playerData.linkedUserId == currentUserId()) ||
-          (currentUserEmail() != null &&
+          ((playerData.linkedUserId == null || playerData.linkedUserId == '') &&
+            currentUserEmail() != null &&
             playerData.linkedEmail is string &&
             playerData.linkedEmail == currentUserEmail())
         );
+    }
+
+    function isPlayerActiveForSelfEdit(playerData) {
+      return playerData.deletedAt == null &&
+        playerData.status != 'inactive';
     }
 
     function isCurrentMembershipPlayer(teamId, playerId) {
@@ -217,8 +223,15 @@ service cloud.firestore {
     }
 
     function canEditOwnPlayerProfile(playerData) {
-      return (
-          isCurrentMembershipPlayer(playerData.teamId, playerData.id) ||
+      return isPlayerActiveForSelfEdit(playerData) &&
+        (
+          (
+            isCurrentMembershipPlayer(playerData.teamId, playerData.id) &&
+            (
+              playerData.linkedUserId == null ||
+              playerData.linkedUserId == currentUserId()
+            )
+          ) ||
           isLinkedPlayerForCurrentMembership(playerData)
         ) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([

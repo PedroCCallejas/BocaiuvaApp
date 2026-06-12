@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { Pill } from '@/components/ui/Pill';
+import { canEditOwnPlayerProfile } from '@/lib/player-profile-access';
 import { fonts } from '@/constants/theme';
 import { APP_NAME } from '@/constants/branding';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -11,9 +12,11 @@ import { useAppStore } from '@/store/app-store';
 import {
   selectCanManagePlayers,
   selectCanManageTeam,
-  selectCurrentPlayer,
+  selectCurrentMembership,
   selectCurrentTeam,
+  selectCurrentUser,
 } from '@/store/selectors';
+import type { Match, Player, TeamMember, User } from '@/types/domain';
 
 interface HeaderBreadcrumb {
   label: string;
@@ -46,7 +49,8 @@ export function WebScreenHeader() {
   const theme = useAppTheme();
   const snapshot = useAppStore((state) => state.snapshot);
   const currentTeam = useAppStore(selectCurrentTeam);
-  const currentPlayer = useAppStore(selectCurrentPlayer);
+  const currentUser = useAppStore(selectCurrentUser);
+  const currentMembership = useAppStore(selectCurrentMembership);
   const canManageTeam = useAppStore(selectCanManageTeam);
   const canManagePlayers = useAppStore(selectCanManagePlayers);
 
@@ -55,7 +59,8 @@ export function WebScreenHeader() {
     currentTeamName: currentTeam?.name ?? null,
     canManageTeam,
     canManagePlayers,
-    currentPlayerId: currentPlayer?.id ?? null,
+    currentUser,
+    currentMembership,
     players: snapshot.players,
     matches: snapshot.matches,
   });
@@ -170,16 +175,15 @@ function resolveWebRouteMeta(input: {
   currentTeamName: string | null;
   canManageTeam: boolean;
   canManagePlayers: boolean;
-  currentPlayerId: string | null;
-  players: Array<{
-    id: string;
-    nickname: string;
-  }>;
-  matches: Array<{
-    id: string;
-    opponentName: string;
-    status: string;
-  }>;
+  currentUser: Pick<User, 'id' | 'email'> | null;
+  currentMembership: Pick<TeamMember, 'teamId' | 'playerId' | 'roles' | 'status'> | null;
+  players: Array<
+    Pick<
+      Player,
+      'id' | 'nickname' | 'teamId' | 'linkedUserId' | 'linkedEmail' | 'status' | 'deletedAt'
+    >
+  >;
+  matches: Array<Pick<Match, 'id' | 'opponentName' | 'status'>>;
 }): WebRouteMeta | null {
   const segments = splitPath(input.pathname);
 
@@ -205,7 +209,13 @@ function resolveWebRouteMeta(input: {
       : null;
   const canEditViewedPlayer =
     Boolean(player) &&
-    (input.canManagePlayers || input.currentPlayerId === player?.id);
+    (input.canManagePlayers ||
+      canEditOwnPlayerProfile({
+        teamId: player!.teamId,
+        user: input.currentUser,
+        membership: input.currentMembership,
+        player,
+      }));
   const canEditViewedMatch =
     Boolean(match) &&
     input.canManageTeam &&
@@ -248,7 +258,17 @@ function resolveWebRouteMeta(input: {
 
       if (segments[2] === 'edit') {
         return {
-          title: canEditViewedPlayer && input.currentPlayerId === player?.id
+          title:
+            canEditViewedPlayer &&
+            !input.canManagePlayers &&
+            input.currentUser != null &&
+            player != null &&
+            canEditOwnPlayerProfile({
+              teamId: player.teamId,
+              user: input.currentUser,
+              membership: input.currentMembership,
+              player,
+            })
             ? 'Editar meu perfil'
             : 'Editar jogador',
           subtitle: player ? `Ajustes do perfil de ${player.nickname}` : 'Ajustes do atleta',

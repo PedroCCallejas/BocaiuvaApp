@@ -3,6 +3,7 @@ import type {
   FirestoreTeamMembershipIndexDocument,
   FirestoreTeamInviteDocument,
 } from '@/types/firestore';
+import type { JoinTeamPlayerLinkResolution } from '@/lib/player-linking';
 import type {
   AppNotification,
   AttendanceRecord,
@@ -95,7 +96,7 @@ export interface LoginInput {
 }
 
 export interface GoogleLoginInput {
-  idToken: string;
+  idToken?: string | null;
   accessToken?: string | null;
 }
 
@@ -225,6 +226,7 @@ export interface UpdatePlayerInput extends Partial<PlayerDraftInput> {
 export interface JoinTeamResult {
   team: Team;
   alreadyMember: boolean;
+  playerLink: JoinTeamPlayerLinkResolution;
 }
 
 export interface SnapshotSubscriptionHandlers {

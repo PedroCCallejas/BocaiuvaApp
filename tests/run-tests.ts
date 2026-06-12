@@ -15,7 +15,10 @@ import {
 } from '@/lib/player-management';
 import { buildPublicTeamProfile, buildPublicTeamSummary } from '@/lib/public-team';
 import { getActiveRatingCriteria } from '@/lib/rating-criteria';
-import { canSelfEditPlayerProfileWithMembershipLink } from '@/lib/player-linking';
+import {
+  canSelfEditPlayerProfileWithMembershipLink,
+  suggestPlayerLinksForUser,
+} from '@/lib/player-linking';
 import {
   buildManualAdjustmentsFromDesiredTotals,
   buildPlayerAggregates,
@@ -55,6 +58,7 @@ import {
   canUpdateOwnAttendance,
 } from '@/lib/team-membership-index';
 import { appendCacheBustParam } from '@/lib/storage-url';
+import { toFriendlyAuthError } from '@/services/auth/errors';
 import {
   mockRepository,
   resetMockRepositoryState,
@@ -500,6 +504,101 @@ const testCases: TestCase[] = [
         }),
         false,
       );
+    },
+  },
+  {
+    name: 'sugestao de vinculo prioriza nome, apelido e e-mail local da conta',
+    run() {
+      const team = createTeam({ id: 'team-suggestion-score' });
+      const user = createUser({
+        id: 'user-suggestion-score',
+        email: 'joao.silva10@professo.test',
+        displayName: 'João Silva',
+      });
+      const directMatch = createPlayer({
+        id: 'player-direct-match',
+        teamId: team.id,
+        fullName: 'João Silva',
+        nickname: 'João',
+        linkedUserId: null,
+      });
+      const weakerMatch = createPlayer({
+        id: 'player-weaker-match',
+        teamId: team.id,
+        fullName: 'Jonathan Souza',
+        nickname: 'Jo',
+        linkedUserId: null,
+      });
+
+      const suggestions = suggestPlayerLinksForUser({
+        teamPlayers: [weakerMatch, directMatch],
+        teamId: team.id,
+        user,
+      });
+
+      assert.equal(suggestions[0]?.playerId, directMatch.id);
+      assert.equal(suggestions.length > 0, true);
+      assert.equal(
+        suggestions[0]?.reasons.some(
+          (reason) =>
+            reason === 'Nome igual ao cadastro da conta' ||
+            reason === 'Apelido parecido com o nome da conta',
+        ),
+        true,
+      );
+    },
+  },
+  {
+    name: 'sugestao de vinculo nao oferece jogador ja ligado a outra conta',
+    run() {
+      const team = createTeam({ id: 'team-suggestion-blocked' });
+      const user = createUser({
+        id: 'user-suggestion-blocked',
+        email: 'marquinhos@professo.test',
+        displayName: 'Marquinhos',
+      });
+      const blockedPlayer = createPlayer({
+        id: 'player-blocked-suggestion',
+        teamId: team.id,
+        fullName: 'Marquinhos Silva',
+        nickname: 'Marquinhos',
+        linkedUserId: 'user-other-linked',
+      });
+
+      const suggestions = suggestPlayerLinksForUser({
+        teamPlayers: [blockedPlayer],
+        teamId: team.id,
+        user,
+      });
+
+      assert.deepEqual(suggestions, []);
+    },
+  },
+  {
+    name: 'mensagem do Google orienta quando a Vercel nao esta autorizada',
+    run() {
+      const friendlyError = toFriendlyAuthError(
+        new Error('redirect_uri_mismatch: The redirect URI in the request is invalid.'),
+        'Falhou.',
+      );
+
+      assert.equal(
+        friendlyError.message,
+        'O retorno do login com Google não confere com o domínio configurado. Revise a URL da Vercel no Firebase Authentication e no cliente OAuth da web.',
+      );
+    },
+  },
+  {
+    name: 'login por e-mail continua funcionando mesmo com o fluxo Google separado',
+    async run() {
+      resetMockRepositoryState();
+      const user = await mockRepository.login({
+        email: 'admin@bocaiuva.app',
+        password: '123456',
+      });
+
+      assert.equal(user.id, 'user-admin');
+      assert.equal(user.email, 'admin@bocaiuva.app');
     },
   },
   {
@@ -1302,6 +1401,187 @@ const testCases: TestCase[] = [
           snapshot,
         })?.id,
         'team-serrano',
+      );
+    },
+  },
+  {
+    name: 'entrada por inviteCode vincula automaticamente o jogador quando o linkedEmail confere',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({
+        email: 'admin@bocaiuva.app',
+        password: '123456',
+      });
+
+      const createdTeam = await mockRepository.createTeam(
+        {
+          name: 'Time Link Automático',
+          coachName: 'Professor Link',
+          primaryColor: '#14532D',
+          secondaryColor: '#F8FAFC',
+          accentColor: '#F59E0B',
+        },
+        'user-admin',
+      );
+
+      const linkedPlayer = await mockRepository.createPlayer(
+        {
+          teamId: createdTeam.id,
+          fullName: 'Atacante Convidado',
+          nickname: 'Artilheiro',
+          jerseyNumber: 99,
+          primaryPosition: 'striker',
+          secondaryPositions: ['forward'],
+          dominantFoot: 'right',
+          status: 'active',
+          linkedEmail: 'novo.convite@professo.test',
+        },
+        'user-admin',
+      );
+
+      const registeredUser = await mockRepository.register({
+        displayName: 'Novo Convite',
+        email: 'novo.convite@professo.test',
+        password: '123456',
+      });
+
+      const result = await mockRepository.joinTeamWithInviteCode(
+        createdTeam.inviteCode,
+        registeredUser.id,
+      );
+      const snapshot = await mockRepository.getSnapshot();
+      const membership = snapshot.teamMembers.find(
+        (item) => item.teamId === createdTeam.id && item.userId === registeredUser.id,
+      );
+      const resolvedPlayer = snapshot.players.find((player) => player.id === linkedPlayer.id);
+
+      assert.equal(result.playerLink.status, 'linked');
+      assert.equal(result.playerLink.source, 'linked-email');
+      assert.equal(result.playerLink.playerId, linkedPlayer.id);
+      assert.equal(membership?.playerId, linkedPlayer.id);
+      assert.equal(resolvedPlayer?.linkedUserId, registeredUser.id);
+      assert.equal(
+        selectCurrentPlayer({
+          currentUserId: registeredUser.id,
+          snapshot,
+        })?.id,
+        linkedPlayer.id,
+      );
+    },
+  },
+  {
+    name: 'entrada por inviteCode sem jogador compativel retorna aviso claro sem auto criar jogador',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({
+        email: 'admin@bocaiuva.app',
+        password: '123456',
+      });
+
+      const createdTeam = await mockRepository.createTeam(
+        {
+          name: 'Time Sem Vinculo',
+          coachName: 'Professor Sem Vinculo',
+          primaryColor: '#1D4ED8',
+          secondaryColor: '#E0F2FE',
+          accentColor: '#0F172A',
+        },
+        'user-admin',
+      );
+      const playersBeforeJoin = (await mockRepository.getSnapshot()).players.filter(
+        (player) => player.teamId === createdTeam.id,
+      ).length;
+
+      await mockRepository.login({
+        email: 'gestor@bocaiuva.app',
+        password: '123456',
+      });
+
+      const result = await mockRepository.joinTeamWithInviteCode(
+        createdTeam.inviteCode,
+        'user-manager',
+      );
+      const snapshot = await mockRepository.getSnapshot();
+      const membership = snapshot.teamMembers.find(
+        (item) => item.teamId === createdTeam.id && item.userId === 'user-manager',
+      );
+      const playersAfterJoin = snapshot.players.filter((player) => player.teamId === createdTeam.id)
+        .length;
+
+      assert.equal(result.playerLink.status, 'unresolved');
+      assert.deepEqual(result.playerLink.suggestions, []);
+      assert.equal(membership?.playerId, null);
+      assert.equal(playersAfterJoin, playersBeforeJoin);
+    },
+  },
+  {
+    name: 'entrada por inviteCode com multiplos candidatos retorna sugestoes assistidas',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({
+        email: 'admin@bocaiuva.app',
+        password: '123456',
+      });
+
+      const createdTeam = await mockRepository.createTeam(
+        {
+          name: 'Time Sugestao',
+          coachName: 'Professor Sugestao',
+          primaryColor: '#7C3AED',
+          secondaryColor: '#F8FAFC',
+          accentColor: '#0EA5E9',
+        },
+        'user-admin',
+      );
+
+      await mockRepository.createPlayer(
+        {
+          teamId: createdTeam.id,
+          fullName: 'Joao Silva',
+          nickname: 'Joao',
+          jerseyNumber: 13,
+          primaryPosition: 'midfielder',
+          secondaryPositions: [],
+          dominantFoot: 'right',
+          status: 'active',
+        },
+        'user-admin',
+      );
+      await mockRepository.createPlayer(
+        {
+          teamId: createdTeam.id,
+          fullName: 'Joao Pedro Silva',
+          nickname: 'JP Silva',
+          jerseyNumber: 18,
+          primaryPosition: 'forward',
+          secondaryPositions: ['winger'],
+          dominantFoot: 'left',
+          status: 'active',
+        },
+        'user-admin',
+      );
+
+      const registeredUser = await mockRepository.register({
+        displayName: 'Joao Silva',
+        email: 'joao.silva@professo.test',
+        password: '123456',
+      });
+
+      const result = await mockRepository.joinTeamWithInviteCode(
+        createdTeam.inviteCode,
+        registeredUser.id,
+      );
+      const snapshot = await mockRepository.getSnapshot();
+      const membership = snapshot.teamMembers.find(
+        (item) => item.teamId === createdTeam.id && item.userId === registeredUser.id,
+      );
+
+      assert.equal(result.playerLink.status, 'suggested');
+      assert.equal(result.playerLink.suggestions.length >= 2, true);
+      assert.equal(membership?.playerId, null);
+      assert.deepEqual(
+        result.playerLink.suggestions.map((suggestion) => suggestion.nickname),
+        ['Joao', 'JP Silva'],
       );
     },
   },

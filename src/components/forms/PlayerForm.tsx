@@ -530,14 +530,25 @@ export function PlayerForm({
         single
       />
 
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: theme.colors.textMuted }]}>
+          Vídeos do jogador
+        </Text>
+        <Text style={[styles.sectionHelper, { color: theme.colors.textMuted }]}>
+          Cole um link público do YouTube, Instagram, TikTok ou outro endereço aberto. O app não
+          faz upload de vídeo por estes campos.
+        </Text>
+      </View>
+
       <Controller
         control={control}
         name="introVideoUrl"
         render={({ field }) => (
           <AppInput
-            label="Vídeo de apresentação (URL opcional)"
+            label="Vídeo de apresentação"
             autoCapitalize="none"
             autoCorrect={false}
+            placeholder="https://youtube.com/..."
             value={field.value ?? ''}
             onBlur={field.onBlur}
             onChangeText={field.onChange}
@@ -551,9 +562,10 @@ export function PlayerForm({
         name="celebrationVideoUrl"
         render={({ field }) => (
           <AppInput
-            label="Vídeo de comemoração (URL opcional)"
+            label="Vídeo de comemoração"
             autoCapitalize="none"
             autoCorrect={false}
+            placeholder="https://instagram.com/..."
             value={field.value ?? ''}
             onBlur={field.onBlur}
             onChangeText={field.onChange}

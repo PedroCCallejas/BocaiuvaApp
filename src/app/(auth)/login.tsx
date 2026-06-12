@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, StyleSheet, Text, View } from 'react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import {
   getGoogleAuthRequestConfig,
+  getGoogleAuthDebugInfo,
   isGoogleSignInConfigured,
 } from '@/config/auth/google';
 import { PublicPageShell } from '@/components/public/PublicPageShell';
@@ -20,6 +21,8 @@ import {
   extractGoogleAuthTokens,
   isExpoGoForGoogleAuth,
 } from '@/services/auth/google-auth';
+import { toFriendlyAuthError } from '@/services/auth';
+import type { GoogleLoginInput } from '@/services/repository/types';
 import { useAppStore } from '@/store/app-store';
 
 const schema = z.object({
@@ -30,19 +33,17 @@ const schema = z.object({
 type LoginValues = z.infer<typeof schema>;
 
 export default function LoginScreen() {
+  const isWeb = Platform.OS === 'web';
   const theme = useAppTheme();
   const backendMode = useAppStore((state) => state.backendMode);
   const login = useAppStore((state) => state.login);
   const loginWithGoogle = useAppStore((state) => state.loginWithGoogle);
   const isMockMode = backendMode === 'mock';
   const googleConfigured = isGoogleSignInConfigured();
-  const isExpoGo = isExpoGoForGoogleAuth();
+  const isExpoGo = !isWeb && isExpoGoForGoogleAuth();
   const showGoogleLogin = !isMockMode && googleConfigured;
   const [demoLoading, setDemoLoading] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [request, response, promptAsync] = Google.useIdTokenAuthRequest(
-    getGoogleAuthRequestConfig(),
-  );
   const {
     control,
     handleSubmit,
@@ -55,72 +56,7 @@ export default function LoginScreen() {
     },
   });
 
-  useEffect(() => {
-    if (!response) {
-      return;
-    }
-
-    const { idToken, accessToken } = extractGoogleAuthTokens(response);
-
-    if (response.type === 'dismiss' || response.type === 'cancel') {
-      setGoogleLoading(false);
-      return;
-    }
-
-    if (response.type !== 'success') {
-      setGoogleLoading(false);
-      Alert.alert(
-        'Não foi possível entrar com o Google',
-        'A autenticação foi interrompida antes da confirmação final.',
-      );
-      return;
-    }
-
-    if (!idToken) {
-      setGoogleLoading(false);
-      Alert.alert(
-        'Não foi possível entrar com o Google',
-        'O acesso com o Google não foi concluído. Tente novamente em alguns instantes.',
-      );
-      return;
-    }
-
-    void (async () => {
-      try {
-        await loginWithGoogle({ idToken, accessToken: accessToken ?? null });
-        router.replace('/');
-      } catch (error) {
-        Alert.alert(
-          'Não foi possível entrar com o Google',
-          error instanceof Error ? error.message : 'Tente novamente.',
-        );
-      } finally {
-        setGoogleLoading(false);
-      }
-    })();
-  }, [loginWithGoogle, response]);
-
-  async function onSubmit(values: LoginValues) {
-    try {
-      await login(values);
-      router.replace('/');
-    } catch (error) {
-      Alert.alert(
-        'Não foi possível entrar',
-        error instanceof Error ? error.message : 'Tente novamente.',
-      );
-    }
-  }
-
-  async function handleGoogleLogin() {
-    if (isExpoGo) {
-      Alert.alert(
-        'Google indisponível neste ambiente',
-        'Abra a versão instalada do app para continuar com o acesso pelo Google.',
-      );
-      return;
-    }
-
+  async function handleGoogleLoginWeb() {
     if (!googleConfigured) {
       Alert.alert(
         'Esse acesso ainda não está pronto',
@@ -129,16 +65,36 @@ export default function LoginScreen() {
       return;
     }
 
+    if (__DEV__) {
+      console.log('[google-auth] web-debug', getGoogleAuthDebugInfo());
+    }
+
     setGoogleLoading(true);
 
     try {
-      await promptAsync({
-        showInRecents: true,
-      });
+      await loginWithGoogle({});
+      router.replace('/');
     } catch (error) {
-      setGoogleLoading(false);
+      const friendlyError = toFriendlyAuthError(
+        error,
+        'Não foi possível entrar com o Google agora.',
+      );
       Alert.alert(
-        'Não foi possível abrir o Google',
+        'Não foi possível entrar com o Google',
+        friendlyError.message,
+      );
+    } finally {
+      setGoogleLoading(false);
+    }
+  }
+
+  async function onSubmit(values: LoginValues) {
+    try {
+      await login(values);
+      router.replace('/');
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível entrar',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
     }
@@ -237,20 +193,21 @@ export default function LoginScreen() {
         />
         {!isMockMode ? (
           <>
-            {showGoogleLogin ? (
+            {showGoogleLogin && isWeb ? (
               <AppButton
                 label="Entrar com Google"
                 variant="secondary"
-                onPress={() => void handleGoogleLogin()}
-                disabled={!request || isExpoGo}
+                onPress={() => void handleGoogleLoginWeb()}
                 loading={googleLoading}
                 fullWidth
               />
             ) : null}
-            {!request && showGoogleLogin ? (
-              <Text style={[styles.helperNote, { color: theme.colors.textMuted }]}>
-                Preparando a entrada com o Google.
-              </Text>
+            {showGoogleLogin && !isWeb ? (
+              <NativeGoogleLoginAction
+                googleLoading={googleLoading}
+                loginWithGoogle={loginWithGoogle}
+                onLoadingChange={setGoogleLoading}
+              />
             ) : null}
           </>
         ) : null}
@@ -294,6 +251,120 @@ export default function LoginScreen() {
         </View>
       ) : null}
     </PublicPageShell>
+  );
+}
+
+function NativeGoogleLoginAction({
+  googleLoading,
+  loginWithGoogle,
+  onLoadingChange,
+}: {
+  googleLoading: boolean;
+  loginWithGoogle: (input: GoogleLoginInput) => Promise<void>;
+  onLoadingChange: (loading: boolean) => void;
+}) {
+  const theme = useAppTheme();
+  const isExpoGo = isExpoGoForGoogleAuth();
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest(
+    getGoogleAuthRequestConfig(),
+  );
+
+  useEffect(() => {
+    if (!response) {
+      return;
+    }
+
+    const { idToken, accessToken, errorMessage } = extractGoogleAuthTokens(response);
+
+    if (response.type === 'dismiss' || response.type === 'cancel') {
+      onLoadingChange(false);
+      return;
+    }
+
+    if (response.type !== 'success') {
+      onLoadingChange(false);
+      const friendlyError = toFriendlyAuthError(
+        new Error(errorMessage ?? 'A autenticação foi interrompida antes da confirmação final.'),
+        'Não foi possível entrar com o Google agora.',
+      );
+      Alert.alert('Não foi possível entrar com o Google', friendlyError.message);
+      return;
+    }
+
+    if (!idToken) {
+      onLoadingChange(false);
+      const friendlyError = toFriendlyAuthError(
+        new Error(
+          errorMessage ??
+            'O acesso com o Google não foi concluído. Tente novamente em alguns instantes.',
+        ),
+        'Não foi possível entrar com o Google agora.',
+      );
+      Alert.alert('Não foi possível entrar com o Google', friendlyError.message);
+      return;
+    }
+
+    void (async () => {
+      try {
+        if (__DEV__) {
+          console.log('[google-auth] native-debug', getGoogleAuthDebugInfo());
+        }
+
+        await loginWithGoogle({ idToken, accessToken: accessToken ?? null });
+        router.replace('/');
+      } catch (error) {
+        const friendlyError = toFriendlyAuthError(
+          error,
+          'Não foi possível entrar com o Google agora.',
+        );
+        Alert.alert('Não foi possível entrar com o Google', friendlyError.message);
+      } finally {
+        onLoadingChange(false);
+      }
+    })();
+  }, [loginWithGoogle, onLoadingChange, response]);
+
+  async function handleGoogleLogin() {
+    if (isExpoGo) {
+      Alert.alert(
+        'Google indisponível neste ambiente',
+        'Abra a versão instalada do app para continuar com o acesso pelo Google.',
+      );
+      return;
+    }
+
+    onLoadingChange(true);
+
+    try {
+      await promptAsync({
+        showInRecents: true,
+      });
+    } catch (error) {
+      onLoadingChange(false);
+      const friendlyError = toFriendlyAuthError(
+        error,
+        'Não foi possível abrir o Google agora.',
+      );
+      Alert.alert('Não foi possível abrir o Google', friendlyError.message);
+    }
+  }
+
+  return (
+    <>
+      <AppButton
+        label="Entrar com Google"
+        variant="secondary"
+        onPress={() => void handleGoogleLogin()}
+        disabled={!request || isExpoGo}
+        loading={googleLoading}
+        fullWidth
+      />
+      {!request ? (
+        <Text style={[styles.helperNote, { color: theme.colors.textMuted }]}>
+          Preparando a entrada com o Google.
+        </Text>
+      ) : null}
+    </>
   );
 }
 

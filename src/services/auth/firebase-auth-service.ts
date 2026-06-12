@@ -5,10 +5,12 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithCredential,
+  signInWithPopup,
   signOut,
   updateProfile,
   type User as FirebaseUser,
 } from 'firebase/auth';
+import { Platform } from 'react-native';
 
 import {
   auth,
@@ -113,11 +115,25 @@ class FirebaseAuthService implements AuthService {
     const authInstance = requireFirebaseAuth();
 
     try {
-      const credential = GoogleAuthProvider.credential(
-        input.idToken,
-        input.accessToken ?? undefined,
-      );
-      const session = await signInWithCredential(authInstance, credential);
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      if (Platform.OS !== 'web' && !input.idToken) {
+        throw createAuthError(
+          'Não foi possível concluir a entrada com Google. Tente novamente.',
+          'auth/invalid-credential',
+        );
+      }
+
+      const session =
+        Platform.OS === 'web'
+          ? await signInWithPopup(authInstance, provider)
+          : await signInWithCredential(
+              authInstance,
+              GoogleAuthProvider.credential(
+                input.idToken ?? undefined,
+                input.accessToken ?? undefined,
+              ),
+            );
       this.currentUser = toSessionUser(session.user);
 
       if (!this.currentUser) {

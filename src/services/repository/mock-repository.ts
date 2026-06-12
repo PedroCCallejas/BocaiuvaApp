@@ -29,10 +29,13 @@ import {
   validateRatingCriteriaSubmission,
 } from '@/lib/rating-criteria';
 import {
+  buildJoinTeamPlayerLinkResolution,
   canSelfEditPlayerProfileWithMembershipLink,
   isPlayerAvailableForLinking,
   normalizeEmail,
   resolvePlayerForUser,
+  resolvePlayerForUserWithDiagnostics,
+  suggestPlayerLinksForUser,
 } from '@/lib/player-linking';
 import {
   buildNotificationId,
@@ -1043,13 +1046,14 @@ function ensureMembershipPlayerLink(input: {
   user: User;
   membership: TeamMember;
   team: Team;
+  teamPlayers?: Player[];
 }) {
   if (!input.membership.roles.includes('player')) {
     return null;
   }
 
   const normalizedUserEmail = normalizeEmail(input.user.email);
-  const teamPlayers = findTeamPlayers(input.team.id);
+  const teamPlayers = input.teamPlayers ?? findTeamPlayers(input.team.id);
   let player = resolvePlayerForUser({
     teamPlayers,
     teamId: input.team.id,
@@ -1058,8 +1062,7 @@ function ensureMembershipPlayerLink(input: {
   });
 
   if (!player) {
-    player = createBasicPlayer(input.team.id, input.user);
-    database.players.push(player);
+    return null;
   }
 
   player.linkedUserId = input.user.id;
@@ -1647,7 +1650,7 @@ function allowedSelfUpdateFields(input: UpdatePlayerInput) {
   const invalid = Object.keys(input).filter((key) => !allowedKeys.has(key));
   if (invalid.length > 0) {
     throw new Error(
-      'Seu perfil permite editar apenas foto, apelido, bio, posicoes, pe dominante e os videos do jogador.',
+      'Seu perfil permite editar apenas foto, apelido, bio, camisa quando liberada, posições, pé dominante e links de vídeo do jogador.',
     );
   }
 }
@@ -2134,6 +2137,7 @@ export const mockRepository: AppRepository = {
     }
 
     const team = findTeam(invite.teamId);
+    const teamPlayers = findTeamPlayers(team.id);
     const existingMembership = findAnyMembershipByUserAndTeam(actor.id, team.id);
     if (existingMembership?.status === 'active') {
       existingMembership.updatedAt = nowIso();
@@ -2142,9 +2146,38 @@ export const mockRepository: AppRepository = {
       actor.playerId = existingMembership.playerId;
       actor.appRole = resolveTeamAppRole(actor, team);
       actor.updatedAt = nowIso();
+      const initialResolution = resolvePlayerForUserWithDiagnostics({
+        teamPlayers,
+        teamId: team.id,
+        user: actor,
+        membership: existingMembership,
+      });
+      const linkedPlayer = existingMembership.roles.includes('player')
+        ? ensureMembershipPlayerLink({
+            user: actor,
+            membership: existingMembership,
+            team,
+            teamPlayers,
+          })
+        : null;
+
       return {
         team: clone(team),
         alreadyMember: true,
+        playerLink: buildJoinTeamPlayerLinkResolution({
+          linkedPlayer,
+          source:
+            initialResolution.player && initialResolution.source !== 'unresolved'
+              ? initialResolution.source
+              : null,
+          suggestions: linkedPlayer
+            ? []
+            : suggestPlayerLinksForUser({
+                teamPlayers,
+                teamId: team.id,
+                user: actor,
+              }),
+        }),
       };
     }
 
@@ -2187,10 +2220,36 @@ export const mockRepository: AppRepository = {
           ? 'team_admin'
           : 'player';
     actor.updatedAt = updatedAt;
+    const initialResolution = resolvePlayerForUserWithDiagnostics({
+      teamPlayers,
+      teamId: team.id,
+      user: actor,
+      membership,
+    });
+    const linkedPlayer = ensureMembershipPlayerLink({
+      user: actor,
+      membership,
+      team,
+      teamPlayers,
+    });
 
     return {
       team: clone(team),
       alreadyMember: false,
+      playerLink: buildJoinTeamPlayerLinkResolution({
+        linkedPlayer,
+        source:
+          initialResolution.player && initialResolution.source !== 'unresolved'
+            ? initialResolution.source
+            : null,
+        suggestions: linkedPlayer
+          ? []
+          : suggestPlayerLinksForUser({
+              teamPlayers,
+              teamId: team.id,
+              user: actor,
+            }),
+      }),
     };
   },
 

@@ -60,12 +60,13 @@ import {
   validateRatingCriteriaSubmission,
 } from '@/lib/rating-criteria';
 import {
+  buildJoinTeamPlayerLinkResolution,
   canSelfEditPlayerProfileWithMembershipLink,
   isPlayerAvailableForLinking,
-  membershipIndicatesPlayer,
   normalizeEmail,
   resolvePlayerForUser,
   resolvePlayerForUserWithDiagnostics,
+  suggestPlayerLinksForUser,
 } from '@/lib/player-linking';
 import { normalizeTeamMemberStatus } from '@/lib/team-membership';
 import {
@@ -600,7 +601,7 @@ function allowedSelfUpdateFields(input: UpdatePlayerInput) {
   const invalid = Object.keys(input).filter((key) => !allowedKeys.has(key));
   if (invalid.length > 0) {
     throw createRepositoryError(
-      'Seu perfil permite editar apenas foto, apelido, bio, posicoes, pe dominante e os videos do jogador.',
+      'Seu perfil permite editar apenas foto, apelido, bio, camisa quando liberada, posições, pé dominante e links de vídeo do jogador.',
       'permission-denied',
     );
   }
@@ -3444,11 +3445,12 @@ async function ensureMembershipPlayerLink(input: {
   user: User;
   membership: TeamMember;
   team: Team;
+  teamPlayers?: Player[];
 }) {
   const firestore = requireFirestore();
   const updatedAt = nowIso();
   const normalizedUserEmail = normalizeEmail(input.user.email);
-  const teamPlayers = await fetchPlayersByTeamId(input.team.id);
+  const teamPlayers = input.teamPlayers ?? (await fetchPlayersByTeamId(input.team.id));
   const resolution = resolvePlayerForUserWithDiagnostics({
     teamPlayers,
     teamId: input.team.id,
@@ -3456,7 +3458,6 @@ async function ensureMembershipPlayerLink(input: {
     membership: input.membership,
   });
   let player = resolution.player;
-  const shouldAutoCreatePlayer = membershipIndicatesPlayer(input.membership) && !input.membership.playerId;
 
   const batch = writeBatch(firestore);
   let hasChanges = false;
@@ -3493,21 +3494,6 @@ async function ensureMembershipPlayerLink(input: {
     }
 
     player = normalizedPlayer;
-  } else if (shouldAutoCreatePlayer) {
-    const playerRef = doc(collection(firestore, FIRESTORE_COLLECTIONS.players));
-    player = normalizePlayerDocument({
-      ...buildBasicPlayerFromUser(
-        input.team.id,
-        input.user,
-        await nextJerseyNumber(input.team.id),
-      ),
-      id: playerRef.id,
-      linkedUserId: input.user.id,
-      linkedEmail: normalizedUserEmail,
-      updatedAt,
-    });
-    batch.set(playerRef, player);
-    hasChanges = true;
   }
 
   if (__DEV__ && (resolution.source !== 'membership-player-id' || !player)) {
@@ -3521,7 +3507,7 @@ async function ensureMembershipPlayerLink(input: {
       resolvedPlayerId: player?.id ?? null,
       resolutionSource: resolution.source,
       failureReason: resolution.failureReason,
-      usedAutoCreate: !resolution.player && Boolean(player) && shouldAutoCreatePlayer,
+      usedAutoCreate: false,
       updatedLinkedEmail: player ? canUpdateLinkedEmail : false,
     });
   }
@@ -5075,13 +5061,52 @@ export const firebaseRepository: AppRepository = {
         );
       }
 
+      const team = await fetchTeamById(invite.teamId);
+      const teamPlayers = await fetchPlayersByTeamId(team.id);
+
       const existingMembership = await fetchTeamMemberByUserAndTeam(user.id, invite.teamId);
       if (existingMembership?.status === 'active') {
-        await persistUserContext(user, existingMembership, new Map());
-        const team = await fetchTeamById(invite.teamId);
+        const updatedUser = await persistUserContext(
+          user,
+          existingMembership,
+          new Map([[team.id, team]]),
+        );
+        const initialResolution = resolvePlayerForUserWithDiagnostics({
+          teamPlayers,
+          teamId: team.id,
+          user: updatedUser,
+          membership: existingMembership,
+        });
+        const repaired = existingMembership.roles.includes('player')
+          ? await ensureMembershipPlayerLink({
+              user: updatedUser,
+              membership: existingMembership,
+              team,
+              teamPlayers,
+            })
+          : {
+              user: updatedUser,
+              membership: existingMembership,
+              player: null as Player | null,
+            };
+
         return {
           team,
           alreadyMember: true,
+          playerLink: buildJoinTeamPlayerLinkResolution({
+            linkedPlayer: repaired.player,
+            source:
+              initialResolution.player && initialResolution.source !== 'unresolved'
+                ? initialResolution.source
+                : null,
+            suggestions: repaired.player
+              ? []
+              : suggestPlayerLinksForUser({
+                  teamPlayers,
+                  teamId: team.id,
+                  user: updatedUser,
+                }),
+          }),
         };
       }
 
@@ -5124,11 +5149,36 @@ export const firebaseRepository: AppRepository = {
       applyFirestoreBatchMutation(batch, buildTeamMembershipIndexMutation(membership));
       batch.set(doc(firestore, FIRESTORE_COLLECTIONS.users, user.id), updatedUser);
       await batch.commit();
-      const team = await fetchTeamById(invite.teamId);
+      const initialResolution = resolvePlayerForUserWithDiagnostics({
+        teamPlayers,
+        teamId: team.id,
+        user: updatedUser,
+        membership,
+      });
+      const repaired = await ensureMembershipPlayerLink({
+        user: updatedUser,
+        membership,
+        team,
+        teamPlayers,
+      });
 
       return {
         team,
         alreadyMember: false,
+        playerLink: buildJoinTeamPlayerLinkResolution({
+          linkedPlayer: repaired.player,
+          source:
+            initialResolution.player && initialResolution.source !== 'unresolved'
+              ? initialResolution.source
+              : null,
+          suggestions: repaired.player
+            ? []
+            : suggestPlayerLinksForUser({
+                teamPlayers,
+                teamId: team.id,
+                user: updatedUser,
+              }),
+        }),
       };
     } catch (error) {
       throw toFriendlyFirestoreError(

@@ -39,6 +39,7 @@ import type {
   UpdateAttendanceInput,
   UpdatePlayerInput,
 } from '@/services/repository/types';
+import type { JoinTeamPlayerLinkResolution } from '@/lib/player-linking';
 import type {
   ImportLegacyMatchesResult,
   ImportedMatchPayloadItem,
@@ -82,7 +83,9 @@ export interface AppState {
   updateRatingCriterion: (criterionId: string, input: UpdateRatingCriterionInput) => Promise<void>;
   deleteRatingCriterion: (criterionId: string) => Promise<void>;
   setActiveTeam: (teamId: string) => Promise<void>;
-  joinTeamWithInviteCode: (inviteCode: string) => Promise<{ alreadyMember: boolean }>;
+  joinTeamWithInviteCode: (
+    inviteCode: string,
+  ) => Promise<{ alreadyMember: boolean; playerLink: JoinTeamPlayerLinkResolution }>;
   markNotificationAsRead: (notificationId: string) => Promise<void>;
   markAllNotificationsAsRead: () => Promise<void>;
   createPlayer: (input: CreatePlayerInput) => Promise<string>;
@@ -617,7 +620,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const result = await repository.joinTeamWithInviteCode(inviteCode, userId);
     await refreshCurrentSession(set, get);
-    return { alreadyMember: result.alreadyMember };
+    return {
+      alreadyMember: result.alreadyMember,
+      playerLink: result.playerLink,
+    };
   },
 
   async markNotificationAsRead(notificationId) {

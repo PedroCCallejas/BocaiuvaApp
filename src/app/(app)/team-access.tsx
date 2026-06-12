@@ -55,6 +55,29 @@ function buildRoleLabel(roles: string[]) {
   return 'Participante';
 }
 
+function capitalizeMessage(text: string) {
+  if (!text) {
+    return text;
+  }
+
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function buildJoinTeamFeedbackMessage(input: {
+  alreadyMember: boolean;
+  message: string;
+}) {
+  if (!input.alreadyMember) {
+    return input.message;
+  }
+
+  const normalizedMessage = input.message
+    .replace(/^Você entrou no time e\s+/i, '')
+    .replace(/^Você entrou no time,\s*/i, '');
+
+  return `Você já fazia parte desse time. ${capitalizeMessage(normalizedMessage)}`;
+}
+
 export default function TeamAccessScreen() {
   const theme = useAppTheme();
   const currentUser = useAppStore(selectCurrentUser);
@@ -219,13 +242,19 @@ export default function TeamAccessScreen() {
 
     try {
       const result = await joinTeamWithInviteCode(values.inviteCode);
-      if (result.alreadyMember) {
-        Alert.alert(
-          'Time atualizado',
-          'Você já fazia parte desse time. Ele agora está selecionado para o seu app.',
-        );
-      }
-      router.replace('/home');
+      Alert.alert(
+        result.alreadyMember ? 'Time atualizado' : 'Entrada concluída',
+        buildJoinTeamFeedbackMessage({
+          alreadyMember: result.alreadyMember,
+          message: result.playerLink.message,
+        }),
+        [
+          {
+            text: 'Abrir time',
+            onPress: () => router.replace('/home'),
+          },
+        ],
+      );
     } catch (error) {
       Alert.alert(
         'Não foi possível entrar no time',

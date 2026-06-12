@@ -1,0 +1,16 @@
+[debug] [2026-06-12T01:34:25.052Z] ----------------------------------------------------------------------
+[debug] [2026-06-12T01:34:25.054Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\user\AppData\Local\npm-cache\_npx\7750544ccf494d8b\node_modules\firebase-tools\lib\bin\firebase.js deploy --only firestore:rules --project bocaiuva-app
+[debug] [2026-06-12T01:34:25.054Z] CLI Version:   15.20.0
+[debug] [2026-06-12T01:34:25.054Z] Platform:      win32
+[debug] [2026-06-12T01:34:25.054Z] Node Version:  v22.14.0
+[debug] [2026-06-12T01:34:25.054Z] Time:          Thu Jun 11 2026 21:34:25 GMT-0400 (Horário Padrão do Amazonas)
+[debug] [2026-06-12T01:34:25.054Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-06-12T01:34:26.688Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-06-12T01:34:26.689Z] > authorizing via signed-in user (callehard42@gmail.com)
+[debug] [2026-06-12T01:34:26.689Z] [iam] checking project bocaiuva-app for permissions ["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get"]
+[debug] [2026-06-12T01:34:26.690Z] Checked if tokens are valid: false, expires at: 1781204967687
+[debug] [2026-06-12T01:34:26.690Z] Checked if tokens are valid: false, expires at: 1781204967687
+[debug] [2026-06-12T01:34:26.690Z] > refreshing access token with scopes: []
+[debug] [2026-06-12T01:34:26.691Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-06-12T01:34:26.691Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]

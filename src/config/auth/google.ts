@@ -2,6 +2,8 @@ import { makeRedirectUri } from 'expo-auth-session';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+import { firebaseConfigError, firebaseEnabled } from '@/config/firebase/client';
+
 const GOOGLE_PLACEHOLDER_CLIENT_ID = 'google-client-id-not-configured';
 type GoogleAuthPlatform = 'android' | 'ios' | 'web';
 
@@ -74,11 +76,23 @@ function getPlatformLabel(platform = getGoogleAuthPlatform()) {
 }
 
 export function isGoogleSignInConfigured() {
+  if (getGoogleAuthPlatform() === 'web') {
+    return firebaseEnabled;
+  }
+
   return Boolean(getPlatformClientId());
 }
 
 export function getGoogleSignInSetupHint() {
   const platform = getGoogleAuthPlatform();
+
+  if (platform === 'web') {
+    return firebaseEnabled
+      ? null
+      : firebaseConfigError ??
+          'Defina as variáveis públicas do Firebase para liberar o login com Google na web.';
+  }
+
   const platformClientId = getPlatformClientId(platform);
 
   if (platformClientId) {
@@ -125,13 +139,16 @@ export function getGoogleAuthDebugInfo() {
     appOwnership: Constants.appOwnership ?? 'unknown',
     scheme: getAppScheme(),
     redirectUri,
+    webStrategy: platform === 'web' ? 'firebase-popup' : 'expo-auth-session-id-token',
     clientIdUsed: platformClientId || GOOGLE_PLACEHOLDER_CLIENT_ID,
     missingClientIdEnv: platformClientId
       ? null
       : getPlatformClientIdEnvName(platform),
+    firebaseEnabled,
+    firebaseConfigError,
     hasAndroidClientId: Boolean(googleAuthEnv.androidClientId),
     hasIosClientId: Boolean(googleAuthEnv.iosClientId),
     hasWebClientId: Boolean(googleAuthEnv.webClientId),
-    configured: Boolean(platformClientId),
+    configured: platform === 'web' ? firebaseEnabled : Boolean(platformClientId),
   };
 }

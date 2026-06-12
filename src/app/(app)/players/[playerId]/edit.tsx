@@ -276,7 +276,7 @@ export default function EditPlayerScreen() {
         computedStats={variant === 'admin' ? computedStats : undefined}
         helperText={
           variant === 'self'
-            ? 'Os dados administrativos do cadastro continuam sob controle de quem gerencia o elenco.'
+            ? 'Você pode ajustar foto, apelido, bio, posições, pé dominante, camisa quando liberada e links públicos de vídeo. Os dados administrativos continuam sob controle de quem gerencia o elenco.'
             : editablePlayer.linkedUserId
               ? `Conta conectada: ${editablePlayer.linkedEmail ?? 'ativa'}`
               : 'Se você preencher um e-mail, essa conta pode ser vinculada automaticamente quando o jogador entrar com o código do time.'

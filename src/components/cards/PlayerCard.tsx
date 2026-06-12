@@ -44,10 +44,18 @@ export function PlayerCard({
   const tonePalette = preferredTone
     ? getPlayerAchievementTonePalette(preferredTone, theme.colors.success)
     : null;
+  const displayName = player.nickname.trim() || player.fullName.trim();
+  const supportingName =
+    player.fullName.trim() && player.fullName.trim() !== displayName
+      ? player.fullName.trim()
+      : null;
+  const hasProfileVideo = Boolean(
+    player.presentationVideoUrl || player.introVideoUrl || player.celebrationVideoUrl,
+  );
   const primaryPositionLabel = `\u{1F3AF} ${POSITION_LABELS[player.primaryPosition]}`;
   const secondaryLine =
     player.secondaryPositions.length > 0
-      ? `Tambem joga: ${player.secondaryPositions.map((position) => POSITION_LABELS[position]).join(', ')}`
+      ? `Também joga: ${player.secondaryPositions.map((position) => POSITION_LABELS[position]).join(', ')}`
       : null;
 
   const content = (
@@ -113,10 +121,20 @@ export function PlayerCard({
             />
           </View>
 
-          <Text style={[styles.name, isProfile ? styles.nameProfile : null, { color: theme.colors.text }]}>
-            {player.nickname}
+          <Text
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={[styles.name, isProfile ? styles.nameProfile : null, { color: theme.colors.text }]}>
+            {displayName}
           </Text>
-          <Text style={[styles.fullName, { color: theme.colors.textMuted }]}>{player.fullName}</Text>
+          {supportingName ? (
+            <Text
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              style={[styles.fullName, { color: theme.colors.textMuted }]}>
+              {supportingName}
+            </Text>
+          ) : null}
 
           <View
             style={[
@@ -133,13 +151,16 @@ export function PlayerCard({
           </View>
 
           {secondaryLine ? (
-            <Text style={[styles.secondaryLine, { color: theme.colors.textMuted }]}>
+            <Text
+              numberOfLines={2}
+              ellipsizeMode="tail"
+              style={[styles.secondaryLine, { color: theme.colors.textMuted }]}>
               {secondaryLine}
             </Text>
           ) : null}
 
           <View style={styles.tagRow}>
-            {player.presentationVideoUrl ? (
+            {hasProfileVideo ? (
               <Pill
                 label="▶ vídeo"
                 color={theme.colors.secondary}
@@ -149,7 +170,7 @@ export function PlayerCard({
               />
             ) : null}
             <Pill
-              label={`Pe ${FOOT_LABELS[player.dominantFoot]}`}
+              label={`Pé ${FOOT_LABELS[player.dominantFoot]}`}
               color={theme.colors.accent}
               backgroundColor={`${theme.colors.accent}20`}
               borderColor={`${theme.colors.accent}44`}
@@ -317,6 +338,7 @@ const styles = StyleSheet.create({
   },
   copy: {
     flex: 1,
+    minWidth: 0,
     gap: 8,
   },
   copyProfile: {
@@ -326,6 +348,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
     gap: 10,
   },
   topLineProfile: {
@@ -362,6 +385,7 @@ const styles = StyleSheet.create({
   fullName: {
     fontFamily: fonts.body,
     fontSize: 14,
+    lineHeight: 18,
   },
   positionBanner: {
     alignSelf: 'flex-start',

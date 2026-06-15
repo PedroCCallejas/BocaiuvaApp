@@ -14,6 +14,7 @@ import {
   canManagePlayerLifecycle,
 } from '@/lib/player-management';
 import {
+  buildSelfPlayerProfileUpdatePatch,
   canEditOwnPlayerProfile,
   pickSelfPlayerProfileEditableInput,
   resolveOwnPlayerProfileAccess,
@@ -623,6 +624,35 @@ const testCases: TestCase[] = [
         preferredPosition: 'forward',
         introVideoUrl: 'https://youtube.com/watch?v=pedro',
         celebrationVideoUrl: 'https://instagram.com/pedro',
+      });
+    },
+  },
+  {
+    name: 'patch de autoedicao envia apenas os campos alterados pelo proprio jogador',
+    run() {
+      const player = createPlayer({
+        primaryPosition: 'forward',
+      });
+
+      const patch = buildSelfPlayerProfileUpdatePatch({
+        player,
+        changes: {
+          photoUrl: null,
+          bio: '  Centroavante de area.  ',
+          secondaryPositions: ['forward', 'winger', 'winger'],
+          preferredPosition: null,
+          introVideoUrl: 'https://youtube.com/watch?v=pedro',
+        },
+        updatedAt: '2026-06-12T12:00:00.000Z',
+      });
+
+      assert.deepEqual(patch, {
+        photoUrl: null,
+        bio: 'Centroavante de area.',
+        secondaryPositions: ['winger'],
+        preferredPosition: null,
+        introVideoUrl: 'https://youtube.com/watch?v=pedro',
+        updatedAt: '2026-06-12T12:00:00.000Z',
       });
     },
   },

@@ -31,6 +31,24 @@ const schema = z.object({
 });
 
 type LoginValues = z.infer<typeof schema>;
+type ErrorWithCode = Error & { code?: string };
+
+const GOOGLE_LOGIN_USER_MESSAGE =
+  'Não foi possível entrar com Google. Tente novamente ou use e-mail e senha.';
+
+function getErrorDebugInfo(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      code: (error as ErrorWithCode).code ?? null,
+      message: error.message,
+    };
+  }
+
+  return {
+    code: null,
+    message: String(error),
+  };
+}
 
 export default function LoginScreen() {
   const isWeb = Platform.OS === 'web';
@@ -44,6 +62,7 @@ export default function LoginScreen() {
   const showGoogleLogin = !isMockMode && googleConfigured;
   const [demoLoading, setDemoLoading] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [googleFeedbackMessage, setGoogleFeedbackMessage] = useState<string | null>(null);
   const {
     control,
     handleSubmit,
@@ -57,6 +76,8 @@ export default function LoginScreen() {
   });
 
   async function handleGoogleLoginWeb() {
+    setGoogleFeedbackMessage(null);
+
     if (!googleConfigured) {
       Alert.alert(
         'Esse acesso ainda não está pronto',
@@ -66,6 +87,13 @@ export default function LoginScreen() {
     }
 
     if (__DEV__) {
+      console.log('[google-auth] pressed', {
+        platform: 'web',
+      });
+      console.log('[google-auth] web-start', {
+        ...getGoogleAuthDebugInfo(),
+        flow: 'firebase.signInWithPopup',
+      });
       console.log('[google-auth] web-debug', getGoogleAuthDebugInfo());
     }
 
@@ -77,12 +105,15 @@ export default function LoginScreen() {
     } catch (error) {
       const friendlyError = toFriendlyAuthError(
         error,
-        'Não foi possível entrar com o Google agora.',
+        GOOGLE_LOGIN_USER_MESSAGE,
       );
-      Alert.alert(
-        'Não foi possível entrar com o Google',
-        friendlyError.message,
-      );
+      if (__DEV__) {
+        console.warn('[google-auth] web-error', {
+          ...getErrorDebugInfo(error),
+          friendlyMessage: friendlyError.message,
+        });
+      }
+      setGoogleFeedbackMessage(GOOGLE_LOGIN_USER_MESSAGE);
     } finally {
       setGoogleLoading(false);
     }
@@ -202,6 +233,11 @@ export default function LoginScreen() {
                 fullWidth
               />
             ) : null}
+            {showGoogleLogin && isWeb && googleFeedbackMessage ? (
+              <Text style={[styles.helperNote, { color: theme.colors.danger }]}>
+                {googleFeedbackMessage}
+              </Text>
+            ) : null}
             {showGoogleLogin && !isWeb ? (
               <NativeGoogleLoginAction
                 googleLoading={googleLoading}
@@ -274,6 +310,12 @@ function NativeGoogleLoginAction({
       return;
     }
 
+    if (__DEV__) {
+      console.log('[google-auth] native-response', {
+        type: response.type,
+      });
+    }
+
     const { idToken, accessToken, errorMessage } = extractGoogleAuthTokens(response);
 
     if (response.type === 'dismiss' || response.type === 'cancel') {
@@ -287,6 +329,12 @@ function NativeGoogleLoginAction({
         new Error(errorMessage ?? 'A autenticação foi interrompida antes da confirmação final.'),
         'Não foi possível entrar com o Google agora.',
       );
+      if (__DEV__) {
+        console.warn('[google-auth] native-error', {
+          type: response.type,
+          message: friendlyError.message,
+        });
+      }
       Alert.alert('Não foi possível entrar com o Google', friendlyError.message);
       return;
     }
@@ -300,6 +348,13 @@ function NativeGoogleLoginAction({
         ),
         'Não foi possível entrar com o Google agora.',
       );
+      if (__DEV__) {
+        console.warn('[google-auth] native-error', {
+          type: response.type,
+          message: friendlyError.message,
+          idTokenSource: null,
+        });
+      }
       Alert.alert('Não foi possível entrar com o Google', friendlyError.message);
       return;
     }
@@ -307,6 +362,10 @@ function NativeGoogleLoginAction({
     void (async () => {
       try {
         if (__DEV__) {
+          console.log('[google-auth] native-start', {
+            ...getGoogleAuthDebugInfo(),
+            flow: 'expo-auth-session-id-token',
+          });
           console.log('[google-auth] native-debug', getGoogleAuthDebugInfo());
         }
 
@@ -317,6 +376,12 @@ function NativeGoogleLoginAction({
           error,
           'Não foi possível entrar com o Google agora.',
         );
+        if (__DEV__) {
+          console.warn('[google-auth] native-error', {
+            ...getErrorDebugInfo(error),
+            friendlyMessage: friendlyError.message,
+          });
+        }
         Alert.alert('Não foi possível entrar com o Google', friendlyError.message);
       } finally {
         onLoadingChange(false);
@@ -325,6 +390,14 @@ function NativeGoogleLoginAction({
   }, [loginWithGoogle, onLoadingChange, response]);
 
   async function handleGoogleLogin() {
+    if (__DEV__) {
+      console.log('[google-auth] pressed', {
+        platform: Platform.OS,
+        hasRequest: Boolean(request),
+        isExpoGo,
+      });
+    }
+
     if (isExpoGo) {
       Alert.alert(
         'Google indisponível neste ambiente',
@@ -336,6 +409,12 @@ function NativeGoogleLoginAction({
     onLoadingChange(true);
 
     try {
+      if (__DEV__) {
+        console.log('[google-auth] native-start', {
+          ...getGoogleAuthDebugInfo(),
+          flow: 'expo-auth-session-id-token',
+        });
+      }
       await promptAsync({
         showInRecents: true,
       });
@@ -345,6 +424,12 @@ function NativeGoogleLoginAction({
         error,
         'Não foi possível abrir o Google agora.',
       );
+      if (__DEV__) {
+        console.warn('[google-auth] native-open-error', {
+          ...getErrorDebugInfo(error),
+          friendlyMessage: friendlyError.message,
+        });
+      }
       Alert.alert('Não foi possível abrir o Google', friendlyError.message);
     }
   }

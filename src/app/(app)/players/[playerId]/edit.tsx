@@ -39,6 +39,30 @@ import {
   selectCurrentUser,
 } from '@/store/selectors';
 
+type ErrorWithCode = Error & { code?: string };
+
+function getErrorDebugInfo(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      code: (error as ErrorWithCode).code ?? null,
+      message: error.message,
+    };
+  }
+
+  return {
+    code: null,
+    message: String(error),
+  };
+}
+
+function getPlayerProfileSaveErrorMessage(error: unknown) {
+  if (isPermissionDeniedError(error)) {
+    return 'Sua conta não tem permissão para salvar este perfil. Confirme se o membership ativo está vinculado ao seu jogador ou peça ao admin para revisar o vínculo.';
+  }
+
+  return error instanceof Error ? error.message : 'Tente novamente.';
+}
+
 export default function EditPlayerScreen() {
   const { playerId } = useLocalSearchParams<{ playerId: string }>();
   const theme = useAppTheme();
@@ -365,15 +389,47 @@ export default function EditPlayerScreen() {
                   }
                 : {}),
             };
-            await updatePlayer(
-              editablePlayer.id,
+            const updateInput =
               variant === 'self'
                 ? pickSelfPlayerProfileEditableInput(baseUpdateInput)
-                : baseUpdateInput,
+                : baseUpdateInput;
+
+            if (__DEV__) {
+              console.log('[player-profile] save-pressed', {
+                routePlayerId: String(playerId),
+                playerId: editablePlayer.id,
+                userId: currentUser?.id ?? null,
+                teamId: team.id,
+                variant,
+                canManagePlayers,
+                ownProfileAccess: {
+                  allowed: ownProfileAccess.allowed,
+                  source: ownProfileAccess.source,
+                  reason: ownProfileAccess.reason,
+                },
+                fields: Object.keys(updateInput).filter(
+                  (key) =>
+                    (updateInput as Record<string, unknown>)[key] !== undefined,
+                ),
+                hasPendingPhoto: Boolean(pendingPhoto),
+                hasPendingPresentationVideo: Boolean(pendingPresentationVideo),
+              });
+            }
+
+            await updatePlayer(
+              editablePlayer.id,
+              updateInput,
             );
 
             if (pendingPhoto) {
               try {
+                if (__DEV__) {
+                  console.log('[player-photo] upload-start', {
+                    playerId: editablePlayer.id,
+                    teamId: editablePlayer.teamId,
+                  });
+                }
+
                 setPhotoUploadProgress(0);
                 const uploadedPhoto = await uploadImage({
                   asset: pendingPhoto,
@@ -386,7 +442,11 @@ export default function EditPlayerScreen() {
                 });
               } catch (error) {
                 if (__DEV__) {
-                  console.error('[player-photo] edit-upload', error);
+                  console.error('[player-photo] upload-error', {
+                    ...getErrorDebugInfo(error),
+                    playerId: editablePlayer.id,
+                    teamId: editablePlayer.teamId,
+                  });
                 }
 
                 Alert.alert(
@@ -402,6 +462,13 @@ export default function EditPlayerScreen() {
 
             if (canManagePresentationVideo && pendingPresentationVideo) {
               try {
+                if (__DEV__) {
+                  console.log('[player-video] upload-start', {
+                    playerId: editablePlayer.id,
+                    teamId: editablePlayer.teamId,
+                  });
+                }
+
                 setPresentationVideoUploadProgress(0);
                 const uploadedVideo = await uploadVideo({
                   asset: pendingPresentationVideo,
@@ -415,6 +482,14 @@ export default function EditPlayerScreen() {
                   presentationVideoUrl: uploadedVideo.downloadUrl,
                 });
               } catch (error) {
+                if (__DEV__) {
+                  console.error('[player-video] upload-error', {
+                    ...getErrorDebugInfo(error),
+                    playerId: editablePlayer.id,
+                    teamId: editablePlayer.teamId,
+                  });
+                }
+
                 Alert.alert(
                   'Alterações salvas sem trocar o vídeo',
                   error instanceof Error
@@ -432,16 +507,24 @@ export default function EditPlayerScreen() {
             setPresentationVideoUploadProgress(null);
 
             if (__DEV__) {
-              console.error('[player-profile] save', error);
+              console.error('[player-profile] save-error', {
+                ...getErrorDebugInfo(error),
+                routePlayerId: String(playerId),
+                playerId: editablePlayer.id,
+                userId: currentUser?.id ?? null,
+                teamId: team.id,
+                variant,
+                ownProfileAccess: {
+                  allowed: ownProfileAccess.allowed,
+                  source: ownProfileAccess.source,
+                  reason: ownProfileAccess.reason,
+                },
+              });
             }
 
             Alert.alert(
               'Não foi possível salvar',
-              isPermissionDeniedError(error)
-                ? getProfilePhotoSaveErrorMessage(error)
-                : error instanceof Error
-                  ? error.message
-                  : 'Tente novamente.',
+              getPlayerProfileSaveErrorMessage(error),
             );
           }
         }}

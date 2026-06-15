@@ -7,6 +7,7 @@ import {
   query,
   runTransaction,
   setDoc,
+  updateDoc,
   where,
   writeBatch,
   type DocumentData,
@@ -68,6 +69,7 @@ import {
   suggestPlayerLinksForUser,
 } from '@/lib/player-linking';
 import {
+  buildSelfPlayerProfileUpdatePatch,
   getInvalidSelfPlayerProfileUpdateFields,
   logOwnPlayerProfileAccess,
   resolveOwnPlayerProfileAccess,
@@ -5438,48 +5440,17 @@ export const firebaseRepository: AppRepository = {
         );
       }
 
-      const updatedPlayer: FirestorePlayerDocument = normalizePlayerDocument({
-        ...currentPlayer,
-        nickname:
-          typeof input.nickname === 'string'
-            ? input.nickname.trim()
-            : currentPlayer.nickname,
-        photoUrl:
-          input.photoUrl !== undefined
-            ? input.photoUrl
-            : currentPlayer.photoUrl ?? null,
-        presentationVideoUrl: currentPlayer.presentationVideoUrl ?? null,
-        bio:
-          input.bio !== undefined
-            ? input.bio?.trim() ?? ''
-            : currentPlayer.bio ?? '',
-        jerseyNumber:
-          typeof input.jerseyNumber === 'number'
-            ? input.jerseyNumber
-            : currentPlayer.jerseyNumber,
-        secondaryPositions: input.secondaryPositions
-          ? sanitizeSecondaryPositions(
-              currentPlayer.primaryPosition,
-              input.secondaryPositions,
-            )
-          : currentPlayer.secondaryPositions,
-        dominantFoot: input.dominantFoot ?? currentPlayer.dominantFoot,
-        preferredPosition:
-          input.preferredPosition !== undefined
-            ? input.preferredPosition
-            : currentPlayer.preferredPosition ?? null,
-        introVideoUrl:
-          input.introVideoUrl !== undefined
-            ? input.introVideoUrl
-            : currentPlayer.introVideoUrl ?? null,
-        celebrationVideoUrl:
-          input.celebrationVideoUrl !== undefined
-            ? input.celebrationVideoUrl
-            : currentPlayer.celebrationVideoUrl ?? null,
+      const selfUpdatePatch = buildSelfPlayerProfileUpdatePatch({
+        player: currentPlayer,
+        changes: input,
         updatedAt: now,
       });
+      const updatedPlayer: FirestorePlayerDocument = normalizePlayerDocument({
+        ...currentPlayer,
+        ...selfUpdatePatch,
+      });
 
-      await setDoc(playerRef, updatedPlayer);
+      await updateDoc(playerRef, selfUpdatePatch);
       await syncPublicTeamProjection(currentTeam, now);
       return updatedPlayer;
     } catch (error) {
@@ -6056,27 +6027,32 @@ export const firebaseRepository: AppRepository = {
       const batch = writeBatch(firestore);
       batch.set(recordRef, attendance);
 
-      const notificationId = buildNotificationId('attendance-confirmed', match.id, player.id);
-      if (input.status === 'confirmed' || input.status === 'absent') {
-        const existingNotification = await fetchNotificationByIdForTeam(
-          activeTeamId,
-          notificationId,
-        );
-        batch.set(
-          doc(firestore, FIRESTORE_COLLECTIONS.notifications, notificationId),
-          createAttendanceNotification({
-            id: notificationId,
-            teamId: match.teamId,
-            match,
-            player,
-            status: input.status,
-            actorUserId: actor.id,
-            createdAt: existingNotification?.createdAt,
-            updatedAt,
-          }),
-        );
-      } else {
-        batch.delete(doc(firestore, FIRESTORE_COLLECTIONS.notifications, notificationId));
+      // Attendance notifications live in a collection that only team managers can write.
+      // Keep player self-responses limited to the attendance document so Firestore rules
+      // do not reject the whole batch.
+      if (canManageAttendance) {
+        const notificationId = buildNotificationId('attendance-confirmed', match.id, player.id);
+        if (input.status === 'confirmed' || input.status === 'absent') {
+          const existingNotification = await fetchNotificationByIdForTeam(
+            activeTeamId,
+            notificationId,
+          );
+          batch.set(
+            doc(firestore, FIRESTORE_COLLECTIONS.notifications, notificationId),
+            createAttendanceNotification({
+              id: notificationId,
+              teamId: match.teamId,
+              match,
+              player,
+              status: input.status,
+              actorUserId: actor.id,
+              createdAt: existingNotification?.createdAt,
+              updatedAt,
+            }),
+          );
+        } else {
+          batch.delete(doc(firestore, FIRESTORE_COLLECTIONS.notifications, notificationId));
+        }
       }
 
       await batch.commit();

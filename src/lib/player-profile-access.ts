@@ -16,6 +16,18 @@ export const SELF_PLAYER_PROFILE_EDITABLE_FIELDS = [
 export type SelfPlayerProfileEditableField =
   (typeof SELF_PLAYER_PROFILE_EDITABLE_FIELDS)[number];
 
+export interface SelfPlayerProfileUpdateDraft {
+  photoUrl?: Player['photoUrl'];
+  nickname?: Player['nickname'];
+  bio?: Player['bio'];
+  jerseyNumber?: Player['jerseyNumber'];
+  secondaryPositions?: Player['secondaryPositions'];
+  dominantFoot?: Player['dominantFoot'];
+  preferredPosition?: Player['preferredPosition'];
+  introVideoUrl?: Player['introVideoUrl'];
+  celebrationVideoUrl?: Player['celebrationVideoUrl'];
+}
+
 type MembershipLike =
   | Pick<TeamMember, 'teamId' | 'playerId' | 'roles' | 'status'>
   | Pick<FirestoreTeamMembershipIndexDocument, 'teamId' | 'playerId' | 'roles' | 'status'>;
@@ -57,6 +69,15 @@ export interface OwnPlayerProfileAccessResult {
 
 function normalizeEmail(email?: string | null) {
   return email?.trim().toLowerCase() ?? '';
+}
+
+function sanitizeSecondaryPositions(
+  primaryPosition: Player['primaryPosition'],
+  secondaryPositions: Player['secondaryPositions'],
+) {
+  return [...new Set(secondaryPositions)].filter(
+    (position) => position !== primaryPosition,
+  );
 }
 
 function hasPlayerRole(membership: MembershipLike) {
@@ -210,6 +231,57 @@ export function pickSelfPlayerProfileEditableInput<T extends Record<string, unkn
   }
 
   return filtered;
+}
+
+export function buildSelfPlayerProfileUpdatePatch(input: {
+  player: Pick<Player, 'primaryPosition'>;
+  changes: SelfPlayerProfileUpdateDraft;
+  updatedAt: string;
+}) {
+  const patch: Partial<SelfPlayerProfileUpdateDraft> & { updatedAt: string } = {
+    updatedAt: input.updatedAt,
+  };
+
+  if (typeof input.changes.nickname === 'string') {
+    patch.nickname = input.changes.nickname.trim();
+  }
+
+  if (input.changes.photoUrl !== undefined) {
+    patch.photoUrl = input.changes.photoUrl;
+  }
+
+  if (input.changes.bio !== undefined) {
+    patch.bio = input.changes.bio?.trim() ?? '';
+  }
+
+  if (typeof input.changes.jerseyNumber === 'number') {
+    patch.jerseyNumber = input.changes.jerseyNumber;
+  }
+
+  if (input.changes.secondaryPositions !== undefined) {
+    patch.secondaryPositions = sanitizeSecondaryPositions(
+      input.player.primaryPosition,
+      input.changes.secondaryPositions,
+    );
+  }
+
+  if (input.changes.dominantFoot !== undefined) {
+    patch.dominantFoot = input.changes.dominantFoot;
+  }
+
+  if (input.changes.preferredPosition !== undefined) {
+    patch.preferredPosition = input.changes.preferredPosition;
+  }
+
+  if (input.changes.introVideoUrl !== undefined) {
+    patch.introVideoUrl = input.changes.introVideoUrl;
+  }
+
+  if (input.changes.celebrationVideoUrl !== undefined) {
+    patch.celebrationVideoUrl = input.changes.celebrationVideoUrl;
+  }
+
+  return patch;
 }
 
 export function logOwnPlayerProfileAccess(

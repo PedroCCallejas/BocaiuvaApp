@@ -9,9 +9,10 @@ type FirebaseAuthModule = typeof FirebaseAuth & {
     storage: typeof AsyncStorage
   ) => FirebaseAuth.Persistence
   browserLocalPersistence?: FirebaseAuth.Persistence
+  browserPopupRedirectResolver?: FirebaseAuth.PopupRedirectResolver
 }
 
-const { browserLocalPersistence, getAuth, initializeAuth } =
+const { browserLocalPersistence, browserPopupRedirectResolver, getAuth, initializeAuth } =
   FirebaseAuth as FirebaseAuthModule
 const { getReactNativePersistence } = FirebaseAuth as FirebaseAuthModule
 
@@ -68,9 +69,17 @@ let db: Firestore | null = null
 function createAuthInstance(firebaseApp: FirebaseApp) {
   if (Platform.OS === 'web') {
     try {
-      if (browserLocalPersistence) {
+      const canUseBrowserPopupResolver =
+        typeof window !== 'undefined' && typeof document !== 'undefined'
+
+      if (
+        canUseBrowserPopupResolver &&
+        browserLocalPersistence &&
+        browserPopupRedirectResolver
+      ) {
         return initializeAuth(firebaseApp, {
           persistence: browserLocalPersistence,
+          popupRedirectResolver: browserPopupRedirectResolver,
         })
       }
 

@@ -16,6 +16,7 @@ import {
 import {
   buildSelfPlayerProfileUpdatePatch,
   canEditOwnPlayerProfile,
+  getOwnPlayerProfileBlockedMessage,
   pickSelfPlayerProfileEditableInput,
   resolveOwnPlayerProfileAccess,
 } from '@/lib/player-profile-access';
@@ -602,6 +603,32 @@ const testCases: TestCase[] = [
     },
   },
   {
+    name: 'mensagem de bloqueio da autoedicao orienta revisar o vinculo do jogador',
+    run() {
+      const result = resolveOwnPlayerProfileAccess({
+        teamId: 'team-blocked-message',
+        user: { id: 'user-blocked-message', email: 'pedro@professo.test' },
+        membership: createTeamMember({
+          userId: 'user-blocked-message',
+          teamId: 'team-blocked-message',
+          playerId: null,
+          roles: ['player'],
+        }),
+        player: createPlayer({
+          id: 'player-blocked-message',
+          teamId: 'team-blocked-message',
+          linkedUserId: null,
+          linkedEmail: 'outro@professo.test',
+        }),
+      });
+
+      assert.equal(
+        getOwnPlayerProfileBlockedMessage(result),
+        'Seu usuário ainda não está vinculado corretamente a este jogador.',
+      );
+    },
+  },
+  {
     name: 'filtro de autoedicao remove campos administrativos do payload antes do save',
     run() {
       const sanitized = pickSelfPlayerProfileEditableInput({
@@ -735,6 +762,20 @@ const testCases: TestCase[] = [
       assert.equal(
         friendlyError.message,
         'O retorno do login com Google não confere com o domínio configurado. Revise a URL da Vercel no Firebase Authentication e no cliente OAuth da web.',
+      );
+    },
+  },
+  {
+    name: 'erro do Google orienta liberar popup quando a janela e bloqueada',
+    run() {
+      const friendlyError = toFriendlyAuthError(
+        new Error('popup blocked by browser policy'),
+        'Falhou.',
+      );
+
+      assert.equal(
+        friendlyError.message,
+        'Permita a abertura da janela do Google para continuar.',
       );
     },
   },

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
@@ -192,6 +192,8 @@ interface PlayerFormProps {
   helperText?: string;
   imageUploadProgress?: number | null;
   computedStats?: ManualPlayerStats;
+  onSubmitPress?: () => void;
+  onSubmitInvalid?: (errors: FieldErrors<PlayerFormState>) => void;
   onSubmit: (payload: PlayerFormPayload) => Promise<void> | void;
 }
 
@@ -205,6 +207,8 @@ export function PlayerForm({
   helperText,
   imageUploadProgress,
   computedStats,
+  onSubmitPress,
+  onSubmitInvalid,
   onSubmit,
 }: PlayerFormProps) {
   const theme = useAppTheme();
@@ -369,6 +373,15 @@ export function PlayerForm({
     };
 
     await onSubmit(payload);
+  }
+
+  function handleInvalidSubmit(errors: FieldErrors<PlayerFormState>) {
+    onSubmitInvalid?.(errors);
+  }
+
+  function handlePressSubmit() {
+    onSubmitPress?.();
+    void handleSubmit(submit, handleInvalidSubmit)();
   }
 
   return (
@@ -683,7 +696,7 @@ export function PlayerForm({
 
       <AppButton
         label={submitLabel}
-        onPress={handleSubmit(submit)}
+        onPress={handlePressSubmit}
         loading={loading || isSubmitting}
         fullWidth
       />

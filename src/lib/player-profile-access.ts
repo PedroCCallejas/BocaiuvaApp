@@ -209,6 +209,33 @@ export function canEditOwnPlayerProfile(input: {
   return resolveOwnPlayerProfileAccess(input).allowed;
 }
 
+export function getOwnPlayerProfileBlockedMessage(
+  result: OwnPlayerProfileAccessResult,
+) {
+  if (
+    [
+      'missing-membership',
+      'membership-inactive',
+      'membership-other-team',
+      'membership-player-mismatch',
+      'membership-without-player-role',
+      'missing-user-email',
+      'linked-email-mismatch',
+      'missing-player-link',
+      'player-linked-to-other-user',
+      'missing-user',
+    ].includes(result.reason)
+  ) {
+    return 'Seu usuário ainda não está vinculado corretamente a este jogador.';
+  }
+
+  if (result.reason === 'player-inactive') {
+    return 'Esse cadastro está inativo e não pode ser editado pelo próprio jogador.';
+  }
+
+  return 'Você não pode editar este perfil de jogador.';
+}
+
 export function getInvalidSelfPlayerProfileUpdateFields(
   input: Record<string, unknown>,
 ) {

@@ -34,7 +34,7 @@ type LoginValues = z.infer<typeof schema>;
 type ErrorWithCode = Error & { code?: string };
 
 const GOOGLE_LOGIN_USER_MESSAGE =
-  'Não foi possível entrar com Google. Tente novamente ou use e-mail e senha.';
+  'Não foi possível entrar com Google. Use e-mail e senha ou tente novamente.';
 
 function getErrorDebugInfo(error: unknown) {
   if (error instanceof Error) {
@@ -78,6 +78,18 @@ export default function LoginScreen() {
   async function handleGoogleLoginWeb() {
     setGoogleFeedbackMessage(null);
 
+    if (__DEV__) {
+      console.log('[auth] google button pressed', {
+        platform: 'web',
+        googleConfigured,
+        googleLoading,
+      });
+    }
+
+    if (googleLoading) {
+      return;
+    }
+
     if (!googleConfigured) {
       Alert.alert(
         'Esse acesso ainda não está pronto',
@@ -86,20 +98,16 @@ export default function LoginScreen() {
       return;
     }
 
-    if (__DEV__) {
-      console.log('[google-auth] pressed', {
-        platform: 'web',
-      });
-      console.log('[google-auth] web-start', {
-        ...getGoogleAuthDebugInfo(),
-        flow: 'firebase.signInWithPopup',
-      });
-      console.log('[google-auth] web-debug', getGoogleAuthDebugInfo());
-    }
-
     setGoogleLoading(true);
 
     try {
+      if (__DEV__) {
+        console.log('[auth] starting google sign in', {
+          ...getGoogleAuthDebugInfo(),
+          flow: 'firebase.signInWithPopup',
+        });
+      }
+
       await loginWithGoogle({});
       router.replace('/');
     } catch (error) {
@@ -107,13 +115,19 @@ export default function LoginScreen() {
         error,
         GOOGLE_LOGIN_USER_MESSAGE,
       );
+
       if (__DEV__) {
-        console.warn('[google-auth] web-error', {
+        console.error('[auth] google sign in failed', {
           ...getErrorDebugInfo(error),
           friendlyMessage: friendlyError.message,
+          stack: error instanceof Error ? error.stack ?? null : null,
+          debug: getGoogleAuthDebugInfo(),
         });
       }
-      setGoogleFeedbackMessage(GOOGLE_LOGIN_USER_MESSAGE);
+
+      const userMessage = friendlyError.message || GOOGLE_LOGIN_USER_MESSAGE;
+      setGoogleFeedbackMessage(userMessage);
+      Alert.alert('Não foi possível entrar com Google', userMessage);
     } finally {
       setGoogleLoading(false);
     }

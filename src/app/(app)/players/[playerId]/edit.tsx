@@ -12,6 +12,7 @@ import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { isPlayerInactive } from '@/lib/player-management';
 import {
+  getOwnPlayerProfileBlockedMessage,
   logOwnPlayerProfileAccess,
   pickSelfPlayerProfileEditableInput,
   resolveOwnPlayerProfileAccess,
@@ -61,6 +62,34 @@ function getPlayerProfileSaveErrorMessage(error: unknown) {
   }
 
   return error instanceof Error ? error.message : 'Tente novamente.';
+}
+
+function buildPlayerEditAuditPayload(input: {
+  routePlayerId: string;
+  teamId: string;
+  currentUser: ReturnType<typeof selectCurrentUser>;
+  currentMembership: ReturnType<typeof selectCurrentMembership>;
+  editablePlayer: ReturnType<typeof findPlayerById>;
+  ownProfileAccess: ReturnType<typeof resolveOwnPlayerProfileAccess>;
+  canEditProfile: boolean;
+  canManagePlayers: boolean;
+}) {
+  return {
+    uid: input.currentUser?.id ?? null,
+    teamId: input.teamId,
+    routePlayerId: input.routePlayerId,
+    playerId: input.editablePlayer?.id ?? null,
+    membershipPlayerId: input.currentMembership?.playerId ?? null,
+    membershipIndexPlayerId: input.currentMembership?.playerId ?? null,
+    membershipIndexSource: 'client-membership-mirror',
+    linkedUserId: input.editablePlayer?.linkedUserId ?? null,
+    linkedEmail: input.editablePlayer?.linkedEmail ?? null,
+    userEmail: input.currentUser?.email ?? null,
+    canEditOwnPlayerProfile: input.ownProfileAccess.allowed,
+    canManagePlayers: input.canManagePlayers,
+    blockReason: input.canEditProfile ? null : input.ownProfileAccess.reason,
+    diagnostics: input.ownProfileAccess.diagnostics,
+  };
 }
 
 export default function EditPlayerScreen() {
@@ -144,12 +173,14 @@ export default function EditPlayerScreen() {
     ownProfileAccess,
   ]);
 
+  const blockedDescription = getOwnPlayerProfileBlockedMessage(ownProfileAccess);
+
   if (!variant) {
     return (
       <Screen>
         <EmptyState
           title="Acesso restrito"
-          description="Você não pode editar este perfil de jogador."
+          description={blockedDescription}
           actionLabel="Voltar ao perfil"
           onAction={() => router.replace(`/players/${editablePlayer.id}`)}
         />
@@ -359,6 +390,49 @@ export default function EditPlayerScreen() {
           allowSelfEditJerseyNumber: editablePlayer.allowSelfEditJerseyNumber ?? false,
           manualStats: editablePlayer.manualStats,
         }}
+        onSubmitPress={() => {
+          if (__DEV__) {
+            console.log(
+              '[player-edit] save button pressed',
+              buildPlayerEditAuditPayload({
+                routePlayerId: String(playerId),
+                teamId: team.id,
+                currentUser,
+                currentMembership,
+                editablePlayer,
+                ownProfileAccess,
+                canEditProfile,
+                canManagePlayers,
+              }),
+            );
+          }
+
+          if (!canEditProfile) {
+            Alert.alert('Vínculo pendente', blockedDescription);
+          }
+        }}
+        onSubmitInvalid={(errors) => {
+          if (__DEV__) {
+            console.warn('[player-edit] submit invalid', {
+              ...buildPlayerEditAuditPayload({
+                routePlayerId: String(playerId),
+                teamId: team.id,
+                currentUser,
+                currentMembership,
+                editablePlayer,
+                ownProfileAccess,
+                canEditProfile,
+                canManagePlayers,
+              }),
+              errorFields: Object.keys(errors),
+            });
+          }
+
+          Alert.alert(
+            'Revise os campos',
+            'Confira os campos destacados antes de salvar o perfil.',
+          );
+        }}
         onSubmit={async (payload) => {
           try {
             const { pendingPhoto, ...playerPayload } = payload;
@@ -396,12 +470,17 @@ export default function EditPlayerScreen() {
 
             if (__DEV__) {
               console.log('[player-profile] save-pressed', {
-                routePlayerId: String(playerId),
-                playerId: editablePlayer.id,
-                userId: currentUser?.id ?? null,
-                teamId: team.id,
+                ...buildPlayerEditAuditPayload({
+                  routePlayerId: String(playerId),
+                  teamId: team.id,
+                  currentUser,
+                  currentMembership,
+                  editablePlayer,
+                  ownProfileAccess,
+                  canEditProfile,
+                  canManagePlayers,
+                }),
                 variant,
-                canManagePlayers,
                 ownProfileAccess: {
                   allowed: ownProfileAccess.allowed,
                   source: ownProfileAccess.source,
@@ -509,10 +588,16 @@ export default function EditPlayerScreen() {
             if (__DEV__) {
               console.error('[player-profile] save-error', {
                 ...getErrorDebugInfo(error),
-                routePlayerId: String(playerId),
-                playerId: editablePlayer.id,
-                userId: currentUser?.id ?? null,
-                teamId: team.id,
+                ...buildPlayerEditAuditPayload({
+                  routePlayerId: String(playerId),
+                  teamId: team.id,
+                  currentUser,
+                  currentMembership,
+                  editablePlayer,
+                  ownProfileAccess,
+                  canEditProfile,
+                  canManagePlayers,
+                }),
                 variant,
                 ownProfileAccess: {
                   allowed: ownProfileAccess.allowed,

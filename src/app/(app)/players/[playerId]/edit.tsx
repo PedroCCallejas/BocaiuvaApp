@@ -134,8 +134,9 @@ export default function EditPlayerScreen() {
         user: currentUser,
         membership: currentMembership,
         player: editablePlayer,
+        teamPlayers: snapshot.players,
       }),
-    [currentMembership, currentUser, editablePlayer],
+    [currentMembership, currentUser, editablePlayer, snapshot.players],
   );
   const canEditProfile = canManagePlayers || ownProfileAccess.allowed;
   const variant = canManagePlayers ? 'admin' : canEditProfile ? 'self' : null;

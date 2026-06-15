@@ -208,6 +208,7 @@ export default function PlayerDetailsScreen() {
     user: currentUser,
     membership: currentMembership,
     player: currentPlayerRecord,
+    teamPlayers: snapshot.players,
   });
   const canEditPlayer = canManagePlayers || canSelfAccess;
   const presentationVideoUrl =

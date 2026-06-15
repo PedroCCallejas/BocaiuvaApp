@@ -215,6 +215,7 @@ function resolveWebRouteMeta(input: {
         user: input.currentUser,
         membership: input.currentMembership,
         player,
+        teamPlayers: input.players,
       }));
   const canEditViewedMatch =
     Boolean(match) &&
@@ -268,6 +269,7 @@ function resolveWebRouteMeta(input: {
               user: input.currentUser,
               membership: input.currentMembership,
               player,
+              teamPlayers: input.players,
             })
             ? 'Editar meu perfil'
             : 'Editar jogador',

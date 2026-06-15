@@ -1,5 +1,10 @@
 import type { Player, TeamMember, User } from '@/types/domain';
 import type { FirestoreTeamMembershipIndexDocument } from '@/types/firestore';
+import {
+  membershipIndicatesPlayer,
+  normalizeEmail,
+  resolvePlayerForUserWithDiagnostics,
+} from '@/lib/player-linking';
 
 export const SELF_PLAYER_PROFILE_EDITABLE_FIELDS = [
   'photoUrl',
@@ -58,6 +63,8 @@ export type OwnPlayerProfileAccessReason =
   | 'membership-without-player-role'
   | 'missing-user-email'
   | 'linked-email-mismatch'
+  | 'different-linked-player'
+  | 'multiple-player-candidates'
   | 'missing-player-link';
 
 export interface OwnPlayerProfileAccessResult {
@@ -65,10 +72,6 @@ export interface OwnPlayerProfileAccessResult {
   source: OwnPlayerProfileAccessSource | null;
   reason: OwnPlayerProfileAccessReason;
   diagnostics: string[];
-}
-
-function normalizeEmail(email?: string | null) {
-  return email?.trim().toLowerCase() ?? '';
 }
 
 function sanitizeSecondaryPositions(
@@ -82,6 +85,14 @@ function sanitizeSecondaryPositions(
 
 function hasPlayerRole(membership: MembershipLike) {
   return membership.roles.includes('player');
+}
+
+function appendUniqueDiagnostics(target: string[], values: string[]) {
+  for (const value of values) {
+    if (!target.includes(value)) {
+      target.push(value);
+    }
+  }
 }
 
 function buildDeniedResult(
@@ -113,6 +124,7 @@ export function resolveOwnPlayerProfileAccess(input: {
   user: UserLike | null;
   membership?: MembershipLike | null;
   player?: PlayerLike | null;
+  teamPlayers?: PlayerLike[] | null;
 }): OwnPlayerProfileAccessResult {
   const diagnostics: string[] = [];
 
@@ -170,9 +182,28 @@ export function resolveOwnPlayerProfileAccess(input: {
 
   diagnostics.push('Membership sem playerId.');
 
-  if (!hasPlayerRole(input.membership)) {
+  if (!hasPlayerRole(input.membership) && !membershipIndicatesPlayer(input.membership)) {
     diagnostics.push('Membership ativo sem papel de jogador.');
     return buildDeniedResult('membership-without-player-role', diagnostics);
+  }
+
+  const resolution = resolvePlayerForUserWithDiagnostics({
+    teamPlayers: input.teamPlayers ?? [input.player],
+    teamId: input.teamId,
+    user: input.user,
+    membership: input.membership,
+  });
+
+  appendUniqueDiagnostics(diagnostics, resolution.diagnostics);
+
+  if (resolution.status === 'ambiguous') {
+    diagnostics.push('Existe mais de um jogador ativo compativel com esta conta.');
+    return buildDeniedResult('multiple-player-candidates', diagnostics);
+  }
+
+  if (resolution.player && resolution.player.id !== input.player.id) {
+    diagnostics.push('Sua conta foi reconhecida em outro jogador do elenco.');
+    return buildDeniedResult('different-linked-player', diagnostics);
   }
 
   if (input.player.linkedUserId === input.user.id) {
@@ -205,6 +236,7 @@ export function canEditOwnPlayerProfile(input: {
   user: UserLike | null;
   membership?: MembershipLike | null;
   player?: PlayerLike | null;
+  teamPlayers?: PlayerLike[] | null;
 }) {
   return resolveOwnPlayerProfileAccess(input).allowed;
 }
@@ -212,6 +244,18 @@ export function canEditOwnPlayerProfile(input: {
 export function getOwnPlayerProfileBlockedMessage(
   result: OwnPlayerProfileAccessResult,
 ) {
+  if (result.reason === 'multiple-player-candidates') {
+    return 'Encontramos mais de um jogador ativo compativel com a sua conta. Peca ao administrador para revisar o vinculo correto.';
+  }
+
+  if (result.reason === 'different-linked-player') {
+    return 'Sua conta ja esta vinculada a outro jogador deste time.';
+  }
+
+  if (result.reason === 'missing-player-link') {
+    return 'Voce esta no time, mas ainda nao possui um jogador vinculado ao seu usuario.';
+  }
+
   if (
     [
       'missing-membership',

@@ -24,6 +24,7 @@ import { buildPublicTeamProfile, buildPublicTeamSummary } from '@/lib/public-tea
 import { getActiveRatingCriteria } from '@/lib/rating-criteria';
 import {
   canSelfEditPlayerProfileWithMembershipLink,
+  resolvePlayerForUserWithDiagnostics,
   suggestPlayerLinksForUser,
 } from '@/lib/player-linking';
 import {
@@ -37,6 +38,7 @@ import {
   findPlayerById,
   selectCanManageTeam,
   selectCurrentPlayer,
+  selectCurrentRoleLabel,
   selectCurrentTeam,
   selectTeamHistoricalPlayers,
   selectTeamPlayers,
@@ -310,6 +312,122 @@ const testCases: TestCase[] = [
     },
   },
   {
+    name: 'resolucao central aceita playerId do membership index como vinculo seguro',
+    run() {
+      const membership = createTeamMember({
+        userId: 'user-membership-index',
+        teamId: 'team-membership-index',
+        playerId: 'player-membership-index',
+        roles: ['player'],
+      });
+      const membershipIndex = buildTeamMembershipIndexDocument(membership);
+      const player = createPlayer({
+        id: 'player-membership-index',
+        teamId: 'team-membership-index',
+      });
+
+      const result = resolvePlayerForUserWithDiagnostics({
+        teamPlayers: [player],
+        teamId: 'team-membership-index',
+        user: { id: 'user-membership-index', email: 'index@professo.test' },
+        membership: membershipIndex,
+      });
+
+      assert.equal(result.status, 'resolved');
+      assert.equal(result.source, 'membership-player-id');
+      assert.equal(result.player?.id, player.id);
+    },
+  },
+  {
+    name: 'resolucao central aceita linkedUserId como fallback seguro',
+    run() {
+      const player = createPlayer({
+        id: 'player-linked-user',
+        teamId: 'team-linked-user',
+        linkedUserId: 'user-linked-user',
+      });
+
+      const result = resolvePlayerForUserWithDiagnostics({
+        teamPlayers: [player],
+        teamId: 'team-linked-user',
+        user: { id: 'user-linked-user', email: 'linked-user@professo.test' },
+        membership: createTeamMember({
+          userId: 'user-linked-user',
+          teamId: 'team-linked-user',
+          playerId: null,
+          roles: ['player'],
+        }),
+      });
+
+      assert.equal(result.status, 'resolved');
+      assert.equal(result.source, 'linked-user-id');
+      assert.equal(result.player?.id, player.id);
+    },
+  },
+  {
+    name: 'resolucao central aceita linkedEmail unico como fallback seguro',
+    run() {
+      const player = createPlayer({
+        id: 'player-linked-email-unique',
+        teamId: 'team-linked-email-unique',
+        linkedUserId: null,
+        linkedEmail: 'unique@professo.test',
+      });
+
+      const result = resolvePlayerForUserWithDiagnostics({
+        teamPlayers: [player],
+        teamId: 'team-linked-email-unique',
+        user: { id: 'user-linked-email-unique', email: 'unique@professo.test' },
+        membership: createTeamMember({
+          userId: 'user-linked-email-unique',
+          teamId: 'team-linked-email-unique',
+          playerId: null,
+          roles: ['player'],
+        }),
+      });
+
+      assert.equal(result.status, 'resolved');
+      assert.equal(result.source, 'linked-email');
+      assert.equal(result.player?.id, player.id);
+    },
+  },
+  {
+    name: 'resolucao central bloqueia linkedEmail ambiguo com multiplos candidatos ativos',
+    run() {
+      const players = [
+        createPlayer({
+          id: 'player-ambiguous-1',
+          teamId: 'team-ambiguous',
+          linkedUserId: null,
+          linkedEmail: 'ambiguous@professo.test',
+        }),
+        createPlayer({
+          id: 'player-ambiguous-2',
+          teamId: 'team-ambiguous',
+          linkedUserId: null,
+          linkedEmail: 'ambiguous@professo.test',
+        }),
+      ];
+
+      const result = resolvePlayerForUserWithDiagnostics({
+        teamPlayers: players,
+        teamId: 'team-ambiguous',
+        user: { id: 'user-ambiguous', email: 'ambiguous@professo.test' },
+        membership: createTeamMember({
+          userId: 'user-ambiguous',
+          teamId: 'team-ambiguous',
+          playerId: null,
+          roles: ['player'],
+        }),
+      });
+
+      assert.equal(result.status, 'ambiguous');
+      assert.equal(result.player, null);
+      assert.equal(result.failureReason, 'linked-email-ambiguous');
+      assert.equal(result.candidates.length, 2);
+    },
+  },
+  {
     name: 'membership index libera leitura apenas para o proprio time privado',
     run() {
       const membership = createTeamMember({
@@ -477,6 +595,7 @@ const testCases: TestCase[] = [
           user: { id: 'user-fallback', email: 'fallback@professo.test' },
           membership,
           player,
+          teamPlayers: [player],
         }),
         true,
       );
@@ -571,6 +690,110 @@ const testCases: TestCase[] = [
     },
   },
   {
+    name: 'autoedicao reconhece linkedUserId mesmo sem playerId no membership',
+    run() {
+      const membership = createTeamMember({
+        userId: 'user-linked-user-self-edit',
+        teamId: 'team-linked-user-self-edit',
+        playerId: null,
+        roles: ['player'],
+      });
+      const player = createPlayer({
+        id: 'player-linked-user-self-edit',
+        teamId: 'team-linked-user-self-edit',
+        linkedUserId: 'user-linked-user-self-edit',
+        linkedEmail: null,
+      });
+
+      const result = resolveOwnPlayerProfileAccess({
+        teamId: 'team-linked-user-self-edit',
+        user: {
+          id: 'user-linked-user-self-edit',
+          email: 'linked-user-self-edit@professo.test',
+        },
+        membership,
+        player,
+        teamPlayers: [player],
+      });
+
+      assert.equal(result.allowed, true);
+      assert.equal(result.source, 'linked-user-id');
+    },
+  },
+  {
+    name: 'autoedicao bloqueia linkedEmail ambiguo e orienta procurar o administrador',
+    run() {
+      const targetPlayer = createPlayer({
+        id: 'player-ambiguous-target',
+        teamId: 'team-ambiguous-access',
+        linkedUserId: null,
+        linkedEmail: 'duplicado@professo.test',
+      });
+      const competingPlayer = createPlayer({
+        id: 'player-ambiguous-competing',
+        teamId: 'team-ambiguous-access',
+        linkedUserId: null,
+        linkedEmail: 'duplicado@professo.test',
+      });
+
+      const result = resolveOwnPlayerProfileAccess({
+        teamId: 'team-ambiguous-access',
+        user: { id: 'user-ambiguous-access', email: 'duplicado@professo.test' },
+        membership: createTeamMember({
+          userId: 'user-ambiguous-access',
+          teamId: 'team-ambiguous-access',
+          playerId: null,
+          roles: ['player'],
+        }),
+        player: targetPlayer,
+        teamPlayers: [targetPlayer, competingPlayer],
+      });
+
+      assert.equal(result.allowed, false);
+      assert.equal(result.reason, 'multiple-player-candidates');
+      assert.equal(
+        getOwnPlayerProfileBlockedMessage(result),
+        'Encontramos mais de um jogador ativo compativel com a sua conta. Peca ao administrador para revisar o vinculo correto.',
+      );
+    },
+  },
+  {
+    name: 'autoedicao bloqueia quando a conta ja foi reconhecida em outro jogador do time',
+    run() {
+      const resolvedPlayer = createPlayer({
+        id: 'player-resolved-other',
+        teamId: 'team-resolved-other',
+        linkedUserId: 'user-resolved-other',
+      });
+      const targetPlayer = createPlayer({
+        id: 'player-target-other',
+        teamId: 'team-resolved-other',
+        linkedUserId: null,
+        linkedEmail: null,
+      });
+
+      const result = resolveOwnPlayerProfileAccess({
+        teamId: 'team-resolved-other',
+        user: { id: 'user-resolved-other', email: 'resolved-other@professo.test' },
+        membership: createTeamMember({
+          userId: 'user-resolved-other',
+          teamId: 'team-resolved-other',
+          playerId: null,
+          roles: ['player'],
+        }),
+        player: targetPlayer,
+        teamPlayers: [resolvedPlayer, targetPlayer],
+      });
+
+      assert.equal(result.allowed, false);
+      assert.equal(result.reason, 'different-linked-player');
+      assert.equal(
+        getOwnPlayerProfileBlockedMessage(result),
+        'Sua conta ja esta vinculada a outro jogador deste time.',
+      );
+    },
+  },
+  {
     name: 'diagnostico da autoedicao explica quando o linkedEmail nao confere',
     run() {
       const result = resolveOwnPlayerProfileAccess({
@@ -625,6 +848,34 @@ const testCases: TestCase[] = [
       assert.equal(
         getOwnPlayerProfileBlockedMessage(result),
         'Seu usuário ainda não está vinculado corretamente a este jogador.',
+      );
+    },
+  },
+  {
+    name: 'mensagem de bloqueio informa quando o usuario esta no time sem jogador vinculado',
+    run() {
+      const result = resolveOwnPlayerProfileAccess({
+        teamId: 'team-missing-link',
+        user: { id: 'user-missing-link', email: 'missing-link@professo.test' },
+        membership: createTeamMember({
+          userId: 'user-missing-link',
+          teamId: 'team-missing-link',
+          playerId: null,
+          roles: ['player'],
+        }),
+        player: createPlayer({
+          id: 'player-missing-link',
+          teamId: 'team-missing-link',
+          linkedUserId: null,
+          linkedEmail: null,
+        }),
+      });
+
+      assert.equal(result.allowed, false);
+      assert.equal(result.reason, 'missing-player-link');
+      assert.equal(
+        getOwnPlayerProfileBlockedMessage(result),
+        'Voce esta no time, mas ainda nao possui um jogador vinculado ao seu usuario.',
       );
     },
   },
@@ -898,6 +1149,52 @@ const testCases: TestCase[] = [
         })?.id,
         team.id,
       );
+    },
+  },
+  {
+    name: 'activeTeamId preserva o contexto de jogador quando o usuario tambem e admin em outro time',
+    run() {
+      const adminTeam = createTeam({ id: 'team-admin-context' });
+      const playerTeam = createTeam({ id: 'team-player-context' });
+      const user = createUser({
+        id: 'user-multi-team-context',
+        activeTeamId: playerTeam.id,
+        teamId: playerTeam.id,
+      });
+      const adminMembership = createTeamMember({
+        id: 'membership-admin-context',
+        userId: user.id,
+        teamId: adminTeam.id,
+        roles: ['admin'],
+        canManageTeam: true,
+        canManagePlayers: true,
+      });
+      const playerMembership = createTeamMember({
+        id: 'membership-player-context',
+        userId: user.id,
+        teamId: playerTeam.id,
+        playerId: 'player-multi-team-context',
+        roles: ['player'],
+      });
+      const player = createPlayer({
+        id: 'player-multi-team-context',
+        teamId: playerTeam.id,
+        linkedUserId: user.id,
+      });
+      const state = {
+        currentUserId: user.id,
+        snapshot: createSnapshot({
+          users: [user],
+          teams: [adminTeam, playerTeam],
+          teamMembers: [adminMembership, playerMembership],
+          players: [player],
+          accessNotice: null,
+        }),
+      };
+
+      assert.equal(selectCurrentTeam(state)?.id, playerTeam.id);
+      assert.equal(selectCurrentPlayer(state)?.id, player.id);
+      assert.equal(selectCurrentRoleLabel(state), 'Jogador');
     },
   },
   {

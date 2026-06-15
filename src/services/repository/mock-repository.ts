@@ -1069,8 +1069,16 @@ function ensureMembershipPlayerLink(input: {
     return null;
   }
 
+  const canUpdateLinkedEmail = !teamPlayers.some(
+    (candidate) =>
+      candidate.id !== player.id &&
+      normalizeEmail(candidate.linkedEmail ?? '') === normalizedUserEmail,
+  );
+
   player.linkedUserId = input.user.id;
-  player.linkedEmail = normalizedUserEmail;
+  player.linkedEmail = canUpdateLinkedEmail
+    ? normalizedUserEmail
+    : normalizeEmail(player.linkedEmail) || null;
   player.updatedAt = nowIso();
 
   input.membership.playerId = player.id;
@@ -2429,6 +2437,7 @@ export const mockRepository: AppRepository = {
         user: actor,
         membership,
         player,
+        teamPlayers: findTeamPlayers(player.teamId),
       });
 
       if (!accessResult.allowed) {

@@ -1,5 +1,5 @@
-import { canEditOwnPlayerProfile } from '@/lib/player-profile-access';
 import type { Player, TeamMember, User } from '@/types/domain';
+import type { FirestoreTeamMembershipIndexDocument } from '@/types/firestore';
 
 export function normalizeEmail(email?: string | null) {
   return email?.trim().toLowerCase() ?? '';
@@ -48,14 +48,50 @@ export type PlayerResolutionSource =
   | 'linked-email'
   | 'unresolved';
 
+export type PlayerResolutionStatus = 'resolved' | 'ambiguous' | 'unresolved';
+
 export type PlayerResolutionFailureReason =
   | 'missing-user'
   | 'membership-player-not-found'
   | 'membership-player-unavailable'
   | 'membership-player-linked-to-other-user'
+  | 'linked-user-id-ambiguous'
   | 'linked-user-id-not-found'
+  | 'linked-email-ambiguous'
+  | 'linked-email-linked-to-other-user'
   | 'linked-email-not-found'
   | 'no-matching-player';
+
+type MembershipLike =
+  | Pick<TeamMember, 'teamId' | 'playerId' | 'roles' | 'status'>
+  | Pick<FirestoreTeamMembershipIndexDocument, 'teamId' | 'playerId' | 'roles' | 'status'>;
+
+type LinkablePlayer = Pick<
+  Player,
+  'id' | 'teamId' | 'linkedUserId' | 'linkedEmail' | 'status' | 'deletedAt'
+>;
+
+type SuggestiblePlayer = Pick<
+  Player,
+  | 'id'
+  | 'teamId'
+  | 'linkedUserId'
+  | 'linkedEmail'
+  | 'status'
+  | 'deletedAt'
+  | 'fullName'
+  | 'nickname'
+  | 'jerseyNumber'
+>;
+
+export interface PlayerResolutionDiagnostics<TPlayer extends LinkablePlayer> {
+  status: PlayerResolutionStatus;
+  player: TPlayer | null;
+  source: PlayerResolutionSource;
+  failureReason: PlayerResolutionFailureReason | null;
+  diagnostics: string[];
+  candidates: TPlayer[];
+}
 
 export interface PlayerLinkSuggestion {
   playerId: string;
@@ -75,19 +111,22 @@ export interface JoinTeamPlayerLinkResolution {
 }
 
 export function membershipIndicatesPlayer(
-  membership?: Pick<TeamMember, 'playerId' | 'roles'> | null,
+  membership?: Pick<TeamMember, 'playerId' | 'roles'> | Pick<
+    FirestoreTeamMembershipIndexDocument,
+    'playerId' | 'roles'
+  > | null,
 ) {
   return Boolean(membership && (membership.roles.includes('player') || membership.playerId));
 }
 
 export function isPlayerAvailableForLinking(
-  player: Player | null | undefined,
+  player: LinkablePlayer | null | undefined,
 ) {
   return Boolean(player && player.status !== 'inactive' && !player.deletedAt);
 }
 
 export function canReuseMembershipPlayerForUser(
-  player: Player,
+  player: LinkablePlayer,
   user: Pick<User, 'id' | 'email'>,
 ) {
   if (!isPlayerAvailableForLinking(player)) {
@@ -102,7 +141,7 @@ export function canReuseMembershipPlayerForUser(
 }
 
 export function suggestPlayerLinksForUser(input: {
-  teamPlayers: Player[];
+  teamPlayers: SuggestiblePlayer[];
   user: Pick<User, 'id' | 'email' | 'displayName'> | null;
   teamId?: string | null;
 }) {
@@ -293,24 +332,29 @@ export function buildJoinTeamPlayerLinkResolution(input: {
   } satisfies JoinTeamPlayerLinkResolution;
 }
 
-export function resolvePlayerForUserWithDiagnostics(input: {
-  teamPlayers: Player[];
+export function resolvePlayerForUserWithDiagnostics<TPlayer extends LinkablePlayer>(input: {
+  teamPlayers: TPlayer[];
   user: Pick<User, 'id' | 'email'> | null;
-  membership?: Pick<TeamMember, 'playerId' | 'roles'> | null;
+  membership?: MembershipLike | null;
   teamId?: string | null;
 }) {
   const scopedPlayers = input.teamId
     ? input.teamPlayers.filter((player) => player.teamId === input.teamId)
     : input.teamPlayers;
+  const diagnostics: string[] = [];
 
   if (!input.user) {
     return {
-      player: null as Player | null,
+      status: 'unresolved' as const,
+      player: null as TPlayer | null,
       source: 'unresolved' as const,
       failureReason: 'missing-user' as const,
+      diagnostics: ['Usuario autenticado ausente.'],
+      candidates: [] as TPlayer[],
     };
   }
 
+  const userId = input.user.id;
   const normalizedUserEmail = normalizeEmail(input.user.email);
   const membershipPlayerId = input.membership?.playerId ?? null;
   const membershipPlayer =
@@ -322,35 +366,55 @@ export function resolvePlayerForUserWithDiagnostics(input: {
 
   if (input.membership?.playerId) {
     if (!membershipPlayer) {
+      diagnostics.push('playerId do membership nao foi encontrado no elenco ativo.');
       failureReason = 'membership-player-not-found';
     } else if (!isPlayerAvailableForLinking(membershipPlayer)) {
+      diagnostics.push('playerId do membership aponta para jogador indisponivel.');
       failureReason = 'membership-player-unavailable';
     } else if (
       membershipPlayer.linkedUserId &&
       membershipPlayer.linkedUserId !== input.user.id
     ) {
+      diagnostics.push('playerId do membership aponta para jogador vinculado a outro usuario.');
       failureReason = 'membership-player-linked-to-other-user';
     } else {
       return {
+        status: 'resolved' as const,
         player: membershipPlayer,
         source: 'membership-player-id' as const,
         failureReason: null,
+        diagnostics,
+        candidates: [membershipPlayer],
       };
     }
   }
 
-  const linkedUserPlayer =
-    scopedPlayers.find(
-      (player) =>
-        isPlayerAvailableForLinking(player) &&
-        player.linkedUserId === input.user?.id,
-    ) ?? null;
+  const linkedUserCandidates = scopedPlayers.filter(
+    (player) =>
+      isPlayerAvailableForLinking(player) &&
+      player.linkedUserId === input.user?.id,
+  );
 
-  if (linkedUserPlayer) {
+  if (linkedUserCandidates.length === 1) {
     return {
-      player: linkedUserPlayer,
+      status: 'resolved' as const,
+      player: linkedUserCandidates[0],
       source: 'linked-user-id' as const,
       failureReason,
+      diagnostics,
+      candidates: linkedUserCandidates,
+    };
+  }
+
+  if (linkedUserCandidates.length > 1) {
+    diagnostics.push('Mais de um jogador ativo esta vinculado ao mesmo usuario.');
+    return {
+      status: 'ambiguous' as const,
+      player: null as TPlayer | null,
+      source: 'unresolved' as const,
+      failureReason: 'linked-user-id-ambiguous' as const,
+      diagnostics,
+      candidates: linkedUserCandidates,
     };
   }
 
@@ -358,35 +422,76 @@ export function resolvePlayerForUserWithDiagnostics(input: {
     failureReason = 'linked-user-id-not-found';
   }
 
-  const linkedEmailPlayer =
-    scopedPlayers.find(
-      (player) =>
-        isPlayerAvailableForLinking(player) &&
-        !player.linkedUserId &&
-        normalizeEmail(player.linkedEmail) === normalizedUserEmail,
-    ) ?? null;
-
-  if (linkedEmailPlayer) {
+  if (!normalizedUserEmail) {
     return {
-      player: linkedEmailPlayer,
-      source: 'linked-email' as const,
-      failureReason,
+      status: 'unresolved' as const,
+      player: null as TPlayer | null,
+      source: 'unresolved' as const,
+      failureReason: failureReason ?? 'no-matching-player',
+      diagnostics,
+      candidates: [] as TPlayer[],
     };
   }
 
+  const linkedEmailCandidates = scopedPlayers.filter(
+      (player) =>
+        isPlayerAvailableForLinking(player) &&
+        normalizeEmail(player.linkedEmail) === normalizedUserEmail &&
+        (!player.linkedUserId || player.linkedUserId === userId),
+  );
+
+  if (linkedEmailCandidates.length === 1) {
+    return {
+      status: 'resolved' as const,
+      player: linkedEmailCandidates[0],
+      source: 'linked-email' as const,
+      failureReason,
+      diagnostics,
+      candidates: linkedEmailCandidates,
+    };
+  }
+
+  if (linkedEmailCandidates.length > 1) {
+    diagnostics.push('Mais de um jogador ativo compartilha o mesmo linkedEmail.');
+    return {
+      status: 'ambiguous' as const,
+      player: null as TPlayer | null,
+      source: 'unresolved' as const,
+      failureReason: 'linked-email-ambiguous' as const,
+      diagnostics,
+      candidates: linkedEmailCandidates,
+    };
+  }
+
+  const conflictingLinkedEmailCandidates = scopedPlayers.filter(
+      (player) =>
+        isPlayerAvailableForLinking(player) &&
+        normalizeEmail(player.linkedEmail) === normalizedUserEmail &&
+        Boolean(player.linkedUserId) &&
+        player.linkedUserId !== userId,
+  );
+
+  if (conflictingLinkedEmailCandidates.length > 0) {
+    diagnostics.push('Existe jogador com esse linkedEmail ja vinculado a outra conta.');
+  }
+
   return {
-    player: null as Player | null,
+    status: 'unresolved' as const,
+    player: null as TPlayer | null,
     source: 'unresolved' as const,
-    failureReason:
-      failureReason ??
-      (normalizedUserEmail ? 'linked-email-not-found' : 'no-matching-player'),
+    failureReason: conflictingLinkedEmailCandidates.length > 0
+      ? 'linked-email-linked-to-other-user'
+      : failureReason ??
+        (normalizedUserEmail ? 'linked-email-not-found' : 'no-matching-player'),
+    diagnostics,
+    candidates: conflictingLinkedEmailCandidates,
   };
 }
 
-export function resolvePlayerForUser(input: {
-  teamPlayers: Player[];
+export function resolvePlayerForUser<TPlayer extends LinkablePlayer>(input: {
+  teamPlayers: TPlayer[];
   user: Pick<User, 'id' | 'email'>;
-  membership?: Pick<TeamMember, 'playerId' | 'roles'> | null;
+  membership?: MembershipLike | null;
   teamId?: string | null;
 }) {
   return resolvePlayerForUserWithDiagnostics(input).player;
@@ -395,11 +500,51 @@ export function resolvePlayerForUser(input: {
 export function canSelfEditPlayerProfileWithMembershipLink(input: {
   teamId: string;
   user: Pick<User, 'id' | 'email'> | null;
-  membership?: Pick<TeamMember, 'teamId' | 'playerId' | 'roles' | 'status'> | null;
+  membership?: MembershipLike | null;
   player?: Pick<
     Player,
     'id' | 'teamId' | 'linkedUserId' | 'linkedEmail' | 'status' | 'deletedAt'
   > | null;
+  teamPlayers?: Array<
+    Pick<
+      Player,
+      'id' | 'teamId' | 'linkedUserId' | 'linkedEmail' | 'status' | 'deletedAt'
+    >
+  > | null;
 }) {
-  return canEditOwnPlayerProfile(input);
+  if (!input.user || !input.membership || !input.player) {
+    return false;
+  }
+
+  if (input.membership.status !== 'active' || input.membership.teamId !== input.teamId) {
+    return false;
+  }
+
+  if (!membershipIndicatesPlayer(input.membership)) {
+    return false;
+  }
+
+  if (
+    input.membership.playerId != null &&
+    input.membership.playerId !== input.player.id
+  ) {
+    return false;
+  }
+
+  if (input.player.teamId !== input.teamId || !isPlayerAvailableForLinking(input.player)) {
+    return false;
+  }
+
+  if (input.player.linkedUserId && input.player.linkedUserId !== input.user.id) {
+    return false;
+  }
+
+  const resolution = resolvePlayerForUserWithDiagnostics({
+    teamPlayers: input.teamPlayers ?? [input.player],
+    teamId: input.teamId,
+    user: input.user,
+    membership: input.membership,
+  });
+
+  return resolution.status === 'resolved' && resolution.player?.id === input.player.id;
 }

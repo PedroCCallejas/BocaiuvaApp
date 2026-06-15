@@ -115,8 +115,8 @@ export default function ProfileScreen() {
           />
         ) : (
           <Text style={[styles.note, { color: theme.colors.textMuted }]}>
-            Seu usuario ainda nao esta vinculado a um jogador do elenco. Peca para um
-            administrador revisar o vinculo ou entre pelo convite correto do time.
+            Voce esta no time, mas ainda nao possui um jogador vinculado ao seu usuario.
+            Peca para um administrador revisar o vinculo correto.
           </Text>
         )}
         <AppButton

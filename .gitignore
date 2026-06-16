@@ -58,3 +58,14 @@ GoogleService-Info.plist
 
 dist-web/
 dist/
+
+# Claude Code - configurações locais/pessoais
+.claude/
+.claude/settings.local.json
+
+
+# Claude Code - arquivos temporários ou memória local, caso existam no projeto
+.claude/memory/
+.claude/logs/
+.claude/cache/
+.claude/tmp/

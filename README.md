@@ -13,12 +13,12 @@ Aplicativo mobile em React Native + Expo para organizar times de futebol amador,
 - Firestore para `users`, `teams`, `teamMembers`, `players`, `matches`, `attendance`, `lineups`, `matchStats`, `mvpVotes`, `playerRatings` e `notifications`
 - Fallback local para desenvolvimento e para fluxos ainda não migrados
 
-## O que ja funciona
+## O que já funciona
 
 - Login e cadastro com e-mail e senha
-- Recuperacao de senha
+- Recuperação de senha
 - Login com Google quando os client IDs estiverem configurados
-- Criacao de time para qualquer conta autenticada, com limite de 2 times por conta
+- Criação de time para qualquer conta autenticada, com limite de 2 times por conta
 - Multi-times com troca de time atual
 - Criação e edição de time
 - Convite por código
@@ -26,14 +26,14 @@ Aplicativo mobile em React Native + Expo para organizar times de futebol amador,
 - Partidas com presença, escalação visual e localização por link
 - Pós-jogo real com placar, gols, assistências, voto de MVP e notas anônimas
 - Notificações internas no app para partidas, presença, escalação e pós-jogo
-- Estatisticas e rankings somando dados manuais com dados reais das partidas
-- Atualizacao em tempo real entre Web, Android e iPhone/PWA no time ativo
+- Estatísticas e rankings somando dados manuais com dados reais das partidas
+- Atualização em tempo real entre Web, Android e iPhone/PWA no time ativo
 - Pull-to-refresh nas listas principais com botão manual de atualizar
-- Formularios com melhor comportamento de teclado em Android, iPhone e Web mobile
-- Fallback mock continua disponivel quando `EXPO_PUBLIC_DATA_SOURCE=mock`
+- Formulários com melhor comportamento de teclado em Android, iPhone e Web mobile
+- Fallback mock continua disponível quando `EXPO_PUBLIC_DATA_SOURCE=mock`
 - Web/PWA para Safari no iPhone com instalação pela tela inicial
 
-## Configuracao
+## Configuração
 
 1. Habilite `Email/Password` no Firebase Authentication.
 2. Para Google, habilite o provedor `Google` no Firebase Authentication.
@@ -69,7 +69,7 @@ EXPO_PUBLIC_ADS_MOBILE_ENABLED=false
 
 4. Reinicie o Expo depois de alterar o `.env`.
 
-Observacoes:
+Observações:
 
 - O login com Google usa o redirect URI baseado no `scheme` do app: `appboca://auth`.
 - Se os client IDs do Google não estiverem configurados, o botão de Google fica oculto.
@@ -78,12 +78,12 @@ Observacoes:
 - Para upload e mídia no Supabase, prefira `EXPO_PUBLIC_SUPABASE_ANON_KEY`. `EXPO_PUBLIC_SUPABASE_KEY` fica apenas como fallback legado.
 - Para beta web, prefira `EXPO_PUBLIC_ADS_ENABLED=true`, `EXPO_PUBLIC_ADS_WEB_ENABLED=false` e `EXPO_PUBLIC_ADS_MOBILE_ENABLED=false` para manter o placeholder sem puxar AdMob nativo.
 
-## Criacao de time
+## Criação de time
 
 1. O usuário cria a conta normalmente.
-2. Qualquer conta autenticada pode criar um time sem liberacao manual.
-3. Cada conta pode ser dona de, no maximo, 2 times.
-4. O limite conta apenas times em que a conta e `adminUserId`.
+2. Qualquer conta autenticada pode criar um time sem liberação manual.
+3. Cada conta pode ser dona de, no máximo, 2 times.
+4. O limite conta apenas times em que a conta é `adminUserId`.
 5. Participar de outros times como jogador não entra nessa conta.
 
 ## Regras importantes da etapa atual
@@ -105,32 +105,32 @@ Observacoes:
 - O app tenta manter os dados do time atual em tempo real com listeners do Firestore e ainda oferece atualização manual nas listas principais.
 - Formularios usam ajuste automatico de teclado e rolagem para manter o campo focado visivel.
 
-## Fluxo de pos-partida
+## Fluxo de pós-partida
 
 1. O admin do time ativo encerra a partida com o placar final.
 2. O admin registra gols e assistências apenas para jogadores confirmados.
 3. O app grava `matchStats` reais da partida e atualiza o resumo final da partida.
-4. Jogadores confirmados votam no MVP uma unica vez, sem votar em si mesmos.
+4. Jogadores confirmados votam no MVP uma única vez, sem votar em si mesmos.
 5. Jogadores confirmados avaliam outros jogadores uma única vez, sem autoavaliação.
-6. Estatisticas, rankings e resumo da partida passam a refletir os dados reais gravados no Firestore ou no fallback mock.
+6. Estatísticas, rankings e resumo da partida passam a refletir os dados reais gravados no Firestore ou no fallback mock.
 7. Ao fechar e abrir o app novamente, o snapshot do time ativo volta a carregar `matchStats`, `mvpVotes`, `playerRatings` e `notifications`.
 
 ## Fluxo de notificações
 
 1. O app salva notificações internas em `notifications`.
 2. Toda notificação carrega `teamId` e aparece apenas para o time ativo da conta.
-3. A Home mostra um resumo recente e a tela `Notificacoes` concentra o historico completo.
+3. A Home mostra um resumo recente e a tela `Notificações` concentra o histórico completo.
 4. Cada usuário pode marcar uma notificação como lida ou limpar todas as pendências do time ativo.
 5. Nesta etapa não existe push nativo; o fluxo fica todo dentro do app e da PWA.
 
 ## Atualização em tempo real e formulários
 
 1. No modo Firebase, o app abre listeners do time ativo para elenco, partidas, presença, escalação, pós-jogo e notificações.
-2. Ao trocar de time, os listeners antigos sao encerrados e o app passa a ouvir apenas o novo time ativo.
+2. Ao trocar de time, os listeners antigos são encerrados e o app passa a ouvir apenas o novo time ativo.
 3. As listas principais mostram um status leve de atualização e aceitam `pull-to-refresh` no mobile, com botão manual de atualizar em qualquer plataforma.
 4. Os formulários usam ajuste de teclado e rolagem do campo focado para evitar que inputs e botões fiquem escondidos no Android, iPhone e Web mobile.
 
-## Validacao recente
+## Validação recente
 
 - `npm run typecheck`
 - Validação da coleção `notifications` no fluxo de mock e Firestore-ready
@@ -171,13 +171,13 @@ Para conferir tipagem:
 npm run typecheck
 ```
 
-## Publicacao web
+## Publicação web
 
 O build web do Expo sai em `dist` por padrão. Esse diretório pode ser publicado sem App Store.
 
 ### Vercel
 
-1. Este deploy beta sobe apenas o front web. Nao publique Firestore Rules novas antes do backfill de `teamMembershipIndex`.
+1. Este deploy beta sobe apenas o front web. Não publique Firestore Rules novas antes do backfill de `teamMembershipIndex`.
 2. Rode `npx expo export -p web`.
 3. Crie um projeto novo na Vercel apontando para este repositorio.
 4. Use:
@@ -202,14 +202,14 @@ O build web do Expo sai em `dist` por padrão. Esse diretório pode ser publicad
 3. Use:
    - Build command: `npm run build:web`
    - Publish directory: `dist`
-4. Configure as variaveis `EXPO_PUBLIC_*` no painel da Netlify.
+4. Configure as variáveis `EXPO_PUBLIC_*` no painel da Netlify.
 
 ### Firebase Hosting
 
 1. Rode `npm run build:web`.
 2. Execute `firebase init hosting`.
 3. Escolha `dist` como pasta pública.
-4. Marque a opcao de app web com fallback para rotas.
+4. Marque a opção de app web com fallback para rotas.
 5. Publique com `firebase deploy`.
 
 ## Instalar no iPhone
@@ -221,10 +221,10 @@ O build web do Expo sai em `dist` por padrão. Esse diretório pode ser publicad
 5. Confirme o nome `Professô FC`.
 6. Abra o atalho criado como se fosse um app.
 
-Observacoes para iPhone:
+Observações para iPhone:
 
 - O login por e-mail, Firestore, troca de time, partidas, presença e escalação funcionam no navegador.
 - Links externos, como localização da partida, abrem pelo fluxo apropriado do Safari.
 - O modo tela inicial depende de HTTPS em produção.
 
-Mais detalhes do modelo atual estao em [docs/firestore-schema.md](./docs/firestore-schema.md).
+Mais detalhes do modelo atual estão em [docs/firestore-schema.md](./docs/firestore-schema.md).

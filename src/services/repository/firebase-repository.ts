@@ -3776,6 +3776,8 @@ async function ensureActiveTeamContext(userId: string) {
   const activeTeam =
     teams.find((team) => team.id === activeTeamId) ?? null;
 
+  const preRepairMembershipPlayerId = membership.playerId ?? null;
+
   if (activeTeam) {
     const repaired = await ensureMembershipPlayerLink({
       user,
@@ -3794,6 +3796,7 @@ async function ensureActiveTeamContext(userId: string) {
       actor: user,
       membership: repaired.membership,
       activeTeamId,
+      preRepairMembershipPlayerId,
     };
   }
 
@@ -3801,6 +3804,7 @@ async function ensureActiveTeamContext(userId: string) {
     actor: user,
     membership,
     activeTeamId,
+    preRepairMembershipPlayerId,
   };
 }
 
@@ -6148,7 +6152,7 @@ export const firebaseRepository: AppRepository = {
   async updateAttendance(input: UpdateAttendanceInput, actorUserId: string) {
     try {
       const firestore = requireFirestore();
-      const { actor, membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      const { actor, membership, activeTeamId, preRepairMembershipPlayerId } = await ensureActiveTeamContext(actorUserId);
       const currentPlayerId = membership.roles.includes('player')
         ? await ensureCurrentUserPlayerForActiveTeam(actorUserId)
         : null;
@@ -6168,6 +6172,13 @@ export const firebaseRepository: AppRepository = {
       if (!canManageAttendance && !isOwnAttendance) {
         throw createRepositoryError(
           'Você só pode responder à sua própria presença.',
+          'permission-denied',
+        );
+      }
+
+      if (isOwnAttendance && !canManageAttendance && preRepairMembershipPlayerId !== player.id) {
+        throw createRepositoryError(
+          'Seu perfil de jogador ainda não está vinculado ao seu login. Peça ao administrador do time para concluir esse vínculo antes de confirmar presença.',
           'permission-denied',
         );
       }

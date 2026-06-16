@@ -410,7 +410,7 @@ export default function TeamAccessScreen() {
                 <AppButton
                   label={isCurrent ? 'Acessar time atual' : 'Acessar time'}
                   variant={isCurrent ? 'secondary' : 'primary'}
-                  onPress={() => void handleSelectTeam(team.id)}
+                  onPress={() => void handleSelectTeam(team.id, membership)}
                   loading={switchingTeamId === team.id}
                   fullWidth
                 />

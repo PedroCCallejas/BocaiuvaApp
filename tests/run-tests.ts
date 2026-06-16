@@ -2165,6 +2165,96 @@ const testCases: TestCase[] = [
       assert.equal(joinResult.alreadyMember, false);
     },
   },
+  {
+    name: 'admin confirma presença de qualquer jogador do time',
+    async run() {
+      resetMockRepositoryState();
+      const record = await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-9', status: 'confirmed' },
+        'user-admin',
+      );
+      assert.equal(record.playerId, 'player-9');
+      assert.equal(record.status, 'confirmed');
+    },
+  },
+  {
+    name: 'admin altera presença de qualquer jogador inclusive para ausente',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-9', status: 'confirmed' },
+        'user-admin',
+      );
+      const updated = await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-9', status: 'absent' },
+        'user-admin',
+      );
+      assert.equal(updated.playerId, 'player-9');
+      assert.equal(updated.status, 'absent');
+    },
+  },
+  {
+    name: 'jogador comum confirma a propria presença com sucesso',
+    async run() {
+      resetMockRepositoryState();
+      const record = await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-9', status: 'confirmed' },
+        'user-striker',
+      );
+      assert.equal(record.playerId, 'player-9');
+      assert.equal(record.status, 'confirmed');
+    },
+  },
+  {
+    name: 'jogador comum nao consegue confirmar presença de outro jogador',
+    async run() {
+      resetMockRepositoryState();
+      await assert.rejects(
+        () =>
+          mockRepository.updateAttendance(
+            { matchId: 'match-3', playerId: 'player-7', status: 'confirmed' },
+            'user-striker',
+          ),
+        (error) =>
+          error instanceof Error &&
+          error.message === 'Você só pode responder à sua própria presença.',
+      );
+    },
+  },
+  {
+    name: 'admin que tambem é jogador confirma presença de outro jogador sem bloqueio',
+    async run() {
+      resetMockRepositoryState();
+      // user-admin tem roles ['admin', 'player'] e playerId player-7
+      // Confirma player-9 (jogador de outro usuario) — não pode ser bloqueado
+      const record = await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-9', status: 'confirmed' },
+        'user-admin',
+      );
+      assert.equal(record.playerId, 'player-9');
+      assert.equal(record.status, 'confirmed');
+    },
+  },
+  {
+    name: 'auto-resposta de jogador nao cria notificacao no time',
+    async run() {
+      resetMockRepositoryState();
+      const snapshotBefore = await mockRepository.getSnapshot();
+      const notificationsBefore = snapshotBefore.notifications.length;
+
+      await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-9', status: 'confirmed' },
+        'user-striker',
+      );
+
+      const snapshotAfter = await mockRepository.getSnapshot();
+      assert.equal(
+        snapshotAfter.notifications.length,
+        notificationsBefore,
+        'auto-resposta de jogador nao deve criar notificacao',
+      );
+    },
+  },
 ];
 
 let failed = 0;

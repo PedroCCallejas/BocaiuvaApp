@@ -1008,6 +1008,8 @@ function ensureActiveTeamContext(actorUserId: string) {
     throw new Error('Seu acesso ao time atual não está disponível.');
   }
 
+  const preRepairMembershipPlayerId = membership.playerId ?? null;
+
   if (membership.roles.includes('player')) {
     ensureMembershipPlayerLink({
       user: actor,
@@ -1021,6 +1023,7 @@ function ensureActiveTeamContext(actorUserId: string) {
     actor,
     membership,
     activeTeamId: actor.activeTeamId,
+    preRepairMembershipPlayerId,
   };
 }
 
@@ -2766,7 +2769,7 @@ export const mockRepository: AppRepository = {
   },
 
   async updateAttendance(input: UpdateAttendanceInput, actorUserId: string) {
-    const { actor, membership, activeTeamId } = ensureActiveTeamContext(actorUserId);
+    const { actor, membership, activeTeamId, preRepairMembershipPlayerId } = ensureActiveTeamContext(actorUserId);
     const currentPlayerId = membership.roles.includes('player')
       ? ensureCurrentUserPlayerForActiveTeam(actorUserId)
       : null;
@@ -2780,10 +2783,16 @@ export const mockRepository: AppRepository = {
     const player = ensurePlayerBelongsToTeam(input.playerId, match.teamId);
 
     const canManageAttendance = membership.canManageTeam === true;
-    const isOwnAttendance = currentPlayerId === input.playerId;
+    const isOwnAttendance = currentPlayerId === player.id;
 
     if (!canManageAttendance && !isOwnAttendance) {
       throw new Error('Você só pode responder à sua própria presença.');
+    }
+
+    if (isOwnAttendance && !canManageAttendance && preRepairMembershipPlayerId !== player.id) {
+      throw new Error(
+        'Seu perfil de jogador ainda não está vinculado ao seu login. Peça ao administrador do time para concluir esse vínculo antes de confirmar presença.',
+      );
     }
 
     let record = findAttendanceForMatch(activeTeamId, input.matchId).find(
@@ -2813,23 +2822,25 @@ export const mockRepository: AppRepository = {
       record.updatedAt = now;
     }
 
-    const notificationId = buildNotificationId('attendance-confirmed', match.id, player.id);
-    if (input.status === 'confirmed' || input.status === 'absent') {
-      const existing = findNotificationByIdForTeam(match.teamId, notificationId);
-      upsertNotification(
-        createAttendanceNotification({
-          id: notificationId,
-          teamId: match.teamId,
-          match,
-          player,
-          status: input.status,
-          actorUserId: actor.id,
-          createdAt: existing?.createdAt,
-          updatedAt: now,
-        }),
-      );
-    } else {
-      removeNotification(notificationId);
+    if (canManageAttendance) {
+      const notificationId = buildNotificationId('attendance-confirmed', match.id, player.id);
+      if (input.status === 'confirmed' || input.status === 'absent') {
+        const existing = findNotificationByIdForTeam(match.teamId, notificationId);
+        upsertNotification(
+          createAttendanceNotification({
+            id: notificationId,
+            teamId: match.teamId,
+            match,
+            player,
+            status: input.status,
+            actorUserId: actor.id,
+            createdAt: existing?.createdAt,
+            updatedAt: now,
+          }),
+        );
+      } else {
+        removeNotification(notificationId);
+      }
     }
 
     return clone(record);

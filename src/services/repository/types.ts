@@ -408,6 +408,14 @@ export interface AppRepository {
     actorUserId: string,
   ): Promise<MatchDiaryEntry>;
   deleteMatchDiaryEntry(entryId: string, actorUserId: string): Promise<void>;
+  deleteMatch(matchId: string, actorUserId: string): Promise<void>;
+  setManualMvp(matchId: string, playerId: string | null, actorUserId: string): Promise<Match>;
+  adminSetMatchAttendance(
+    matchId: string,
+    playerId: string,
+    status: AttendanceStatus,
+    actorUserId: string,
+  ): Promise<AttendanceRecord>;
   fetchMatchDiaryEntriesByMatchId(
     matchId: string,
     actorUserId: string,

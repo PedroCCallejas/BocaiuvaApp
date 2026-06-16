@@ -340,6 +340,14 @@ export default function PlayerDetailsScreen() {
           onPress: () => {
             void (async () => {
               try {
+                if (__DEV__) {
+                  console.log('[player-detail] inactivate pressed', {
+                    playerId: currentPlayerRecord.id,
+                    uid: currentUser?.id ?? null,
+                    teamId: currentTeam.id,
+                    canManageTeam,
+                  });
+                }
                 await removePlayer(currentPlayerRecord.id);
                 router.replace('/players');
               } catch (error) {
@@ -366,6 +374,14 @@ export default function PlayerDetailsScreen() {
           onPress: () => {
             void (async () => {
               try {
+                if (__DEV__) {
+                  console.log('[player-detail] reactivate pressed', {
+                    playerId: currentPlayerRecord.id,
+                    uid: currentUser?.id ?? null,
+                    teamId: currentTeam.id,
+                    canManageTeam,
+                  });
+                }
                 await reactivatePlayer(currentPlayerRecord.id);
                 Alert.alert('Jogador reativado', 'O cadastro voltou ao elenco ativo.');
               } catch (error) {
@@ -403,9 +419,9 @@ export default function PlayerDetailsScreen() {
         summaryItems={heroSummaryItems}
       />
 
-      {canManageTeam || canManagePlayers || (!isWeb && canEditPlayer) ? (
+      {canManageTeam || canManagePlayers || canEditPlayer ? (
         <View style={styles.buttonRow}>
-          {!isWeb && canEditPlayer ? (
+          {canEditPlayer ? (
             <AppButton
               label={canManagePlayers ? 'Editar jogador' : 'Editar meu perfil'}
               onPress={() => router.push(`/players/${currentPlayerRecord.id}/edit`)}

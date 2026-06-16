@@ -140,6 +140,7 @@ import {
 import type {
   AppNotification,
   AttendanceRecord,
+  AttendanceStatus,
   MatchType,
   Lineup,
   Match,
@@ -892,6 +893,11 @@ function normalizeMatchDocument(
     finishedAt: match.finishedAt ?? null,
     mvpWinnerPlayerIds: match.mvpWinnerPlayerIds ?? [],
     mvpTotalVotes: match.mvpTotalVotes ?? 0,
+    deletedAt: match.deletedAt ?? null,
+    deletedBy: match.deletedBy ?? null,
+    manualMvpPlayerId: match.manualMvpPlayerId ?? null,
+    manualMvpSelectedBy: match.manualMvpSelectedBy ?? null,
+    manualMvpSelectedAt: match.manualMvpSelectedAt ?? null,
   };
 }
 
@@ -2834,6 +2840,7 @@ async function buildSnapshotForResolvedUser(currentUser: User): Promise<AppSnaps
   }
 
   const { user, memberships, teams } = resolvedMemberships;
+  await ensureOwnTeamMembershipIndex(user.id, memberships);
   const accessNotice = resolvedMemberships.accessNotice ?? null;
   const recoveryAccessNotice =
     accessNotice ??
@@ -3806,6 +3813,44 @@ async function ensureActiveTeamContext(userId: string) {
     activeTeamId,
     preRepairMembershipPlayerId,
   };
+}
+
+const _ensuredMembershipIndexThisSession = new Set<string>();
+
+async function ensureOwnTeamMembershipIndex(
+  userId: string,
+  memberships: TeamMember[],
+): Promise<void> {
+  const firestore = requireFirestore();
+  const ownActive = memberships.filter(
+    (m) => m.userId === userId && m.status === 'active',
+  );
+
+  await Promise.all(
+    ownActive.map(async (membership) => {
+      const key = `${membership.teamId}/${userId}`;
+
+      if (_ensuredMembershipIndexThisSession.has(key)) {
+        return;
+      }
+
+      try {
+        const indexRef = buildTeamMembershipIndexRef(firestore, membership.teamId, userId);
+        const indexDoc = buildTeamMembershipIndexDocument(membership);
+        await setDoc(indexRef, indexDoc);
+        _ensuredMembershipIndexThisSession.add(key);
+      } catch (error) {
+        logAuthLink('permission-denied', {
+          stage: 'membership-index-backfill',
+          userId,
+          teamId: membership.teamId,
+          membershipId: membership.id,
+          code: extractErrorCode(error),
+          message: error instanceof Error ? error.message : 'Erro desconhecido.',
+        });
+      }
+    }),
+  );
 }
 
 async function ensureMembershipContext(userId: string, teamId: string) {
@@ -6920,6 +6965,233 @@ export const firebaseRepository: AppRepository = {
       throw toFriendlyFirestoreError(
         error,
         'Não foi possível excluir a resenha agora.',
+      );
+    }
+  },
+
+  async deleteMatch(matchId: string, actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      const { membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      if (!membership.canManageTeam) {
+        throw createRepositoryError(
+          'Apenas o administrador do time pode excluir partidas.',
+          'permission-denied',
+        );
+      }
+
+      const currentMatch = await fetchMatchByIdForTeam(activeTeamId, matchId);
+
+      if (currentMatch.deletedAt) {
+        return;
+      }
+
+      if (__DEV__) {
+        console.log('[match-delete] start', {
+          uid: actorUserId,
+          activeTeamId,
+          matchId,
+          matchStatus: currentMatch.status,
+          canManageTeam: membership.canManageTeam,
+        });
+      }
+
+      const updatedAt = nowIso();
+      const updatedMatch = normalizeMatchDocument({
+        ...currentMatch,
+        status: 'canceled',
+        scoreboard: null,
+        finishedAt: null,
+        deletedAt: updatedAt,
+        deletedBy: actorUserId,
+        updatedAt,
+      });
+
+      await setDoc(
+        doc(firestore, FIRESTORE_COLLECTIONS.matches, currentMatch.id),
+        updatedMatch,
+      );
+
+      if (__DEV__) {
+        console.log('[match-delete] success', { matchId, activeTeamId });
+      }
+    } catch (error) {
+      if (__DEV__) {
+        console.error('[match-delete] failed', { matchId, error });
+      }
+      throw toFriendlyFirestoreError(
+        error,
+        'Não foi possível excluir a partida agora.',
+      );
+    }
+  },
+
+  async setManualMvp(matchId: string, playerId: string | null, actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      const { membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      if (!membership.canManageTeam) {
+        throw createRepositoryError(
+          'Apenas o administrador do time pode definir o MVP da partida.',
+          'permission-denied',
+        );
+      }
+
+      const currentMatch = await fetchMatchByIdForTeam(activeTeamId, matchId);
+
+      if (currentMatch.deletedAt) {
+        throw createRepositoryError(
+          'Não é possível definir MVP em uma partida excluída.',
+          'failed-precondition',
+        );
+      }
+
+      if (__DEV__) {
+        console.log('[match-mvp] save start', {
+          uid: actorUserId,
+          activeTeamId,
+          matchId,
+          selectedPlayerId: playerId,
+          canManageTeam: membership.canManageTeam,
+        });
+      }
+
+      const updatedAt = nowIso();
+      let mvpWinnerPlayerIds: string[];
+      let mvpTotalVotes: number;
+
+      if (playerId !== null) {
+        mvpWinnerPlayerIds = [playerId];
+        mvpTotalVotes = currentMatch.mvpTotalVotes ?? 0;
+      } else {
+        const votes = await fetchMvpVotesByMatchIdForTeam(activeTeamId, matchId);
+        const attendanceItems = await fetchAttendanceByMatchIdForTeam(activeTeamId, matchId);
+        const recalcSnapshot = { ...emptySnapshot, attendance: attendanceItems, mvpVotes: votes };
+        const mvpSummary = getMvpSummary(recalcSnapshot, matchId);
+        mvpWinnerPlayerIds = mvpSummary.winnerPlayerIds;
+        mvpTotalVotes = mvpSummary.totalVotes;
+      }
+
+      const updatedMatch = normalizeMatchDocument({
+        ...currentMatch,
+        manualMvpPlayerId: playerId,
+        manualMvpSelectedBy: playerId !== null ? actorUserId : null,
+        manualMvpSelectedAt: playerId !== null ? updatedAt : null,
+        mvpWinnerPlayerIds,
+        mvpTotalVotes,
+        updatedAt,
+      });
+
+      await setDoc(
+        doc(firestore, FIRESTORE_COLLECTIONS.matches, currentMatch.id),
+        updatedMatch,
+      );
+
+      if (__DEV__) {
+        if (playerId !== null) {
+          console.log('[match-mvp] manual mvp changed', {
+            matchId,
+            selectedPlayerId: playerId,
+            activeTeamId,
+          });
+        } else {
+          console.log('[match-mvp] manual mvp cleared', {
+            matchId,
+            restoredWinners: mvpWinnerPlayerIds,
+            activeTeamId,
+          });
+        }
+        console.log('[match-mvp] save success', { matchId, activeTeamId });
+      }
+
+      return updatedMatch;
+    } catch (error) {
+      if (__DEV__) {
+        console.error('[match-mvp] save failed', { matchId, error });
+      }
+      throw toFriendlyFirestoreError(
+        error,
+        'Não foi possível salvar o MVP agora.',
+      );
+    }
+  },
+
+  async adminSetMatchAttendance(
+    matchId: string,
+    playerId: string,
+    status: AttendanceStatus,
+    actorUserId: string,
+  ) {
+    try {
+      const firestore = requireFirestore();
+      const { membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      if (!membership.canManageTeam) {
+        throw createRepositoryError(
+          'Apenas o administrador do time pode editar participantes da partida.',
+          'permission-denied',
+        );
+      }
+
+      const currentMatch = await fetchMatchByIdForTeam(activeTeamId, matchId);
+
+      if (currentMatch.deletedAt) {
+        throw createRepositoryError(
+          'Não é possível editar participantes de uma partida excluída.',
+          'failed-precondition',
+        );
+      }
+
+      if (__DEV__) {
+        console.log('[match-players-edit] participant toggled', {
+          uid: actorUserId,
+          activeTeamId,
+          matchId,
+          playerId,
+          action: status === 'confirmed' ? 'add' : 'remove',
+          matchStatus: currentMatch.status,
+          canManageTeam: membership.canManageTeam,
+        });
+      }
+
+      const attendanceItems = await fetchAttendanceByMatchIdForTeam(activeTeamId, matchId);
+      const existingRecord = attendanceItems.find((item) => item.playerId === playerId) ?? null;
+      const attendanceId = buildStableDocumentId(matchId, playerId);
+      const now = nowIso();
+
+      const record = normalizeAttendanceDocument({
+        id: attendanceId,
+        teamId: activeTeamId,
+        matchId,
+        playerId,
+        userId: null,
+        status,
+        respondedAt: now,
+        createdAt: existingRecord?.createdAt ?? now,
+        updatedAt: now,
+      });
+
+      await setDoc(
+        doc(firestore, FIRESTORE_COLLECTIONS.attendance, attendanceId),
+        record,
+      );
+
+      if (__DEV__) {
+        console.log('[match-players-edit] save success', {
+          matchId,
+          playerId,
+          status,
+          activeTeamId,
+        });
+      }
+
+      return record;
+    } catch (error) {
+      if (__DEV__) {
+        console.error('[match-players-edit] save failed', { matchId, playerId, error });
+      }
+      throw toFriendlyFirestoreError(
+        error,
+        'Não foi possível salvar a presença do jogador agora.',
       );
     }
   },

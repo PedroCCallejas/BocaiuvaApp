@@ -81,6 +81,7 @@ import type {
 import type {
   AppNotification,
   AttendanceRecord,
+  AttendanceStatus,
   Match,
   MatchDiaryEntry,
   MatchType,
@@ -3302,6 +3303,93 @@ export const mockRepository: AppRepository = {
 
     database.matchDiaryEntries = database.matchDiaryEntries.filter((item) => item.id !== entryId);
     removeDiaryNotifications(entryId);
+  },
+
+  async deleteMatch(matchId: string, actorUserId: string) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    const match = findMatchForTeam(activeTeamId, matchId);
+    requireTeamAdmin(actorUserId, match.teamId);
+
+    if (match.deletedAt) {
+      return;
+    }
+
+    const updatedAt = nowIso();
+    match.status = 'canceled';
+    match.scoreboard = null;
+    match.finishedAt = null;
+    match.deletedAt = updatedAt;
+    match.deletedBy = actorUserId;
+    match.updatedAt = updatedAt;
+  },
+
+  async setManualMvp(matchId: string, playerId: string | null, actorUserId: string) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    const match = findMatchForTeam(activeTeamId, matchId);
+    requireTeamAdmin(actorUserId, match.teamId);
+
+    if (match.deletedAt) {
+      throw new Error('Não é possível editar o MVP de uma partida excluída.');
+    }
+
+    const updatedAt = nowIso();
+
+    if (playerId !== null) {
+      match.mvpWinnerPlayerIds = [playerId];
+      match.manualMvpPlayerId = playerId;
+      match.manualMvpSelectedBy = actorUserId;
+      match.manualMvpSelectedAt = updatedAt;
+      match.updatedAt = updatedAt;
+    } else {
+      const { match: synced } = syncMvpMatchFields(matchId);
+      synced.manualMvpPlayerId = null;
+      synced.manualMvpSelectedBy = null;
+      synced.manualMvpSelectedAt = null;
+      synced.updatedAt = updatedAt;
+    }
+
+    return clone(match);
+  },
+
+  async adminSetMatchAttendance(
+    matchId: string,
+    playerId: string,
+    status: AttendanceStatus,
+    actorUserId: string,
+  ) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    const match = findMatchForTeam(activeTeamId, matchId);
+    requireTeamAdmin(actorUserId, match.teamId);
+
+    if (match.deletedAt) {
+      throw new Error('Não é possível editar participantes de uma partida excluída.');
+    }
+
+    const now = nowIso();
+    const attendanceId = buildStableDocumentId(matchId, playerId);
+    const existingIndex = database.attendance.findIndex((item) => item.id === attendanceId);
+
+    if (existingIndex >= 0) {
+      database.attendance[existingIndex]!.status = status;
+      database.attendance[existingIndex]!.respondedAt = now;
+      database.attendance[existingIndex]!.updatedAt = now;
+    } else {
+      database.attendance.push({
+        id: attendanceId,
+        teamId: activeTeamId,
+        matchId,
+        playerId,
+        userId: null,
+        status,
+        respondedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    const record = database.attendance.find((item) => item.id === attendanceId)!;
+
+    return clone(record);
   },
 
   async fetchMatchDiaryEntriesByMatchId(matchId: string, actorUserId: string) {

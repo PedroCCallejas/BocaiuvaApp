@@ -45,7 +45,13 @@ import type {
   ImportedMatchPayloadItem,
   LegacyMatchImportPreview,
 } from '@/types/match-import';
-import type { PublicTeamProfile, PublicTeamSummary, Team } from '@/types/domain';
+import type {
+  AttendanceRecord,
+  AttendanceStatus,
+  PublicTeamProfile,
+  PublicTeamSummary,
+  Team,
+} from '@/types/domain';
 import {
   buildBootstrapRecoverySnapshot,
   extractRepositoryErrorCode,
@@ -115,6 +121,13 @@ export interface AppState {
     input: UpdateMatchDiaryEntryInput,
   ) => Promise<void>;
   deleteMatchDiaryEntry: (entryId: string) => Promise<void>;
+  deleteMatch: (matchId: string) => Promise<void>;
+  setManualMvp: (matchId: string, playerId: string | null) => Promise<void>;
+  adminSetMatchAttendance: (
+    matchId: string,
+    playerId: string,
+    status: AttendanceStatus,
+  ) => Promise<AttendanceRecord>;
   submitMvpVote: (input: SubmitMvpVoteInput) => Promise<void>;
   submitPlayerRating: (input: SubmitPlayerRatingInput) => Promise<void>;
 }
@@ -838,6 +851,41 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     await repository.submitPlayerRating(input, userId);
     await refreshCurrentSession(set, get);
+  },
+
+  async deleteMatch(matchId) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    if (__DEV__) {
+      console.log('[match-delete] button pressed', { matchId, userId });
+    }
+
+    await repository.deleteMatch(matchId, userId);
+    await refreshCurrentSession(set, get);
+  },
+
+  async setManualMvp(matchId, playerId) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    await repository.setManualMvp(matchId, playerId, userId);
+    await refreshCurrentSession(set, get);
+  },
+
+  async adminSetMatchAttendance(matchId, playerId, status) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    const record = await repository.adminSetMatchAttendance(matchId, playerId, status, userId);
+    await refreshCurrentSession(set, get);
+    return record;
   },
 }));
 

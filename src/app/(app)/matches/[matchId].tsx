@@ -75,8 +75,17 @@ export default function MatchDetailsScreen() {
   const updateMatch = useAppStore((state) => state.updateMatch);
   const updateMatchFieldPayment = useAppStore((state) => state.updateMatchFieldPayment);
   const deleteMatchDiaryEntry = useAppStore((state) => state.deleteMatchDiaryEntry);
+  const deleteMatch = useAppStore((state) => state.deleteMatch);
+  const setManualMvp = useAppStore((state) => state.setManualMvp);
+  const adminSetMatchAttendance = useAppStore((state) => state.adminSetMatchAttendance);
   const [navigatingEdit, setNavigatingEdit] = useState(false);
   const [savingFieldPayment, setSavingFieldPayment] = useState(false);
+  const [savingDeleteMatch, setSavingDeleteMatch] = useState(false);
+  const [savingManualMvp, setSavingManualMvp] = useState(false);
+  const [manualMvpDraftPlayerId, setManualMvpDraftPlayerId] = useState<string | null | undefined>(
+    undefined,
+  );
+  const [togglingParticipantId, setTogglingParticipantId] = useState<string | null>(null);
   const navigatingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -101,6 +110,20 @@ export default function MatchDetailsScreen() {
   }
 
   const currentMatch = match;
+
+  if (currentMatch.deletedAt) {
+    return (
+      <Screen>
+        <EmptyState
+          title="Partida excluída"
+          description="Esta partida foi excluída e não aparece mais nas listas, ranking e estatísticas."
+          actionLabel="Voltar"
+          onAction={() => router.back()}
+        />
+      </Screen>
+    );
+  }
+
   const attendanceSummary = getAttendanceSummary({ snapshot }, currentMatch.id);
   const buckets = getAttendanceBuckets({ snapshot }, currentMatch.id);
   const confirmedPlayers = getConfirmedPlayers(snapshot, currentMatch.id);
@@ -141,6 +164,13 @@ export default function MatchDetailsScreen() {
     .sort((left, right) => right.goals + right.assists - (left.goals + left.assists));
   const diaryEntries = getMatchDiaryEntriesByMatchId({ snapshot }, currentMatch.id);
   const playerById = new Map(snapshot.players.map((player) => [player.id, player]));
+  const manualMvpCurrentPlayerId = currentMatch.manualMvpPlayerId ?? null;
+  const effectiveMvpDraftId =
+    manualMvpDraftPlayerId === undefined ? manualMvpCurrentPlayerId : manualMvpDraftPlayerId;
+  const isMvpDraftChanged = effectiveMvpDraftId !== manualMvpCurrentPlayerId;
+  const canEditParticipants =
+    canManage &&
+    (currentMatch.status === 'finished' || currentMatch.status === 'canceled');
   const [payerPlayerIdsDraft, setPayerPlayerIdsDraft] = useState<string[]>(
     fieldPayment?.payerPlayerIds ?? [],
   );
@@ -151,6 +181,10 @@ export default function MatchDetailsScreen() {
   const [responsibleNameDraft, setResponsibleNameDraft] = useState(
     fieldPayment?.responsibleName ?? '',
   );
+
+  useEffect(() => {
+    setManualMvpDraftPlayerId(undefined);
+  }, [currentMatch.id]);
 
   useEffect(() => {
     setPayerPlayerIdsDraft(fieldPayment?.payerPlayerIds ?? []);
@@ -366,6 +400,95 @@ export default function MatchDetailsScreen() {
         },
       ],
     );
+  }
+
+  function handleDeleteMatch() {
+    if (__DEV__) {
+      console.log('[match-delete] button pressed', { matchId: currentMatch.id });
+    }
+    Alert.alert(
+      'Excluir partida',
+      'Esta partida será excluída das listas, ranking e estatísticas. Essa ação não pode ser desfeita.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: () => {
+            if (__DEV__) {
+              console.log('[match-delete] confirm accepted', { matchId: currentMatch.id });
+            }
+            void (async () => {
+              try {
+                setSavingDeleteMatch(true);
+                await deleteMatch(currentMatch.id);
+                router.replace('/matches');
+              } catch (error) {
+                setSavingDeleteMatch(false);
+                Alert.alert(
+                  'Não foi possível excluir a partida',
+                  error instanceof Error ? error.message : 'Tente novamente.',
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
+    if (__DEV__) {
+      console.log('[match-delete] confirm opened', { matchId: currentMatch.id });
+    }
+  }
+
+  async function handleSaveManualMvp() {
+    try {
+      setSavingManualMvp(true);
+      await setManualMvp(currentMatch.id, effectiveMvpDraftId ?? null);
+      setManualMvpDraftPlayerId(undefined);
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível salvar o MVP manual',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    } finally {
+      setSavingManualMvp(false);
+    }
+  }
+
+  async function handleClearManualMvp() {
+    try {
+      setSavingManualMvp(true);
+      await setManualMvp(currentMatch.id, null);
+      setManualMvpDraftPlayerId(undefined);
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível limpar o MVP manual',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    } finally {
+      setSavingManualMvp(false);
+    }
+  }
+
+  async function handleToggleParticipant(playerId: string, newStatus: AttendanceStatus) {
+    if (__DEV__) {
+      if (newStatus === 'confirmed') {
+        console.log('[match-players-edit] add player pressed', { matchId: currentMatch.id, playerId });
+      } else {
+        console.log('[match-players-edit] remove player pressed', { matchId: currentMatch.id, playerId });
+      }
+    }
+    try {
+      setTogglingParticipantId(playerId);
+      await adminSetMatchAttendance(currentMatch.id, playerId, newStatus);
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível atualizar a participação',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    } finally {
+      setTogglingParticipantId(null);
+    }
   }
 
   const mvpRankingItems = mvpBreakdown.results.map((item) => {
@@ -819,6 +942,60 @@ export default function MatchDetailsScreen() {
         </View>
       ) : null}
 
+      {canEditParticipants ? (
+        <View style={styles.section}>
+          <SectionHeader
+            title="Editar participantes"
+            subtitle="Adicione ou remova jogadores desta partida encerrada ou cancelada."
+          />
+          {teamPlayers.map((player) => {
+            const attendance = attendanceByPlayerId.get(player.id) ?? null;
+            const isToggling = togglingParticipantId === player.id;
+
+            return (
+              <View
+                key={player.id}
+                style={[
+                  styles.attendanceAdminCard,
+                  {
+                    backgroundColor: theme.colors.surface,
+                    borderColor: theme.colors.border,
+                  },
+                ]}>
+                <View style={styles.attendanceAdminHeader}>
+                  <View style={styles.attendanceAdminCopy}>
+                    <Text style={[styles.statName, { color: theme.colors.text }]}>
+                      #{player.jerseyNumber} {player.nickname}
+                    </Text>
+                    <Text style={[styles.playerSub, { color: theme.colors.textMuted }]}>
+                      {ATTENDANCE_STATUS_LABELS[attendance?.status ?? 'pending']}
+                    </Text>
+                  </View>
+                  <Pill
+                    label={ATTENDANCE_STATUS_LABELS[attendance?.status ?? 'pending']}
+                    color={theme.colors.secondary}
+                  />
+                </View>
+                <View style={styles.buttonRow}>
+                  <AppButton
+                    label="Adicionar"
+                    variant="secondary"
+                    disabled={isToggling || attendance?.status === 'confirmed'}
+                    onPress={() => void handleToggleParticipant(player.id, 'confirmed')}
+                  />
+                  <AppButton
+                    label="Remover"
+                    variant="danger"
+                    disabled={isToggling || attendance?.status === 'absent'}
+                    onPress={() => void handleToggleParticipant(player.id, 'absent')}
+                  />
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+
       {currentMatch.status !== 'finished' && currentMatch.status !== 'canceled' ? (
         <View style={styles.section}>
           <SectionHeader
@@ -931,9 +1108,78 @@ export default function MatchDetailsScreen() {
                   description="As avaliações anônimas vão aparecer aqui assim que forem enviadas."
                 />
               )}
+
+              <View style={styles.section}>
+                <SectionHeader
+                  title="MVP manual"
+                  subtitle={
+                    manualMvpCurrentPlayerId
+                      ? `MVP definido manualmente: ${playerById.get(manualMvpCurrentPlayerId)?.nickname ?? 'jogador'}`
+                      : 'Nenhum MVP manual. O sistema usa os votos automaticamente.'
+                  }
+                />
+                {confirmedPlayers.map((player) => {
+                  const isSelected = effectiveMvpDraftId === player.id;
+                  return (
+                    <View
+                      key={player.id}
+                      style={[
+                        styles.attendanceAdminCard,
+                        {
+                          backgroundColor: theme.colors.surface,
+                          borderColor: isSelected ? theme.colors.secondary : theme.colors.border,
+                        },
+                      ]}>
+                      <View style={styles.attendanceAdminHeader}>
+                        <Text style={[styles.statName, { color: theme.colors.text }]}>
+                          #{player.jerseyNumber} {player.nickname}
+                        </Text>
+                        <AppButton
+                          label={isSelected ? 'Selecionado' : 'Selecionar'}
+                          variant={isSelected ? 'secondary' : 'ghost'}
+                          disabled={savingManualMvp}
+                          onPress={() =>
+                            setManualMvpDraftPlayerId(isSelected ? null : player.id)
+                          }
+                        />
+                      </View>
+                    </View>
+                  );
+                })}
+                <View style={styles.buttonRow}>
+                  <AppButton
+                    label="Salvar MVP manual"
+                    disabled={savingManualMvp || !isMvpDraftChanged || effectiveMvpDraftId === null}
+                    onPress={() => void handleSaveManualMvp()}
+                  />
+                  {manualMvpCurrentPlayerId ? (
+                    <AppButton
+                      label="Limpar MVP manual"
+                      variant="ghost"
+                      disabled={savingManualMvp}
+                      onPress={() => void handleClearManualMvp()}
+                    />
+                  ) : null}
+                </View>
+              </View>
             </>
           ) : null}
         </>
+      ) : null}
+
+      {canManage ? (
+        <View style={styles.section}>
+          <SectionHeader
+            title="Zona de risco"
+            subtitle="Ações irreversíveis para administradores."
+          />
+          <AppButton
+            label={savingDeleteMatch ? 'Excluindo...' : 'Excluir partida'}
+            variant="danger"
+            disabled={savingDeleteMatch}
+            onPress={handleDeleteMatch}
+          />
+        </View>
       ) : null}
 
       <View style={styles.section}>

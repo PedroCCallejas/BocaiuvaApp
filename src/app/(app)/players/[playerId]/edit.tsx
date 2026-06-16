@@ -256,6 +256,14 @@ export default function EditPlayerScreen() {
           onPress: () => {
             void (async () => {
               try {
+                if (__DEV__) {
+                  console.log('[player-edit] inactivate pressed', {
+                    playerId: editablePlayer.id,
+                    uid: currentUser?.id ?? null,
+                    teamId: editablePlayer.teamId,
+                    canManageTeam,
+                  });
+                }
                 await removePlayer(editablePlayer.id);
                 router.replace('/players');
               } catch (error) {
@@ -282,6 +290,14 @@ export default function EditPlayerScreen() {
           onPress: () => {
             void (async () => {
               try {
+                if (__DEV__) {
+                  console.log('[player-edit] reactivate pressed', {
+                    playerId: editablePlayer.id,
+                    uid: currentUser?.id ?? null,
+                    teamId: editablePlayer.teamId,
+                    canManageTeam,
+                  });
+                }
                 await reactivatePlayer(editablePlayer.id);
                 Alert.alert('Jogador reativado', 'O cadastro voltou ao elenco ativo.');
               } catch (error) {

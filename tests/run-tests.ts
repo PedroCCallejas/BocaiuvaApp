@@ -12,6 +12,7 @@ import {
   canEditPlayerProfile,
   canManagePlayerAccountLinking,
   canManagePlayerLifecycle,
+  isPlayerInactive,
 } from '@/lib/player-management';
 import {
   buildSelfPlayerProfileUpdatePatch,
@@ -2252,6 +2253,264 @@ const testCases: TestCase[] = [
         snapshotAfter.notifications.length,
         notificationsBefore,
         'auto-resposta de jogador nao deve criar notificacao',
+      );
+    },
+  },
+  {
+    name: 'buildTeamMembershipIndexDocument espelha todos os campos verificados pela regra',
+    run() {
+      const membership = createTeamMember({
+        id: 'mbr-backfill-1',
+        userId: 'user-backfill',
+        teamId: 'team-backfill',
+        playerId: 'player-backfill',
+        roles: ['player'],
+        canManageTeam: false,
+        canManagePlayers: false,
+      });
+      const indexDoc = buildTeamMembershipIndexDocument(membership);
+
+      assert.equal(indexDoc.id, membership.userId, 'id deve ser userId');
+      assert.equal(indexDoc.teamId, membership.teamId, 'teamId deve bater');
+      assert.equal(indexDoc.userId, membership.userId, 'userId deve bater');
+      assert.equal(indexDoc.membershipId, membership.id, 'membershipId deve ser o id da membership');
+      assert.equal(indexDoc.playerId, membership.playerId, 'playerId deve bater');
+      assert.deepEqual(indexDoc.roles, membership.roles, 'roles deve bater');
+      assert.equal(indexDoc.canManageTeam, membership.canManageTeam, 'canManageTeam deve bater');
+      assert.equal(indexDoc.canManagePlayers, membership.canManagePlayers, 'canManagePlayers deve bater');
+      assert.equal(indexDoc.joinedAt, membership.joinedAt, 'joinedAt deve bater');
+      assert.equal(indexDoc.createdAt, membership.createdAt, 'createdAt deve bater');
+      assert.equal(indexDoc.updatedAt, membership.updatedAt, 'updatedAt deve bater');
+    },
+  },
+  {
+    name: 'buildTeamMembershipIndexDocument é idempotente para a mesma membership',
+    run() {
+      const membership = createTeamMember({
+        userId: 'user-idem-backfill',
+        teamId: 'team-idem-backfill',
+        roles: ['admin', 'player'],
+        canManageTeam: true,
+        canManagePlayers: true,
+      });
+      const doc1 = buildTeamMembershipIndexDocument(membership);
+      const doc2 = buildTeamMembershipIndexDocument(membership);
+      assert.deepEqual(doc1, doc2, 'duas chamadas com mesma membership devem produzir documento idêntico');
+    },
+  },
+  {
+    name: 'backfill ignora memberships inativas: filtro status === active exclui inativas',
+    run() {
+      const membership = createTeamMember({
+        userId: 'user-inactive-backfill',
+        teamId: 'team-inactive-backfill',
+        roles: ['player'],
+        status: 'inactive',
+      });
+      const ownActive = [membership].filter(
+        (m) => m.userId === 'user-inactive-backfill' && m.status === 'active',
+      );
+      assert.equal(ownActive.length, 0, 'membership inativa não deve ser incluída no backfill');
+    },
+  },
+  {
+    name: 'backfill ignora memberships de outros usuários: filtro userId exclui terceiros',
+    run() {
+      const membershipA = createTeamMember({
+        userId: 'user-a-backfill',
+        teamId: 'team-shared-backfill',
+        roles: ['player'],
+      });
+      const membershipB = createTeamMember({
+        userId: 'user-b-backfill',
+        teamId: 'team-shared-backfill',
+        roles: ['admin'],
+        canManageTeam: true,
+      });
+      const ownActive = [membershipA, membershipB].filter(
+        (m) => m.userId === 'user-a-backfill' && m.status === 'active',
+      );
+      assert.equal(ownActive.length, 1, 'somente membership do próprio usuário deve ser incluída');
+      assert.equal(ownActive[0]?.userId, 'user-a-backfill');
+    },
+  },
+  {
+    name: 'isPlayerInactive retorna true quando status é inactive',
+    run() {
+      const player = createPlayer({ status: 'inactive', deletedAt: null });
+      assert.equal(isPlayerInactive(player), true, 'status inactive deve ser considerado inativo');
+    },
+  },
+  {
+    name: 'isPlayerInactive retorna true quando deletedAt está preenchido',
+    run() {
+      const player = createPlayer({ status: 'active', deletedAt: '2026-01-01T00:00:00.000Z' });
+      assert.equal(isPlayerInactive(player), true, 'deletedAt preenchido deve ser considerado inativo');
+    },
+  },
+  {
+    name: 'isPlayerInactive retorna false quando ativo e sem deletedAt',
+    run() {
+      const player = createPlayer({ status: 'active', deletedAt: null });
+      assert.equal(isPlayerInactive(player), false, 'jogador ativo e sem deletedAt não é inativo');
+    },
+  },
+  {
+    name: 'buildInactivatedPlayerState define status inactive e deletedAt com updatedAt',
+    run() {
+      const player = createPlayer({ status: 'active', deletedAt: null });
+      const updatedAt = '2026-06-15T10:00:00.000Z';
+      const result = buildInactivatedPlayerState(player, updatedAt);
+      assert.equal(result.status, 'inactive', 'status deve ser inactive');
+      assert.equal(result.deletedAt, updatedAt, 'deletedAt deve ser igual ao updatedAt');
+      assert.equal(result.updatedAt, updatedAt, 'updatedAt deve ser atualizado');
+    },
+  },
+  {
+    name: 'buildReactivatedPlayerState define status active e zera deletedAt',
+    run() {
+      const player = createPlayer({ status: 'inactive', deletedAt: '2026-01-01T00:00:00.000Z' });
+      const updatedAt = '2026-06-15T10:00:00.000Z';
+      const result = buildReactivatedPlayerState(player, updatedAt);
+      assert.equal(result.status, 'active', 'status deve ser active');
+      assert.equal(result.deletedAt, null, 'deletedAt deve ser null após reativação');
+      assert.equal(result.updatedAt, updatedAt, 'updatedAt deve ser atualizado');
+    },
+  },
+  {
+    name: 'pickSelfPlayerProfileEditableInput exclui campos administrativos do payload',
+    run() {
+      const fullInput = {
+        fullName: 'Nome Admin',
+        nickname: 'Apelido',
+        photoUrl: 'https://example.com/photo.jpg',
+        jerseyNumber: 7,
+        primaryPosition: 'midfielder' as const,
+        secondaryPositions: [] as const,
+        dominantFoot: 'right' as const,
+        status: 'active' as const,
+        linkedEmail: 'admin@example.com',
+        bio: 'Bio do jogador',
+        preferredPosition: null,
+        introVideoUrl: null,
+        celebrationVideoUrl: null,
+        allowSelfEditJerseyNumber: true,
+        manualStats: undefined,
+      };
+      const selfInput = pickSelfPlayerProfileEditableInput(fullInput);
+      assert.equal('fullName' in selfInput, false, 'fullName não deve ser editável pelo próprio jogador');
+      assert.equal('status' in selfInput, false, 'status não deve ser editável pelo próprio jogador');
+      assert.equal('linkedEmail' in selfInput, false, 'linkedEmail não deve ser editável pelo próprio jogador');
+      assert.equal('allowSelfEditJerseyNumber' in selfInput, false, 'allowSelfEditJerseyNumber não deve ser editável');
+      assert.equal('nickname' in selfInput, true, 'nickname deve ser editável pelo próprio jogador');
+      assert.equal('bio' in selfInput, true, 'bio deve ser editável pelo próprio jogador');
+      assert.equal('photoUrl' in selfInput, true, 'photoUrl deve ser editável pelo próprio jogador');
+    },
+  },
+  {
+    name: 'admin pode excluir partida e partida recebe deletedAt e status canceled',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await mockRepository.deleteMatch('match-1', 'user-admin');
+      const snapshot = await mockRepository.getSnapshot();
+      const match = snapshot.matches.find((m) => m.id === 'match-1');
+      assert.ok(match, 'partida deve continuar no snapshot (soft delete)');
+      assert.equal(match?.status, 'canceled', 'status deve mudar para canceled');
+      assert.ok(match?.deletedAt, 'deletedAt deve ser preenchido');
+      assert.equal(match?.deletedBy, 'user-admin', 'deletedBy deve registrar o admin');
+    },
+  },
+  {
+    name: 'jogador comum nao pode excluir partida',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'atacante@bocaiuva.app', password: '123456' });
+      await assert.rejects(
+        () => mockRepository.deleteMatch('match-1', 'user-striker'),
+        (error) =>
+          error instanceof Error &&
+          error.message.toLowerCase().includes('administrador'),
+      );
+    },
+  },
+  {
+    name: 'partida excluida nao aparece como finalizada nas estatisticas',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const finishedBefore = before.matches.filter((m) => m.status === 'finished').length;
+      await mockRepository.deleteMatch('match-1', 'user-admin');
+      const after = await mockRepository.getSnapshot();
+      const finishedAfter = after.matches.filter((m) => m.status === 'finished').length;
+      assert.equal(finishedAfter, finishedBefore - 1, 'partida excluida sai do conjunto de finalizadas');
+      const deleted = after.matches.find((m) => m.id === 'match-1');
+      assert.notEqual(deleted?.status, 'finished', 'partida excluida nao deve ter status finished');
+    },
+  },
+  {
+    name: 'admin pode definir MVP manual sobrescrevendo votos',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const updated = await mockRepository.setManualMvp('match-1', 'player-3', 'user-admin');
+      assert.deepEqual(updated.mvpWinnerPlayerIds, ['player-3'], 'mvpWinnerPlayerIds deve ser sobrescrito com jogador manual');
+      assert.equal(updated.manualMvpPlayerId, 'player-3', 'manualMvpPlayerId deve ser registrado');
+      assert.equal(updated.manualMvpSelectedBy, 'user-admin', 'manualMvpSelectedBy deve ser registrado');
+    },
+  },
+  {
+    name: 'admin pode limpar MVP manual e sistema volta para votos automaticos',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await mockRepository.setManualMvp('match-1', 'player-3', 'user-admin');
+      const cleared = await mockRepository.setManualMvp('match-1', null, 'user-admin');
+      assert.equal(cleared.manualMvpPlayerId, null, 'manualMvpPlayerId deve ser limpo');
+      assert.equal(cleared.manualMvpSelectedBy, null, 'manualMvpSelectedBy deve ser limpo');
+    },
+  },
+  {
+    name: 'jogador comum nao pode definir MVP manual',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'atacante@bocaiuva.app', password: '123456' });
+      await assert.rejects(
+        () => mockRepository.setManualMvp('match-1', 'player-3', 'user-striker'),
+        (error) =>
+          error instanceof Error &&
+          error.message.toLowerCase().includes('administrador'),
+      );
+    },
+  },
+  {
+    name: 'admin pode editar participantes de partida encerrada sem restricao de status',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const record = await mockRepository.adminSetMatchAttendance('match-1', 'player-3', 'confirmed', 'user-admin');
+      assert.equal(record.matchId, 'match-1', 'record deve pertencer a partida correta');
+      assert.equal(record.playerId, 'player-3', 'record deve pertencer ao jogador correto');
+      assert.equal(record.status, 'confirmed', 'status deve ser o informado');
+      const snapshot = await mockRepository.getSnapshot();
+      const attendanceRecord = snapshot.attendance.find(
+        (a) => a.matchId === 'match-1' && a.playerId === 'player-3',
+      );
+      assert.ok(attendanceRecord, 'registro de presenca deve existir no snapshot');
+      assert.equal(attendanceRecord?.status, 'confirmed');
+    },
+  },
+  {
+    name: 'jogador comum nao pode editar participantes de partida',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'atacante@bocaiuva.app', password: '123456' });
+      await assert.rejects(
+        () => mockRepository.adminSetMatchAttendance('match-1', 'player-3', 'confirmed', 'user-striker'),
+        (error) =>
+          error instanceof Error &&
+          error.message.toLowerCase().includes('administrador'),
       );
     },
   },

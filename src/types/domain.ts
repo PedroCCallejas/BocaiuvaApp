@@ -261,6 +261,11 @@ export interface Match extends BaseEntity {
   finishedAt?: string | null;
   mvpWinnerPlayerIds?: string[];
   mvpTotalVotes?: number;
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+  manualMvpPlayerId?: string | null;
+  manualMvpSelectedBy?: string | null;
+  manualMvpSelectedAt?: string | null;
 }
 
 export interface LineupNode {

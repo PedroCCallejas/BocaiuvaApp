@@ -4786,8 +4786,27 @@ export const firebaseRepository: AppRepository = {
   async updateTeam(teamId: string, input: UpdateTeamInput, actorUserId: string) {
     try {
       const firestore = requireFirestore();
-      await ensureTeamAdmin(actorUserId, teamId);
+      if (__DEV__) {
+        console.log('[team-edit] save start', { teamId, actorUserId });
+      }
+      const { membership } = await ensureTeamAdmin(actorUserId, teamId);
+      if (__DEV__) {
+        console.log('[team-edit] auth-check passed', {
+          teamId,
+          actorUserId,
+          canManageTeam: membership.canManageTeam,
+          membershipStatus: membership.status,
+        });
+      }
       const currentTeam = await fetchTeamById(teamId);
+      if (__DEV__) {
+        console.log('[team-edit] current-team fetched', {
+          id: currentTeam.id,
+          adminUserId: currentTeam.adminUserId,
+          createdAt: currentTeam.createdAt,
+          hasInviteCode: Boolean(currentTeam.inviteCode),
+        });
+      }
       const updatedAt = nowIso();
       const publicProfile = normalizeTeamPublicProfileFields({
         isPublic: input.isPublic ?? currentTeam.isPublic,
@@ -4856,7 +4875,25 @@ export const firebaseRepository: AppRepository = {
         publicRosterEnabled: publicProfile.publicRosterEnabled,
         updatedAt,
       });
+      if (__DEV__) {
+        console.log('[team-edit] payload sanitized', {
+          id: updatedTeam.id,
+          adminUserId: updatedTeam.adminUserId,
+          createdAt: updatedTeam.createdAt,
+          name: updatedTeam.name,
+          slug: updatedTeam.slug,
+          isPublic: updatedTeam.isPublic,
+          city: updatedTeam.city,
+          state: updatedTeam.state,
+        });
+      }
       const publicTeam = await buildPublicTeamProjection(updatedTeam, updatedAt);
+      if (__DEV__) {
+        console.log('[team-edit] public-projection', {
+          isNull: publicTeam === null,
+          isPublic: updatedTeam.isPublic,
+        });
+      }
       const batch = writeBatch(firestore);
       batch.set(doc(firestore, FIRESTORE_COLLECTIONS.teams, currentTeam.id), updatedTeam);
       for (const mutation of buildPublicTeamSyncMutations(updatedTeam.id, publicTeam)) {
@@ -4867,9 +4904,26 @@ export const firebaseRepository: AppRepository = {
 
         batch.delete(mutation.ref);
       }
+      if (__DEV__) {
+        console.log('[team-edit] batch commit start', {
+          teamId,
+          publicMutation: publicTeam === null ? 'delete' : 'set',
+        });
+      }
       await batch.commit();
+      if (__DEV__) {
+        console.log('[team-edit] save success', { teamId });
+      }
       return updatedTeam;
     } catch (error) {
+      if (__DEV__) {
+        console.error('[team-edit] save failed', {
+          teamId,
+          error: error instanceof Error
+            ? { name: error.name, message: error.message, code: (error as ErrorWithCode).code ?? null }
+            : error,
+        });
+      }
       throw toFriendlyFirestoreError(
         error,
         'Não foi possível salvar as configurações do time.',

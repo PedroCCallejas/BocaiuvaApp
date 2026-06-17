@@ -287,6 +287,22 @@ export default function TeamSettingsScreen() {
   }
 
   async function onSubmit(values: TeamSettingsValues) {
+    if (__DEV__) {
+      console.log('[team-edit] submit', {
+        teamId: currentTeam.id,
+        name: values.name,
+        slug: values.slug,
+        isPublic: values.isPublic,
+        city: values.city,
+        state: values.state,
+        pendingLogo: Boolean(pendingLogo),
+        pendingBanner: Boolean(pendingBanner),
+        pendingVideo: Boolean(pendingPresentationVideo),
+        removeLogo,
+        removeBanner,
+        removeVideo: removePresentationVideo,
+      });
+    }
     try {
       let resolvedLogoUrl = pendingLogo ? currentTeam.logoUrl ?? null : currentLogoUrl;
       let resolvedBannerUrl = pendingBanner ? currentTeam.bannerUrl ?? null : currentBannerUrl;

@@ -43,13 +43,9 @@ export default function PlayersScreen() {
   const syncHint = useAppStore(selectSyncStatusHint);
   const [rosterFilter, setRosterFilter] = useState<PlayerRosterFilter>('active');
 
-  if (!team) {
-    return null;
-  }
-
   const stats = useMemo(
-    () => buildPlayerAggregates(snapshot, team.id, { playerScope: 'all' }),
-    [snapshot, team.id],
+    () => team ? buildPlayerAggregates(snapshot, team.id, { playerScope: 'all' }) : [],
+    [snapshot, team],
   );
   const statsByPlayerId = useMemo(
     () => new Map(stats.map((entry) => [entry.player.id, entry])),
@@ -93,6 +89,10 @@ export default function PlayersScreen() {
         return activePlayers;
     }
   }, [activePlayers, canManagePlayers, inactivePlayers, players, rosterFilter]);
+
+  if (!team) {
+    return null;
+  }
 
   return (
     <Screen onRefresh={() => void refreshData()} refreshing={refreshing}>

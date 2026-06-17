@@ -550,7 +550,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       throw new Error('Sessão expirada.');
     }
 
+    if (__DEV__) {
+      console.log('[team-edit] store start', { teamId, userId });
+    }
     await repository.updateTeam(teamId, input, userId);
+    if (__DEV__) {
+      console.log('[team-edit] store success', { teamId });
+    }
     await refreshCurrentSession(set, get);
   },
 

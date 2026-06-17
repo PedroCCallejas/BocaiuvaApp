@@ -2514,6 +2514,203 @@ const testCases: TestCase[] = [
       );
     },
   },
+  {
+    name: 'admin pode atualizar nome do time',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const updated = await mockRepository.updateTeam(
+        'team-bocaiuva',
+        {
+          name: 'Bocaiuva United',
+          coachName: 'Rafael Nogueira',
+          slug: 'bocaiuva-united',
+          primaryColor: '#0E8A43',
+          secondaryColor: '#F4C542',
+        },
+        'user-admin',
+      );
+      assert.equal(updated.name, 'Bocaiuva United', 'nome deve ser atualizado');
+      assert.equal(updated.slug, 'bocaiuva-united', 'slug deve ser atualizado');
+    },
+  },
+  {
+    name: 'jogador sem canManageTeam nao pode atualizar time',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'atacante@bocaiuva.app', password: '123456' });
+      await assert.rejects(
+        () =>
+          mockRepository.updateTeam(
+            'team-bocaiuva',
+            {
+              name: 'Bocaiuva FC',
+              coachName: 'Caio Nunes',
+              slug: 'bocaiuva-fc',
+              primaryColor: '#0E8A43',
+              secondaryColor: '#F4C542',
+            },
+            'user-striker',
+          ),
+        (error) =>
+          error instanceof Error &&
+          error.message.toLowerCase().includes('administrador'),
+      );
+    },
+  },
+  {
+    name: 'updateTeam preserva adminUserId',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const updated = await mockRepository.updateTeam(
+        'team-bocaiuva',
+        {
+          name: 'Bocaiuva FC Atualizado',
+          coachName: 'Rafael Nogueira',
+          slug: 'bocaiuva-fc',
+          primaryColor: '#0E8A43',
+          secondaryColor: '#F4C542',
+        },
+        'user-admin',
+      );
+      assert.equal(updated.adminUserId, 'user-admin', 'adminUserId deve ser preservado');
+    },
+  },
+  {
+    name: 'updateTeam preserva inviteCode',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const updated = await mockRepository.updateTeam(
+        'team-bocaiuva',
+        {
+          name: 'Bocaiuva FC Atualizado',
+          coachName: 'Rafael Nogueira',
+          slug: 'bocaiuva-fc',
+          primaryColor: '#0E8A43',
+          secondaryColor: '#F4C542',
+        },
+        'user-admin',
+      );
+      assert.equal(updated.inviteCode, 'BOCA26', 'inviteCode deve ser preservado');
+    },
+  },
+  {
+    name: 'updateTeam preserva createdAt',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const updated = await mockRepository.updateTeam(
+        'team-bocaiuva',
+        {
+          name: 'Bocaiuva FC Atualizado',
+          coachName: 'Rafael Nogueira',
+          slug: 'bocaiuva-fc',
+          primaryColor: '#0E8A43',
+          secondaryColor: '#F4C542',
+        },
+        'user-admin',
+      );
+      assert.equal(
+        updated.createdAt,
+        '2026-03-01T12:00:00.000Z',
+        'createdAt deve ser preservado',
+      );
+    },
+  },
+  {
+    name: 'updateTeam valida isPublic requer city e state',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await assert.rejects(
+        () =>
+          mockRepository.updateTeam(
+            'team-bocaiuva',
+            {
+              name: 'Bocaiuva FC',
+              coachName: 'Rafael Nogueira',
+              slug: 'bocaiuva-fc',
+              primaryColor: '#0E8A43',
+              secondaryColor: '#F4C542',
+              isPublic: true,
+              city: null,
+              state: null,
+            },
+            'user-admin',
+          ),
+        (error) =>
+          error instanceof Error &&
+          (error.message.toLowerCase().includes('cidade') ||
+            error.message.toLowerCase().includes('estado') ||
+            error.message.toLowerCase().includes('galeria')),
+      );
+    },
+  },
+  {
+    name: 'updateTeam atualiza coachName',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const updated = await mockRepository.updateTeam(
+        'team-bocaiuva',
+        {
+          name: 'Bocaiuva FC',
+          coachName: 'Novo Tecnico',
+          slug: 'bocaiuva-fc',
+          primaryColor: '#0E8A43',
+          secondaryColor: '#F4C542',
+        },
+        'user-admin',
+      );
+      assert.equal(updated.coachName, 'Novo Tecnico', 'coachName deve ser atualizado');
+    },
+  },
+  {
+    name: 'updateTeam atualiza description',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const updated = await mockRepository.updateTeam(
+        'team-bocaiuva',
+        {
+          name: 'Bocaiuva FC',
+          coachName: 'Rafael Nogueira',
+          slug: 'bocaiuva-fc',
+          primaryColor: '#0E8A43',
+          secondaryColor: '#F4C542',
+          description: 'Nova descricao do time',
+        },
+        'user-admin',
+      );
+      assert.equal(updated.description, 'Nova descricao do time', 'description deve ser atualizada');
+    },
+  },
+  {
+    name: 'updateTeam permite ativar perfil publico com city e state',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const updated = await mockRepository.updateTeam(
+        'team-bocaiuva',
+        {
+          name: 'Bocaiuva FC',
+          coachName: 'Rafael Nogueira',
+          slug: 'bocaiuva-fc',
+          primaryColor: '#0E8A43',
+          secondaryColor: '#F4C542',
+          isPublic: true,
+          city: 'Bocaiuva',
+          state: 'MG',
+        },
+        'user-admin',
+      );
+      assert.equal(updated.isPublic, true, 'isPublic deve ser true');
+      assert.equal(updated.city, 'Bocaiuva', 'city deve ser salva');
+      assert.equal(updated.state, 'MG', 'state deve ser salvo');
+    },
+  },
 ];
 
 let failed = 0;

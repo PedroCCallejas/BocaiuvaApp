@@ -182,6 +182,7 @@ export interface PublicTeamRosterPlayer {
   photoUrl?: string | null;
   primaryPosition: Position;
   jerseyNumber: number;
+  presentationVideoUrl?: string | null;
 }
 
 export interface PublicTeamSummary {

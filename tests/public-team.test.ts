@@ -127,3 +127,126 @@ test('jogador inactive não aparece no elenco público mesmo sem deletedAt', () 
     'jogador inativo não deve aparecer na galeria pública',
   );
 });
+
+test('jogador ativo com vídeo de apresentação tem URL no payload público', () => {
+  const team = createTeam({
+    id: 'team-video',
+    isPublic: true,
+    city: 'Cuiaba',
+    state: 'MT',
+    publicRosterEnabled: true,
+  });
+  const playerWithVideo = createPlayer({
+    id: 'player-with-video',
+    teamId: team.id,
+    status: 'active',
+    presentationVideoUrl: 'https://storage.example.com/player-videos/team-1/player-with-video/presentation.mp4',
+  });
+
+  const profile = buildPublicTeamProfile(team, [], [playerWithVideo]);
+
+  const rosterPlayer = profile?.roster.find((p) => p.id === playerWithVideo.id);
+  assert.ok(rosterPlayer, 'jogador deve aparecer no elenco público');
+  assert.equal(
+    rosterPlayer?.presentationVideoUrl,
+    playerWithVideo.presentationVideoUrl,
+    'URL do vídeo deve estar no payload público',
+  );
+});
+
+test('jogador ativo sem vídeo tem presentationVideoUrl null no payload público', () => {
+  const team = createTeam({
+    id: 'team-no-video',
+    isPublic: true,
+    city: 'Cuiaba',
+    state: 'MT',
+    publicRosterEnabled: true,
+  });
+  const playerWithoutVideo = createPlayer({
+    id: 'player-no-video',
+    teamId: team.id,
+    status: 'active',
+    presentationVideoUrl: null,
+  });
+
+  const profile = buildPublicTeamProfile(team, [], [playerWithoutVideo]);
+
+  const rosterPlayer = profile?.roster.find((p) => p.id === playerWithoutVideo.id);
+  assert.ok(rosterPlayer, 'jogador deve aparecer no elenco público');
+  assert.equal(rosterPlayer?.presentationVideoUrl, null, 'URL deve ser null quando jogador não tem vídeo');
+});
+
+test('jogador lesionado com vídeo NÃO tem vídeo no payload público', () => {
+  const team = createTeam({
+    id: 'team-injured-video',
+    isPublic: true,
+    city: 'Cuiaba',
+    state: 'MT',
+    publicRosterEnabled: true,
+  });
+  const injuredWithVideo = createPlayer({
+    id: 'player-injured-video',
+    teamId: team.id,
+    status: 'injured',
+    presentationVideoUrl: 'https://storage.example.com/player-videos/team-1/player-injured/presentation.mp4',
+  });
+  const activePlayer = createPlayer({
+    id: 'player-active-only',
+    teamId: team.id,
+    status: 'active',
+  });
+
+  const profile = buildPublicTeamProfile(team, [], [injuredWithVideo, activePlayer]);
+
+  assert.ok(
+    !profile?.roster.find((p) => p.id === injuredWithVideo.id),
+    'jogador lesionado não deve aparecer no elenco público, mesmo com vídeo',
+  );
+  assert.ok(
+    profile?.roster.find((p) => p.id === activePlayer.id),
+    'jogador ativo continua no elenco público',
+  );
+});
+
+test('jogador antigo (suspended) com vídeo NÃO tem vídeo no payload público', () => {
+  const team = createTeam({
+    id: 'team-former-video',
+    isPublic: true,
+    city: 'Cuiaba',
+    state: 'MT',
+    publicRosterEnabled: true,
+  });
+  const formerWithVideo = createPlayer({
+    id: 'player-former-video',
+    teamId: team.id,
+    status: 'suspended',
+    presentationVideoUrl: 'https://storage.example.com/video.mp4',
+  });
+
+  const profile = buildPublicTeamProfile(team, [], [formerWithVideo]);
+
+  assert.ok(
+    !profile?.roster.find((p) => p.id === formerWithVideo.id),
+    'jogador antigo não deve aparecer no elenco público, mesmo com vídeo',
+  );
+});
+
+test('com publicRosterEnabled false, nenhum vídeo de jogador é exposto', () => {
+  const team = createTeam({
+    id: 'team-hidden-video',
+    isPublic: true,
+    city: 'Cuiaba',
+    state: 'MT',
+    publicRosterEnabled: false,
+  });
+  const playerWithVideo = createPlayer({
+    id: 'player-hidden-video',
+    teamId: team.id,
+    status: 'active',
+    presentationVideoUrl: 'https://storage.example.com/video.mp4',
+  });
+
+  const profile = buildPublicTeamProfile(team, [], [playerWithVideo]);
+
+  assert.deepEqual(profile?.roster, [], 'roster deve ser vazio quando publicRosterEnabled é false');
+});

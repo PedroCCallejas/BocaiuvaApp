@@ -174,6 +174,7 @@ function buildRoster(players: Player[]) {
       photoUrl: player.photoUrl ?? null,
       primaryPosition: player.primaryPosition,
       jerseyNumber: player.jerseyNumber,
+      presentationVideoUrl: player.presentationVideoUrl ?? null,
     }));
 }
 

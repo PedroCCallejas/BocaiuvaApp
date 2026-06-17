@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { AdSlot } from '@/components/ads/AdSlot';
@@ -31,6 +31,9 @@ export default function PublicTeamProfileScreen() {
   const [profile, setProfile] = useState<PublicTeamProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<{ url: string; playerName: string } | null>(
+    null,
+  );
   const rawTeamId = params.teamId;
   const teamId = typeof rawTeamId === 'string' ? rawTeamId : rawTeamId?.[0] ?? '';
 
@@ -279,11 +282,53 @@ export default function PublicTeamProfileScreen() {
                     <Text style={[styles.playerMeta, { color: theme.colors.textMuted }]}>
                       #{player.jerseyNumber} · {POSITION_LABELS[player.primaryPosition]}
                     </Text>
+                    {player.presentationVideoUrl ? (
+                      <Pressable
+                        onPress={() =>
+                          setSelectedVideo({
+                            url: player.presentationVideoUrl!,
+                            playerName: player.nickname || player.fullName,
+                          })
+                        }
+                        style={({ pressed }) => [
+                          styles.videoButton,
+                          { borderColor: theme.colors.primary, opacity: pressed ? 0.75 : 1 },
+                        ]}>
+                        <Text style={[styles.videoButtonLabel, { color: theme.colors.primary }]}>
+                          ▶ Ver apresentação
+                        </Text>
+                      </Pressable>
+                    ) : null}
                   </View>
                 </View>
               ))}
             </View>
           )}
+
+          <Modal
+            visible={selectedVideo !== null}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setSelectedVideo(null)}>
+            <Pressable style={styles.modalOverlay} onPress={() => setSelectedVideo(null)}>
+              <Pressable style={styles.modalContent} onPress={() => {}}>
+                {selectedVideo ? (
+                  <>
+                    <PresentationVideoCard
+                      title={selectedVideo.playerName}
+                      description="Vídeo de apresentação do jogador."
+                      videoUrl={selectedVideo.url}
+                    />
+                    <AppButton
+                      label="Fechar"
+                      variant="secondary"
+                      onPress={() => setSelectedVideo(null)}
+                    />
+                  </>
+                ) : null}
+              </Pressable>
+            </Pressable>
+          </Modal>
         </>
       )}
     </PublicPageShell>
@@ -440,5 +485,30 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 13,
     lineHeight: 18,
+  },
+  videoButton: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  videoButtonLabel: {
+    fontFamily: fonts.heading,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 520,
+    gap: 14,
   },
 });

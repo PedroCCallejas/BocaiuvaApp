@@ -72,8 +72,8 @@ export default function PlayersScreen() {
       snapshot.ratingCriteria,
     ],
   );
-  const activePlayers = players.filter((player) => player.status !== 'inactive' && !player.deletedAt);
-  const inactivePlayers = players.filter((player) => player.status === 'inactive' || player.deletedAt);
+  const activePlayers = players.filter((player) => player.status === 'active' && !player.deletedAt);
+  const inactivePlayers = players.filter((player) => player.status !== 'active' || Boolean(player.deletedAt));
   const visiblePlayers = useMemo(() => {
     if (!canManagePlayers) {
       return activePlayers;

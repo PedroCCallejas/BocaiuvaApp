@@ -749,11 +749,42 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   async setAttendance(input) {
     const userId = get().currentUserId;
+    if (__DEV__) {
+      console.log('[attendance-store] setAttendance start', {
+        uid: userId,
+        matchId: input.matchId,
+        playerId: input.playerId,
+        status: input.status,
+      });
+    }
     if (!userId) {
       throw new Error('Sessão expirada.');
     }
 
-    await repository.updateAttendance(input, userId);
+    try {
+      await repository.updateAttendance(input, userId);
+      if (__DEV__) {
+        console.log('[attendance-store] setAttendance success', {
+          uid: userId,
+          matchId: input.matchId,
+          playerId: input.playerId,
+          status: input.status,
+        });
+      }
+    } catch (error) {
+      if (__DEV__) {
+        console.error('[attendance-store] setAttendance failed', {
+          uid: userId,
+          matchId: input.matchId,
+          playerId: input.playerId,
+          status: input.status,
+          error: error instanceof Error
+            ? { message: error.message, code: (error as unknown as Record<string, unknown>).code, stack: error.stack }
+            : error,
+        });
+      }
+      throw error;
+    }
     await refreshCurrentSession(set, get);
   },
 

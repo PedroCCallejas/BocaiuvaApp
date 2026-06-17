@@ -125,7 +125,8 @@ export default function MatchDetailsScreen() {
   }
 
   const attendanceSummary = getAttendanceSummary({ snapshot }, currentMatch.id);
-  const buckets = getAttendanceBuckets({ snapshot }, currentMatch.id);
+  const isOpenMatch = currentMatch.status !== 'finished' && currentMatch.status !== 'canceled';
+  const buckets = getAttendanceBuckets({ snapshot }, currentMatch.id, { filterActiveOnly: isOpenMatch });
   const confirmedPlayers = getConfirmedPlayers(snapshot, currentMatch.id);
   const attendanceByPlayerId = new Map(
     snapshot.attendance
@@ -276,10 +277,58 @@ export default function MatchDetailsScreen() {
     }
   }
 
-  async function respond(playerId: string, status: AttendanceStatus) {
+  async function respond(
+    playerId: string,
+    status: AttendanceStatus,
+    source: 'admin' | 'own',
+  ) {
+    const isOwnAttendance = currentPlayer?.id === playerId;
+    if (__DEV__) {
+      const logLabel =
+        source === 'admin'
+          ? '[attendance-ui] admin status button pressed'
+          : '[attendance-ui] own status button pressed';
+      console.log(logLabel, {
+        uid: currentUser?.id ?? null,
+        activeTeamId: currentMembership?.teamId ?? null,
+        matchId: currentMatch.id,
+        matchTeamId: currentMatch.teamId,
+        matchStatus: currentMatch.status,
+        matchDeletedAt: currentMatch.deletedAt ?? null,
+        actorRoles: currentMembership?.roles ?? null,
+        actorCanManageTeam: currentMembership?.canManageTeam ?? null,
+        actorMembershipStatus: currentMembership?.status ?? null,
+        actorMembershipPlayerId: currentMembership?.playerId ?? null,
+        actorPlayerId: currentPlayer?.id ?? null,
+        targetPlayerId: playerId,
+        selectedStatus: status,
+        canManageAttendance: canManage,
+        isTeamAdmin: currentMembership?.roles.includes('admin') ?? false,
+        isOwnAttendance,
+        attendanceId: `${currentMatch.id}__${playerId}`,
+      });
+      console.log('[attendance-ui] target player resolved', {
+        uid: currentUser?.id ?? null,
+        matchId: currentMatch.id,
+        targetPlayerId: playerId,
+        actorPlayerId: currentPlayer?.id ?? null,
+        isOwnAttendance,
+      });
+    }
     try {
       await setAttendance({ matchId: currentMatch.id, playerId, status });
     } catch (error) {
+      if (__DEV__) {
+        console.error('[attendance-ui] blocked', {
+          uid: currentUser?.id ?? null,
+          matchId: currentMatch.id,
+          targetPlayerId: playerId,
+          selectedStatus: status,
+          error: error instanceof Error
+            ? { message: error.message, code: (error as unknown as Record<string, unknown>).code, stack: error.stack }
+            : error,
+        });
+      }
       Alert.alert(
         'Não foi possível atualizar a presença',
         error instanceof Error ? error.message : 'Tente novamente.',
@@ -858,19 +907,19 @@ export default function MatchDetailsScreen() {
               <AppButton
                 label="Vou jogar"
                 disabled={myAttendance?.status === 'confirmed'}
-                onPress={() => void respond(currentPlayer.id, 'confirmed')}
+                onPress={() => void respond(currentPlayer.id, 'confirmed', 'own')}
               />
               <AppButton
                 label="Não vou"
                 variant="danger"
                 disabled={myAttendance?.status === 'absent'}
-                onPress={() => void respond(currentPlayer.id, 'absent')}
+                onPress={() => void respond(currentPlayer.id, 'absent', 'own')}
               />
               <AppButton
                 label="Limpar presença"
                 variant="ghost"
                 disabled={myAttendance?.status === 'pending'}
-                onPress={() => void respond(currentPlayer.id, 'pending')}
+                onPress={() => void respond(currentPlayer.id, 'pending', 'own')}
               />
             </View>
           ) : (
@@ -921,19 +970,19 @@ export default function MatchDetailsScreen() {
                     label="Vou jogar"
                     variant="secondary"
                     disabled={attendance?.status === 'confirmed'}
-                    onPress={() => void respond(player.id, 'confirmed')}
+                    onPress={() => void respond(player.id, 'confirmed', 'admin')}
                   />
                   <AppButton
                     label="Não vou"
                     variant="danger"
                     disabled={attendance?.status === 'absent'}
-                    onPress={() => void respond(player.id, 'absent')}
+                    onPress={() => void respond(player.id, 'absent', 'admin')}
                   />
                   <AppButton
                     label="Limpar presença"
                     variant="ghost"
                     disabled={attendance?.status === 'pending'}
-                    onPress={() => void respond(player.id, 'pending')}
+                    onPress={() => void respond(player.id, 'pending', 'admin')}
                   />
                 </View>
               </View>

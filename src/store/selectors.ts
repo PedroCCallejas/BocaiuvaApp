@@ -52,7 +52,7 @@ interface DerivedSnapshotSelectors {
 }
 
 function isPlayerAvailable(player: Player | null | undefined) {
-  return Boolean(player && player.status !== 'inactive' && !player.deletedAt);
+  return Boolean(player && player.status === 'active' && !player.deletedAt);
 }
 
 function scoreMembership(membership: TeamMember) {
@@ -450,26 +450,38 @@ export function getAttendanceSummary(state: Pick<AppState, 'snapshot'>, matchId:
   };
 }
 
-export function getAttendanceBuckets(state: Pick<AppState, 'snapshot'>, matchId: string) {
+export function getAttendanceBuckets(
+  state: Pick<AppState, 'snapshot'>,
+  matchId: string,
+  options?: { filterActiveOnly?: boolean },
+) {
   const items = state.snapshot.attendance.filter((item) => item.matchId === matchId);
   const players = state.snapshot.players;
   const byJersey = (left: Player, right: Player) => left.jerseyNumber - right.jerseyNumber;
+  const filterActiveOnly = options?.filterActiveOnly ?? false;
+
+  function resolvePlayer(item: { playerId: string }): Player | undefined {
+    const player = players.find((p) => p.id === item.playerId);
+    if (!player) return undefined;
+    if (filterActiveOnly && player.status !== 'active') return undefined;
+    return player;
+  }
 
   return {
     confirmed: items
       .filter((item) => item.status === 'confirmed')
-      .map((item) => players.find((player) => player.id === item.playerId))
-      .filter((player): player is (typeof players)[number] => Boolean(player))
+      .map(resolvePlayer)
+      .filter((player): player is Player => Boolean(player))
       .sort(byJersey),
     absent: items
       .filter((item) => item.status === 'absent')
-      .map((item) => players.find((player) => player.id === item.playerId))
-      .filter((player): player is (typeof players)[number] => Boolean(player))
+      .map(resolvePlayer)
+      .filter((player): player is Player => Boolean(player))
       .sort(byJersey),
     pending: items
       .filter((item) => item.status === 'pending')
-      .map((item) => players.find((player) => player.id === item.playerId))
-      .filter((player): player is (typeof players)[number] => Boolean(player))
+      .map(resolvePlayer)
+      .filter((player): player is Player => Boolean(player))
       .sort(byJersey),
   };
 }

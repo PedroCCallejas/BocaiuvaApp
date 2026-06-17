@@ -2711,6 +2711,198 @@ const testCases: TestCase[] = [
       assert.equal(updated.state, 'MG', 'state deve ser salvo');
     },
   },
+  {
+    name: 'admin+jogador confirma própria presença — userId do registro é o do actor',
+    async run() {
+      resetMockRepositoryState();
+      // user-admin tem roles ['admin', 'player'] e playerId player-7
+      const record = await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-7', status: 'confirmed' },
+        'user-admin',
+      );
+      assert.equal(record.playerId, 'player-7', 'playerId deve ser player-7');
+      assert.equal(record.status, 'confirmed', 'status deve ser confirmed');
+      assert.equal(record.userId, 'user-admin', 'userId deve ser o do actor ao confirmar própria presença');
+    },
+  },
+  {
+    name: 'admin confirma presença em partida scheduled — retorna record com campos corretos',
+    async run() {
+      resetMockRepositoryState();
+      // match-4 tem status scheduled; player-8 já tem att-4-8 (pending)
+      const record = await mockRepository.updateAttendance(
+        { matchId: 'match-4', playerId: 'player-8', status: 'confirmed' },
+        'user-admin',
+      );
+      assert.equal(record.matchId, 'match-4', 'matchId deve ser match-4');
+      assert.equal(record.playerId, 'player-8', 'playerId deve ser player-8');
+      assert.equal(record.teamId, 'team-bocaiuva', 'teamId deve ser do time');
+      assert.equal(record.status, 'confirmed', 'status deve ser confirmed');
+    },
+  },
+  {
+    name: 'admin cria notificação ao confirmar presença de outro jogador',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+
+      await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-10', status: 'confirmed' },
+        'user-admin',
+      );
+
+      const snapshotAfter = await mockRepository.getSnapshot();
+      const notification = snapshotAfter.notifications.find(
+        (n) => n.id === 'notification__attendance-confirmed__match-3__player-10',
+      );
+      assert.ok(notification, 'notificação de presença deve existir para player-10 após confirmar');
+    },
+  },
+  {
+    name: 'admin cria notificação ao marcar outro jogador como ausente',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+
+      await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-10', status: 'absent' },
+        'user-admin',
+      );
+
+      const snapshotAfter = await mockRepository.getSnapshot();
+      const notification = snapshotAfter.notifications.find(
+        (n) => n.id === 'notification__attendance-confirmed__match-3__player-10',
+      );
+      assert.ok(notification, 'notificação deve existir para player-10 após marcar ausente');
+    },
+  },
+  {
+    name: 'admin remove notificação ao limpar presença de outro jogador',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+
+      // Cria a notificação primeiro
+      await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-10', status: 'confirmed' },
+        'user-admin',
+      );
+      const snapshotAfterConfirm = await mockRepository.getSnapshot();
+      assert.ok(
+        snapshotAfterConfirm.notifications.find(
+          (n) => n.id === 'notification__attendance-confirmed__match-3__player-10',
+        ),
+        'notificação deve existir após confirmar',
+      );
+
+      // Remove a notificação ao limpar
+      await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-10', status: 'pending' },
+        'user-admin',
+      );
+      const snapshotAfterPending = await mockRepository.getSnapshot();
+      assert.equal(
+        snapshotAfterPending.notifications.find(
+          (n) => n.id === 'notification__attendance-confirmed__match-3__player-10',
+        ),
+        undefined,
+        'notificação deve ser removida ao limpar presença',
+      );
+    },
+  },
+  {
+    name: 'confirmar presença em partida encerrada lança erro para admin',
+    async run() {
+      resetMockRepositoryState();
+      // match-1 tem status finished
+      await assert.rejects(
+        () =>
+          mockRepository.updateAttendance(
+            { matchId: 'match-1', playerId: 'player-9', status: 'confirmed' },
+            'user-admin',
+          ),
+        (error) =>
+          error instanceof Error &&
+          error.message === 'A presença desta partida não aceita mais alterações.',
+      );
+    },
+  },
+  {
+    name: 'confirmar presença em partida encerrada lança erro para jogador',
+    async run() {
+      resetMockRepositoryState();
+      // match-1 tem status finished
+      await assert.rejects(
+        () =>
+          mockRepository.updateAttendance(
+            { matchId: 'match-1', playerId: 'player-9', status: 'confirmed' },
+            'user-striker',
+          ),
+        (error) =>
+          error instanceof Error &&
+          error.message === 'A presença desta partida não aceita mais alterações.',
+      );
+    },
+  },
+  {
+    name: 'jogador confirma própria presença — userId do registro é do usuário que confirmou',
+    async run() {
+      resetMockRepositoryState();
+      const record = await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-9', status: 'confirmed' },
+        'user-striker',
+      );
+      assert.equal(record.playerId, 'player-9', 'playerId deve ser player-9');
+      assert.equal(record.userId, 'user-striker', 'userId deve ser o do usuário que confirmou');
+    },
+  },
+  {
+    name: 'admin atualiza presença existente — userId preenchido com linkedUserId do jogador',
+    async run() {
+      resetMockRepositoryState();
+      // att-3-9 existe mas sem userId; player-9 tem linkedUserId 'user-striker'
+      const record = await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-9', status: 'absent' },
+        'user-admin',
+      );
+      assert.equal(record.playerId, 'player-9', 'playerId deve ser player-9');
+      assert.equal(record.status, 'absent', 'status deve ser absent');
+      assert.equal(record.userId, 'user-striker', 'userId deve ser o linkedUserId do jogador');
+    },
+  },
+  {
+    name: 'admin pode limpar própria presença — status fica pending',
+    async run() {
+      resetMockRepositoryState();
+      // att-3-7 existe para player-7 (admin) com status confirmed
+      const record = await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-7', status: 'pending' },
+        'user-admin',
+      );
+      assert.equal(record.playerId, 'player-7', 'playerId deve ser player-7');
+      assert.equal(record.status, 'pending', 'status deve ser pending após limpar');
+    },
+  },
+  {
+    name: 'notificação de presença criada pelo admin tem teamId e actorUserId corretos',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+
+      await mockRepository.updateAttendance(
+        { matchId: 'match-3', playerId: 'player-10', status: 'confirmed' },
+        'user-admin',
+      );
+
+      const snapshotAfter = await mockRepository.getSnapshot();
+      const notification = snapshotAfter.notifications.find(
+        (n) => n.id === 'notification__attendance-confirmed__match-3__player-10',
+      );
+      assert.ok(notification, 'notificação deve existir');
+      assert.equal(notification?.teamId, 'team-bocaiuva', 'teamId da notificação deve ser do time');
+      assert.equal(notification?.actorUserId, 'user-admin', 'actorUserId deve ser o admin que confirmou');
+    },
+  },
 ];
 
 let failed = 0;

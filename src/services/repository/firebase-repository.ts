@@ -902,7 +902,7 @@ function normalizeMatchDocument(
 }
 
 function isActivePlayer(player: Player) {
-  return player.status !== 'inactive' && !player.deletedAt;
+  return player.status === 'active' && !player.deletedAt;
 }
 
 function normalizeTeamRatingCriterionDocument(
@@ -6266,7 +6266,33 @@ export const firebaseRepository: AppRepository = {
 
       const player = await ensurePlayerBelongsToTeam(input.playerId, match.teamId);
       const canManageAttendance = membership.canManageTeam === true;
-      const isOwnAttendance = currentPlayerId === player.id;
+      const isTeamAdmin = membership.roles.includes('admin');
+      const isOwnAttendance =
+        currentPlayerId === player.id ||
+        (currentPlayerId === null && preRepairMembershipPlayerId === player.id);
+
+      if (__DEV__) {
+        console.log('[attendance-repository] updateAttendance payload', {
+          uid: actorUserId,
+          activeTeamId,
+          matchId: match.id,
+          matchTeamId: match.teamId,
+          matchStatus: match.status,
+          matchDeletedAt: match.deletedAt ?? null,
+          actorRoles: membership.roles,
+          actorCanManageTeam: membership.canManageTeam,
+          actorMembershipStatus: membership.status,
+          actorMembershipPlayerId: membership.playerId ?? null,
+          actorPlayerId: currentPlayerId,
+          preRepairMembershipPlayerId,
+          targetPlayerId: player.id,
+          targetUserId: player.linkedUserId ?? null,
+          selectedStatus: input.status,
+          canManageAttendance,
+          isTeamAdmin,
+          isOwnAttendance,
+        });
+      }
 
       if (!canManageAttendance && !isOwnAttendance) {
         throw createRepositoryError(
@@ -6312,6 +6338,17 @@ export const firebaseRepository: AppRepository = {
       // do not reject the whole batch.
       if (canManageAttendance) {
         const notificationId = buildNotificationId('attendance-confirmed', match.id, player.id);
+        if (__DEV__) {
+          console.log('[attendance-repository] notification attempt', {
+            uid: actorUserId,
+            matchId: match.id,
+            targetPlayerId: player.id,
+            selectedStatus: input.status,
+            notificationId,
+            willWriteNotification: input.status === 'confirmed' || input.status === 'absent',
+            attendanceId: existingRecord?.id ?? attendanceId,
+          });
+        }
         if (input.status === 'confirmed' || input.status === 'absent') {
           const existingNotification = await fetchNotificationByIdForTeam(
             activeTeamId,
@@ -6336,8 +6373,29 @@ export const firebaseRepository: AppRepository = {
       }
 
       await batch.commit();
+      if (__DEV__) {
+        console.log('[attendance-repository] updateAttendance success', {
+          uid: actorUserId,
+          matchId: match.id,
+          targetPlayerId: player.id,
+          attendanceId: attendance.id,
+          status: attendance.status,
+          userId: attendance.userId,
+        });
+      }
       return attendance;
     } catch (error) {
+      if (__DEV__) {
+        console.error('[attendance-repository] updateAttendance failed', {
+          uid: actorUserId,
+          matchId: input.matchId,
+          targetPlayerId: input.playerId,
+          selectedStatus: input.status,
+          error: error instanceof Error
+            ? { message: error.message, code: (error as unknown as Record<string, unknown>).code, stack: error.stack }
+            : error,
+        });
+      }
       throw toFriendlyFirestoreError(
         error,
         'Não foi possível atualizar a presença agora.',

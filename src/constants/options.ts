@@ -25,7 +25,7 @@ export const MATCH_STATUS_LABELS: Record<MatchStatus, string> = {
 export const PLAYER_STATUS_LABELS: Record<PlayerStatus, string> = {
   active: 'Ativo',
   injured: 'Lesionado',
-  suspended: 'Suspenso',
+  suspended: 'Antigo',
   inactive: 'Inativo',
 };
 

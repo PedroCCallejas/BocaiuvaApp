@@ -832,7 +832,7 @@ function removeDiaryNotifications(entryId: string) {
 }
 
 function isActivePlayer(player: Player) {
-  return player.status !== 'inactive' && !player.deletedAt;
+  return player.status === 'active' && !player.deletedAt;
 }
 
 function findSelectableTeamPlayers(teamId: string) {
@@ -2784,7 +2784,9 @@ export const mockRepository: AppRepository = {
     const player = ensurePlayerBelongsToTeam(input.playerId, match.teamId);
 
     const canManageAttendance = membership.canManageTeam === true;
-    const isOwnAttendance = currentPlayerId === player.id;
+    const isOwnAttendance =
+      currentPlayerId === player.id ||
+      (currentPlayerId === null && preRepairMembershipPlayerId === player.id);
 
     if (!canManageAttendance && !isOwnAttendance) {
       throw new Error('Você só pode responder à sua própria presença.');

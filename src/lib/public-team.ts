@@ -165,7 +165,7 @@ function buildContactBlock(team: Team) {
 
 function buildRoster(players: Player[]) {
   return players
-    .filter((player) => player.status !== 'inactive' && !player.deletedAt)
+    .filter((player) => player.status === 'active' && !player.deletedAt)
     .sort((left, right) => left.jerseyNumber - right.jerseyNumber)
     .map<PublicTeamRosterPlayer>((player) => ({
       id: player.id,

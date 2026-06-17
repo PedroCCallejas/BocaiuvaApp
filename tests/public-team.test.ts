@@ -67,3 +67,63 @@ test('elenco publico so aparece quando publicRosterEnabled esta ativo', () => {
   assert.equal(visibleProfile?.publicRosterEnabled, true);
   assert.deepEqual(visibleProfile?.roster.map((player) => player.id), [activePlayer.id]);
 });
+
+test('jogador lesionado não aparece no elenco público', () => {
+  const team = createTeam({
+    id: 'team-inj-pub',
+    isPublic: true,
+    city: 'Cuiaba',
+    state: 'MT',
+    publicRosterEnabled: true,
+  });
+  const activePlayer = createPlayer({ id: 'player-pub-active', teamId: team.id, status: 'active' });
+  const injuredPlayer = createPlayer({ id: 'player-pub-injured', teamId: team.id, status: 'injured' });
+
+  const profile = buildPublicTeamProfile(team, [], [activePlayer, injuredPlayer]);
+
+  assert.deepEqual(
+    profile?.roster.map((p) => p.id),
+    [activePlayer.id],
+    'jogador lesionado não deve aparecer na galeria pública',
+  );
+});
+
+test('jogador antigo (suspended) não aparece no elenco público', () => {
+  const team = createTeam({
+    id: 'team-former-pub',
+    isPublic: true,
+    city: 'Cuiaba',
+    state: 'MT',
+    publicRosterEnabled: true,
+  });
+  const activePlayer = createPlayer({ id: 'player-pub-active2', teamId: team.id, status: 'active' });
+  const formerPlayer = createPlayer({ id: 'player-pub-former', teamId: team.id, status: 'suspended' });
+
+  const profile = buildPublicTeamProfile(team, [], [activePlayer, formerPlayer]);
+
+  assert.deepEqual(
+    profile?.roster.map((p) => p.id),
+    [activePlayer.id],
+    'jogador antigo (suspended) não deve aparecer na galeria pública',
+  );
+});
+
+test('jogador inactive não aparece no elenco público mesmo sem deletedAt', () => {
+  const team = createTeam({
+    id: 'team-inact-pub',
+    isPublic: true,
+    city: 'Cuiaba',
+    state: 'MT',
+    publicRosterEnabled: true,
+  });
+  const activePlayer = createPlayer({ id: 'player-pub-active3', teamId: team.id, status: 'active' });
+  const inactivePlayer = createPlayer({ id: 'player-pub-inactive', teamId: team.id, status: 'inactive' });
+
+  const profile = buildPublicTeamProfile(team, [], [activePlayer, inactivePlayer]);
+
+  assert.deepEqual(
+    profile?.roster.map((p) => p.id),
+    [activePlayer.id],
+    'jogador inativo não deve aparecer na galeria pública',
+  );
+});

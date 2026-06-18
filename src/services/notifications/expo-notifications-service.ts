@@ -120,11 +120,13 @@ async function ensureNotificationPermission(Notifications: Awaited<ReturnType<ty
   const existingPermissions = await Notifications.getPermissionsAsync();
   const existingStatus = describePermissionStatus(existingPermissions, Notifications);
 
-  console.info('[push] permission status', {
-    platform: Platform.OS,
-    phase: 'current',
-    ...existingStatus,
-  });
+  if (__DEV__) {
+    console.info('[push] permission status', {
+      platform: Platform.OS,
+      phase: 'current',
+      ...existingStatus,
+    });
+  }
 
   if (existingStatus.granted) {
     return existingStatus;
@@ -139,11 +141,13 @@ async function ensureNotificationPermission(Notifications: Awaited<ReturnType<ty
   });
   const requestedStatus = describePermissionStatus(requestedPermissions, Notifications);
 
-  console.info('[push] permission status', {
-    platform: Platform.OS,
-    phase: 'requested',
-    ...requestedStatus,
-  });
+  if (__DEV__) {
+    console.info('[push] permission status', {
+      platform: Platform.OS,
+      phase: 'requested',
+      ...requestedStatus,
+    });
+  }
 
   return requestedStatus;
 }
@@ -183,32 +187,38 @@ export async function setupNotificationHandler() {
   }
 
   Notifications.addNotificationReceivedListener((notification) => {
-    console.info('[push] notification received', {
-      platform: Platform.OS,
-      identifier: notification.request.identifier,
-      title: notification.request.content.title ?? null,
-      triggerType:
-        typeof notification.request.trigger === 'object' &&
-        notification.request.trigger &&
-        'type' in notification.request.trigger
-          ? notification.request.trigger.type
-          : 'unknown',
-    });
+    if (__DEV__) {
+      console.info('[push] notification received', {
+        platform: Platform.OS,
+        identifier: notification.request.identifier,
+        title: notification.request.content.title ?? null,
+        triggerType:
+          typeof notification.request.trigger === 'object' &&
+          notification.request.trigger &&
+          'type' in notification.request.trigger
+            ? notification.request.trigger.type
+            : 'unknown',
+      });
+    }
   });
 
   Notifications.addNotificationResponseReceivedListener((response) => {
-    console.info('[push] notification response', {
-      platform: Platform.OS,
-      actionIdentifier: response.actionIdentifier,
-      identifier: response.notification.request.identifier,
-      title: response.notification.request.content.title ?? null,
-    });
+    if (__DEV__) {
+      console.info('[push] notification response', {
+        platform: Platform.OS,
+        actionIdentifier: response.actionIdentifier,
+        identifier: response.notification.request.identifier,
+        title: response.notification.request.content.title ?? null,
+      });
+    }
   });
 
   Notifications.addNotificationsDroppedListener(() => {
-    console.warn('[push] notifications dropped', {
-      platform: Platform.OS,
-    });
+    if (__DEV__) {
+      console.warn('[push] notifications dropped', {
+        platform: Platform.OS,
+      });
+    }
   });
 
   notificationListenersConfigured = true;
@@ -218,28 +228,34 @@ export const initializeNotifications = setupNotificationHandler;
 
 export async function registerForPushNotificationsAsync() {
   if (Platform.OS === 'web') {
-    console.info('[push] skipped push token registration', {
-      platform: Platform.OS,
-      reason: 'web-not-supported',
-    });
+    if (__DEV__) {
+      console.info('[push] skipped push token registration', {
+        platform: Platform.OS,
+        reason: 'web-not-supported',
+      });
+    }
     return null;
   }
 
   if (isExpoGo()) {
-    console.info('[push] skipped push token registration', {
-      platform: Platform.OS,
-      reason: 'expo-go',
-    });
+    if (__DEV__) {
+      console.info('[push] skipped push token registration', {
+        platform: Platform.OS,
+        reason: 'expo-go',
+      });
+    }
     return null;
   }
 
   await setupNotificationHandler();
 
   if (!Device.isDevice) {
-    console.info('[push] skipped push token registration', {
-      platform: Platform.OS,
-      reason: 'physical-device-required',
-    });
+    if (__DEV__) {
+      console.info('[push] skipped push token registration', {
+        platform: Platform.OS,
+        reason: 'physical-device-required',
+      });
+    }
     return null;
   }
 
@@ -254,39 +270,46 @@ export async function registerForPushNotificationsAsync() {
 
   const projectId = resolveExpoProjectId();
   if (!projectId) {
-    console.warn('[push] missing Expo projectId for getExpoPushTokenAsync.', {
-      platform: Platform.OS,
-    });
+    if (__DEV__) {
+      console.warn('[push] missing Expo projectId for getExpoPushTokenAsync.', {
+        platform: Platform.OS,
+      });
+    }
     return null;
   }
 
   try {
     const token = await Notifications.getExpoPushTokenAsync({ projectId });
 
-    console.info('[push] expo token generated', {
-      platform: Platform.OS,
-      projectId,
-      token: token.data,
-    });
+    if (__DEV__) {
+      console.info('[push] expo token generated', {
+        platform: Platform.OS,
+        projectId,
+      });
+    }
 
     return token.data;
   } catch (error) {
-    console.warn('[push] failed to generate expo push token', {
-      platform: Platform.OS,
-      projectId,
-      error: error instanceof Error ? error.message : error,
-    });
+    if (__DEV__) {
+      console.warn('[push] failed to generate expo push token', {
+        platform: Platform.OS,
+        projectId,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
     throw error;
   }
 }
 
 export async function syncCurrentUserPushToken(userId: string) {
   if (isExpoGo()) {
-    console.info('[push] skipped push token sync', {
-      platform: Platform.OS,
-      userId,
-      reason: 'expo-go',
-    });
+    if (__DEV__) {
+      console.info('[push] skipped push token sync', {
+        platform: Platform.OS,
+        userId,
+        reason: 'expo-go',
+      });
+    }
     return null;
   }
 
@@ -326,14 +349,16 @@ export async function syncCurrentUserPushToken(userId: string) {
   }
   await persistStoredPushToken(token);
 
-  console.info('[push] token saved', {
-    platform: Platform.OS,
-    userId,
-    tokenSaved: true,
-    tokenAlreadyPresent,
-    storedTokenChanged: storedToken !== token,
-    totalTokens: notificationTokens.length,
-  });
+  if (__DEV__) {
+    console.info('[push] token saved', {
+      platform: Platform.OS,
+      userId,
+      tokenSaved: true,
+      tokenAlreadyPresent,
+      storedTokenChanged: storedToken !== token,
+      totalTokens: notificationTokens.length,
+    });
+  }
 
   return token;
 }
@@ -342,11 +367,13 @@ export async function clearCurrentUserPushToken(userId: string) {
   const storedToken = await readStoredPushToken();
 
   if (!storedToken) {
-    console.info('[push] skipped token removal', {
-      platform: Platform.OS,
-      userId,
-      reason: 'no-stored-token',
-    });
+    if (__DEV__) {
+      console.info('[push] skipped token removal', {
+        platform: Platform.OS,
+        userId,
+        reason: 'no-stored-token',
+      });
+    }
     return;
   }
 
@@ -378,12 +405,14 @@ export async function clearCurrentUserPushToken(userId: string) {
   );
   await persistStoredPushToken(null);
 
-  console.info('[push] token removed', {
-    platform: Platform.OS,
-    userId,
-    removedToken: storedToken,
-    totalTokens: nextTokens.length,
-  });
+  if (__DEV__) {
+    console.info('[push] token removed', {
+      platform: Platform.OS,
+      userId,
+      removedToken: storedToken,
+      totalTokens: nextTokens.length,
+    });
+  }
 }
 
 export const removeCurrentUserPushToken = clearCurrentUserPushToken;

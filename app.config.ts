@@ -50,16 +50,15 @@ export default (): ExpoConfig => ({
   scheme: 'appboca',
   userInterfaceStyle: 'automatic',
   ios: {
-    icon: './assets/expo.icon',
+    icon: './assets/images/icon.png',
     bundleIdentifier: 'com.seuapp.bocaiuva',
     supportsTablet: false,
   },
   android: {
     adaptiveIcon: {
-      backgroundColor: '#E6F4FE',
-      foregroundImage: './assets/images/android-icon-foreground.png',
-      backgroundImage: './assets/images/android-icon-background.png',
-      monochromeImage: './assets/images/android-icon-monochrome.png',
+      backgroundColor: '#061828',
+      foregroundImage: './assets/images/adaptive-icon.png',
+      monochromeImage: './assets/images/adaptive-icon-monochrome.png',
     },
     package: 'com.seuapp.bocaiuva',
     googleServicesFile: './google-services.json',
@@ -89,7 +88,7 @@ export default (): ExpoConfig => ({
     [
       'expo-notifications',
       {
-        icon: './assets/images/android-icon-monochrome.png',
+        icon: './assets/images/adaptive-icon-monochrome.png',
         color: '#0E7A43',
         defaultChannel: 'default',
       },
@@ -97,7 +96,7 @@ export default (): ExpoConfig => ({
     [
       'expo-splash-screen',
       {
-        backgroundColor: '#208AEF',
+        backgroundColor: '#061828',
         android: {
           image: './assets/images/splash-icon.png',
           imageWidth: 76,

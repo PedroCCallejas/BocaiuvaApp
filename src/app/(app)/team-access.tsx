@@ -266,30 +266,40 @@ export default function TeamAccessScreen() {
   }
 
   async function handleSelectTeam(teamId: string, membership: any) {
-    console.log('[team-access] switch active team pressed', {
-      uid: currentUser?.id,
-      currentActiveTeamId: currentUser?.activeTeamId,
-      targetTeamId: teamId,
-      membershipFound: !!membership,
-      membershipStatus: membership?.status,
-      membershipPlayerId: membership?.playerId,
-    });
+    if (__DEV__) {
+      console.log('[team-access] switch active team pressed', {
+        uid: currentUser?.id,
+        currentActiveTeamId: currentUser?.activeTeamId,
+        targetTeamId: teamId,
+        membershipFound: !!membership,
+        membershipStatus: membership?.status,
+        membershipPlayerId: membership?.playerId,
+      });
+    }
 
     if (!membership || membership.status !== 'active') {
-      console.log('[team-access] switch blocked', { reason: 'no-active-membership' });
+      if (__DEV__) {
+        console.log('[team-access] switch blocked', { reason: 'no-active-membership' });
+      }
       Alert.alert('Acesso negado', 'Seu usuário ainda não possui vínculo ativo com este time.');
       return;
     }
 
     setSwitchingTeamId(teamId);
-    console.log('[team-access] switch start', { targetTeamId: teamId });
+    if (__DEV__) {
+      console.log('[team-access] switch start', { targetTeamId: teamId });
+    }
 
     try {
       await setActiveTeam(teamId);
-      console.log('[team-access] switch success', { targetTeamId: teamId });
+      if (__DEV__) {
+        console.log('[team-access] switch success', { targetTeamId: teamId });
+      }
       router.replace('/home');
     } catch (error) {
-      console.error('[team-access] switch failed', error);
+      if (__DEV__) {
+        console.error('[team-access] switch failed', error);
+      }
       Alert.alert(
         'Não foi possível abrir esse time',
         error instanceof Error ? error.message : 'Tente novamente.',

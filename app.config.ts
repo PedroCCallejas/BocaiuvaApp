@@ -60,7 +60,7 @@ export default (): ExpoConfig => ({
       foregroundImage: './assets/images/adaptive-icon.png',
       monochromeImage: './assets/images/adaptive-icon-monochrome.png',
     },
-    package: 'com.seuapp.bocaiuva',
+    package: 'com.professofc.app',
     googleServicesFile: './google-services.json',
     predictiveBackGestureEnabled: false,
     softwareKeyboardLayoutMode: 'resize',

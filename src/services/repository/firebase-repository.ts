@@ -6249,6 +6249,7 @@ export const firebaseRepository: AppRepository = {
   },
 
   async updateAttendance(input: UpdateAttendanceInput, actorUserId: string) {
+    const debugAttendance = __DEV__ || process.env.EXPO_PUBLIC_DEBUG_ATTENDANCE === 'true';
     try {
       const firestore = requireFirestore();
       const { actor, membership, activeTeamId, preRepairMembershipPlayerId } = await ensureActiveTeamContext(actorUserId);
@@ -6271,7 +6272,7 @@ export const firebaseRepository: AppRepository = {
         currentPlayerId === player.id ||
         (currentPlayerId === null && preRepairMembershipPlayerId === player.id);
 
-      if (__DEV__) {
+      if (debugAttendance) {
         console.log('[attendance-repository] updateAttendance payload', {
           uid: actorUserId,
           activeTeamId,
@@ -6330,15 +6331,19 @@ export const firebaseRepository: AppRepository = {
         createdAt: existingRecord?.createdAt ?? updatedAt,
         updatedAt,
       });
+
+      // Commit attendance only — notification is best-effort and must not block this write.
+      // Notification GET on non-existent doc can fail with permission-denied (resource.data is null
+      // in rules), so it must never share a batch with the attendance record.
       const batch = writeBatch(firestore);
       batch.set(recordRef, attendance);
+      await batch.commit();
 
       // Attendance notifications live in a collection that only team managers can write.
-      // Keep player self-responses limited to the attendance document so Firestore rules
-      // do not reject the whole batch.
+      // Separated from the attendance batch so notification issues never roll back attendance.
       if (canManageAttendance) {
         const notificationId = buildNotificationId('attendance-confirmed', match.id, player.id);
-        if (__DEV__) {
+        if (debugAttendance) {
           console.log('[attendance-repository] notification attempt', {
             uid: actorUserId,
             matchId: match.id,
@@ -6349,31 +6354,62 @@ export const firebaseRepository: AppRepository = {
             attendanceId: existingRecord?.id ?? attendanceId,
           });
         }
-        if (input.status === 'confirmed' || input.status === 'absent') {
-          const existingNotification = await fetchNotificationByIdForTeam(
-            activeTeamId,
-            notificationId,
-          );
-          batch.set(
-            doc(firestore, FIRESTORE_COLLECTIONS.notifications, notificationId),
-            createAttendanceNotification({
-              id: notificationId,
-              teamId: match.teamId,
-              match,
-              player,
-              status: input.status,
-              actorUserId: actor.id,
-              createdAt: existingNotification?.createdAt,
-              updatedAt,
-            }),
-          );
-        } else {
-          batch.delete(doc(firestore, FIRESTORE_COLLECTIONS.notifications, notificationId));
+        try {
+          const notifRef = doc(firestore, FIRESTORE_COLLECTIONS.notifications, notificationId);
+          if (input.status === 'confirmed' || input.status === 'absent') {
+            let existingCreatedAt: string | undefined;
+            try {
+              const existing = await fetchNotificationByIdForTeam(activeTeamId, notificationId);
+              existingCreatedAt = existing?.createdAt;
+            } catch {
+              // GET on non-existent notification is denied by rules (resource.data is null) —
+              // create a fresh notification without preserving original createdAt.
+            }
+            const notifBatch = writeBatch(firestore);
+            notifBatch.set(
+              notifRef,
+              createAttendanceNotification({
+                id: notificationId,
+                teamId: match.teamId,
+                match,
+                player,
+                status: input.status,
+                actorUserId: actor.id,
+                createdAt: existingCreatedAt,
+                updatedAt,
+              }),
+            );
+            await notifBatch.commit();
+          } else {
+            // Only delete if notification exists — batch.delete on a non-existent doc
+            // causes permission-denied because resource.data.teamId is null in the delete rule.
+            try {
+              const existingNotification = await fetchNotificationByIdForTeam(activeTeamId, notificationId);
+              if (existingNotification) {
+                const notifBatch = writeBatch(firestore);
+                notifBatch.delete(notifRef);
+                await notifBatch.commit();
+              }
+            } catch {
+              // GET failed (non-existent doc denied by rules) — skip delete, notification doesn't exist.
+            }
+          }
+        } catch (notifError) {
+          if (debugAttendance) {
+            console.error('[attendance-repository] notification best-effort failed', {
+              uid: actorUserId,
+              matchId: match.id,
+              targetPlayerId: player.id,
+              notificationId,
+              error: notifError instanceof Error
+                ? { message: notifError.message, code: (notifError as unknown as Record<string, unknown>).code }
+                : notifError,
+            });
+          }
         }
       }
 
-      await batch.commit();
-      if (__DEV__) {
+      if (debugAttendance) {
         console.log('[attendance-repository] updateAttendance success', {
           uid: actorUserId,
           matchId: match.id,
@@ -6385,7 +6421,7 @@ export const firebaseRepository: AppRepository = {
       }
       return attendance;
     } catch (error) {
-      if (__DEV__) {
+      if (debugAttendance) {
         console.error('[attendance-repository] updateAttendance failed', {
           uid: actorUserId,
           matchId: input.matchId,

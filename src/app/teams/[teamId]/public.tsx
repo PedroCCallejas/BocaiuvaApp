@@ -24,6 +24,76 @@ import { openExternalUrl } from '@/lib/external-url';
 import { useAppStore } from '@/store/app-store';
 import type { PublicTeamProfile } from '@/types/domain';
 
+const defaultPublicVideoAccent = '#DCE5EE';
+
+function normalizeHexColor(color: string | null | undefined) {
+  const value = color?.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  if (/^#[\da-f]{3}$/i.test(value)) {
+    return `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}`.toUpperCase();
+  }
+
+  if (/^#[\da-f]{6}$/i.test(value)) {
+    return value.toUpperCase();
+  }
+
+  if (/^#[\da-f]{8}$/i.test(value)) {
+    return value.slice(0, 7).toUpperCase();
+  }
+
+  return null;
+}
+
+function withAlpha(color: string | null | undefined, alpha: number, fallback: string) {
+  const normalized = normalizeHexColor(color);
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  const clampedAlpha = Math.max(0, Math.min(alpha, 1));
+  const alphaHex = Math.round(clampedAlpha * 255)
+    .toString(16)
+    .padStart(2, '0')
+    .toUpperCase();
+
+  return `${normalized}${alphaHex}`;
+}
+
+function getPerceivedLuminance(color: string | null | undefined) {
+  const normalized = normalizeHexColor(color);
+
+  if (!normalized) {
+    return -1;
+  }
+
+  const red = Number.parseInt(normalized.slice(1, 3), 16);
+  const green = Number.parseInt(normalized.slice(3, 5), 16);
+  const blue = Number.parseInt(normalized.slice(5, 7), 16);
+
+  return (red * 299 + green * 587 + blue * 114) / 1000;
+}
+
+function pickBrightestColor(colors: Array<string | null | undefined>, fallback: string) {
+  let bestColor = normalizeHexColor(fallback) ?? defaultPublicVideoAccent;
+  let bestLuminance = getPerceivedLuminance(bestColor);
+
+  colors.forEach((color) => {
+    const luminance = getPerceivedLuminance(color);
+
+    if (luminance > bestLuminance) {
+      bestColor = normalizeHexColor(color) ?? bestColor;
+      bestLuminance = luminance;
+    }
+  });
+
+  return bestColor;
+}
+
 export default function PublicTeamProfileScreen() {
   const params = useLocalSearchParams<{ teamId?: string | string[] }>();
   const theme = useAppTheme();
@@ -36,6 +106,12 @@ export default function PublicTeamProfileScreen() {
   );
   const rawTeamId = params.teamId;
   const teamId = typeof rawTeamId === 'string' ? rawTeamId : rawTeamId?.[0] ?? '';
+  const publicVideoAccent = profile
+    ? pickBrightestColor(
+        [profile.secondaryColor, profile.accentColor, profile.primaryColor, theme.colors.secondary],
+        theme.colors.secondary,
+      )
+    : theme.colors.secondary;
 
   async function loadProfile() {
     if (!teamId) {
@@ -283,21 +359,16 @@ export default function PublicTeamProfileScreen() {
                       #{player.jerseyNumber} · {POSITION_LABELS[player.primaryPosition]}
                     </Text>
                     {player.presentationVideoUrl ? (
-                      <Pressable
+                      <PlayerPresentationButton
+                        accentColor={publicVideoAccent}
+                        playerName={player.nickname || player.fullName}
                         onPress={() =>
                           setSelectedVideo({
                             url: player.presentationVideoUrl!,
                             playerName: player.nickname || player.fullName,
                           })
                         }
-                        style={({ pressed }) => [
-                          styles.videoButton,
-                          { borderColor: theme.colors.primary, opacity: pressed ? 0.75 : 1 },
-                        ]}>
-                        <Text style={[styles.videoButtonLabel, { color: theme.colors.primary }]}>
-                          ▶ Ver apresentação
-                        </Text>
-                      </Pressable>
+                      />
                     ) : null}
                   </View>
                 </View>
@@ -376,6 +447,85 @@ function ProfileStat({ label, value }: { label: string; value: string }) {
       <Text style={[styles.statValue, { color: theme.colors.text }]}>{value}</Text>
       <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>{label}</Text>
     </View>
+  );
+}
+
+function PlayerPresentationButton({
+  accentColor,
+  playerName,
+  onPress,
+}: {
+  accentColor: string;
+  playerName: string;
+  onPress: () => void;
+}) {
+  const theme = useAppTheme();
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Ver apresentação de ${playerName}`}
+      hitSlop={4}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onPress={onPress}
+      style={({ pressed }) => {
+        const isInteractiveHover = hovered && !pressed;
+        const buttonBackground = pressed
+          ? withAlpha(accentColor, 0.2, 'rgba(255,255,255,0.14)')
+          : isInteractiveHover
+            ? withAlpha(accentColor, 0.16, 'rgba(255,255,255,0.12)')
+            : withAlpha(accentColor, 0.12, 'rgba(255,255,255,0.1)');
+        const buttonBorder = pressed
+          ? withAlpha(accentColor, 0.58, 'rgba(255,255,255,0.26)')
+          : isInteractiveHover
+            ? withAlpha(accentColor, 0.48, 'rgba(255,255,255,0.22)')
+            : withAlpha(accentColor, 0.38, 'rgba(255,255,255,0.18)');
+
+        return [
+          styles.videoButton,
+          pressed ? styles.videoButtonPressed : null,
+          isInteractiveHover ? styles.videoButtonHovered : null,
+          {
+            backgroundColor: buttonBackground,
+            borderColor: buttonBorder,
+            shadowColor: accentColor,
+            shadowOpacity: pressed ? 0.08 : isInteractiveHover ? 0.16 : 0.12,
+            opacity: pressed ? 0.94 : 1,
+          },
+        ];
+      }}>
+      {({ pressed }) => {
+        const isInteractiveHover = hovered && !pressed;
+        const badgeBackground = pressed
+          ? withAlpha(accentColor, 0.3, 'rgba(255,255,255,0.2)')
+          : isInteractiveHover
+            ? withAlpha(accentColor, 0.24, 'rgba(255,255,255,0.18)')
+            : withAlpha(accentColor, 0.18, 'rgba(255,255,255,0.16)');
+        const badgeBorder = pressed
+          ? withAlpha(accentColor, 0.66, 'rgba(255,255,255,0.3)')
+          : isInteractiveHover
+            ? withAlpha(accentColor, 0.58, 'rgba(255,255,255,0.26)')
+            : withAlpha(accentColor, 0.46, 'rgba(255,255,255,0.22)');
+
+        return (
+          <View style={styles.videoButtonContent}>
+            <View
+              style={[
+                styles.videoButtonBadge,
+                {
+                  backgroundColor: badgeBackground,
+                  borderColor: badgeBorder,
+                },
+              ]}>
+              <Text style={[styles.videoButtonBadgeText, { color: theme.colors.text }]}>▶</Text>
+            </View>
+            <Text style={[styles.videoButtonLabel, { color: theme.colors.text }]}>Ver apresentação</Text>
+          </View>
+        );
+      }}
+    </Pressable>
   );
 }
 
@@ -488,16 +638,47 @@ const styles = StyleSheet.create({
   },
   videoButton: {
     alignSelf: 'flex-start',
-    marginTop: 6,
+    marginTop: 10,
     borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    borderRadius: 18,
+    minHeight: 46,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    justifyContent: 'center',
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 18,
+    elevation: 3,
+  },
+  videoButtonHovered: {
+    transform: [{ translateY: -1 }],
+  },
+  videoButtonPressed: {
+    transform: [{ scale: 0.98 }],
+  },
+  videoButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  videoButtonBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   videoButtonLabel: {
     fontFamily: fonts.heading,
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
+    letterSpacing: 0.1,
+  },
+  videoButtonBadgeText: {
+    fontFamily: fonts.display,
+    fontSize: 14,
+    fontWeight: '900',
   },
   modalOverlay: {
     flex: 1,

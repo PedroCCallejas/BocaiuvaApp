@@ -749,7 +749,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   async setAttendance(input) {
     const userId = get().currentUserId;
-    if (__DEV__) {
+    const debugAttendance = __DEV__ || process.env.EXPO_PUBLIC_DEBUG_ATTENDANCE === 'true';
+    if (debugAttendance) {
       console.log('[attendance-store] setAttendance start', {
         uid: userId,
         matchId: input.matchId,
@@ -763,7 +764,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       await repository.updateAttendance(input, userId);
-      if (__DEV__) {
+      if (debugAttendance) {
         console.log('[attendance-store] setAttendance success', {
           uid: userId,
           matchId: input.matchId,
@@ -772,7 +773,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
       }
     } catch (error) {
-      if (__DEV__) {
+      if (debugAttendance) {
         console.error('[attendance-store] setAttendance failed', {
           uid: userId,
           matchId: input.matchId,

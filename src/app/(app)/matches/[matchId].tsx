@@ -283,7 +283,8 @@ export default function MatchDetailsScreen() {
     source: 'admin' | 'own',
   ) {
     const isOwnAttendance = currentPlayer?.id === playerId;
-    if (__DEV__) {
+    const debugAttendance = __DEV__ || process.env.EXPO_PUBLIC_DEBUG_ATTENDANCE === 'true';
+    if (debugAttendance) {
       const logLabel =
         source === 'admin'
           ? '[attendance-ui] admin status button pressed'
@@ -318,21 +319,21 @@ export default function MatchDetailsScreen() {
     try {
       await setAttendance({ matchId: currentMatch.id, playerId, status });
     } catch (error) {
-      if (__DEV__) {
+      const errorCode = error instanceof Error ? (error as unknown as Record<string, unknown>).code : undefined;
+      if (debugAttendance) {
         console.error('[attendance-ui] blocked', {
           uid: currentUser?.id ?? null,
           matchId: currentMatch.id,
           targetPlayerId: playerId,
           selectedStatus: status,
           error: error instanceof Error
-            ? { message: error.message, code: (error as unknown as Record<string, unknown>).code, stack: error.stack }
+            ? { message: error.message, code: errorCode, stack: error.stack }
             : error,
         });
       }
-      Alert.alert(
-        'Não foi possível atualizar a presença',
-        error instanceof Error ? error.message : 'Tente novamente.',
-      );
+      const message = error instanceof Error ? error.message : 'Tente novamente.';
+      const detail = errorCode ? ` [${String(errorCode)}]` : '';
+      Alert.alert('Não foi possível atualizar a presença', `${message}${detail}`);
     }
   }
 

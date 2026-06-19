@@ -494,16 +494,10 @@ export default function LineupScreen() {
 
       if (__DEV__) console.log('[lineup-save] firebase write success', { matchId: currentMatch.id });
 
-      sourceDraftRef.current = payload;
-      draftRef.current = payload;
-      setDraft(payload);
-      isDirtyRef.current = false;
-      justSavedRef.current = true;
-      setSavePhase('saved');
+      const storeLineups = useAppStore.getState().snapshot.lineups;
+      const savedDoc = storeLineups.find((l) => l.matchId === currentMatch.id) ?? null;
 
       if (__DEV__) {
-        const storeLineups = useAppStore.getState().snapshot.lineups;
-        const savedDoc = storeLineups.find((l) => l.matchId === currentMatch.id) ?? null;
         console.log('[lineup-save] saved document after write', {
           found: Boolean(savedDoc),
           formationKey: savedDoc?.formationKey,
@@ -528,6 +522,24 @@ export default function LineupScreen() {
           }
         }
       }
+
+      if (!savedDoc) {
+        setSavePhase('dirty');
+        isDirtyRef.current = true;
+        justSavedRef.current = false;
+        Alert.alert(
+          'Escalação não confirmada',
+          'A escalação não foi confirmada no servidor. Tente novamente.',
+        );
+        return;
+      }
+
+      sourceDraftRef.current = payload;
+      draftRef.current = payload;
+      setDraft(payload);
+      isDirtyRef.current = false;
+      justSavedRef.current = true;
+      setSavePhase('saved');
 
       Alert.alert(
         'Escalação salva',

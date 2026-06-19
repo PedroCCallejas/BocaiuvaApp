@@ -6532,10 +6532,12 @@ export const firebaseRepository: AppRepository = {
         updatedAt,
       });
       const notificationId = buildNotificationId('lineup-published', match.id);
-      const existingNotification = await fetchNotificationByIdForTeam(
-        activeTeamId,
-        notificationId,
-      );
+      let existingNotification = null;
+      try {
+        existingNotification = await fetchNotificationByIdForTeam(activeTeamId, notificationId);
+      } catch {
+        // GET on non-existent notification is denied by rules — create fresh
+      }
       const batch = writeBatch(firestore);
       batch.set(lineupRef, lineup);
       batch.set(

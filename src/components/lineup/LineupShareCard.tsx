@@ -20,8 +20,47 @@ interface LineupShareCardProps {
   };
 }
 
-const TOKEN_SIZE = 72;
-const BENCH_PHOTO_SIZE = 36;
+const TOKEN_SIZE = 64;
+const BENCH_PHOTO_SIZE = 28;
+const MAX_BENCH_DISPLAY = 6;
+
+// Estimated field pixel dimensions at export (1080×1350 card, padding 18, compact header/bench)
+const FIELD_W_EST = 1044;
+const FIELD_H_EST = 920;
+const TOKEN_MIN_DIST = TOKEN_SIZE + 8;
+
+function deconflictPositions(
+  nodes: Array<{ x: number; y: number }>,
+): Array<{ x: number; y: number }> {
+  if (nodes.length < 2) return nodes;
+  const pos = nodes.map((n) => ({ x: n.x, y: n.y }));
+  for (let iter = 0; iter < 24; iter++) {
+    let maxMove = 0;
+    for (let i = 0; i < pos.length; i++) {
+      for (let j = i + 1; j < pos.length; j++) {
+        const dxPx = ((pos[j].x - pos[i].x) / 100) * FIELD_W_EST;
+        const dyPx = ((pos[j].y - pos[i].y) / 100) * FIELD_H_EST;
+        const distPx = Math.sqrt(dxPx * dxPx + dyPx * dyPx);
+        if (distPx > 0 && distPx < TOKEN_MIN_DIST) {
+          const push = ((TOKEN_MIN_DIST - distPx) / 2 + 0.5) * 0.8;
+          const nx = dxPx / distPx;
+          const ny = dyPx / distPx;
+          pos[i].x -= (push * nx / FIELD_W_EST) * 100;
+          pos[i].y -= (push * ny / FIELD_H_EST) * 100;
+          pos[j].x += (push * nx / FIELD_W_EST) * 100;
+          pos[j].y += (push * ny / FIELD_H_EST) * 100;
+          pos[i].x = clamp(pos[i].x, 7, 93);
+          pos[i].y = clamp(pos[i].y, 6, 94);
+          pos[j].x = clamp(pos[j].x, 7, 93);
+          pos[j].y = clamp(pos[j].y, 6, 94);
+          maxMove = Math.max(maxMove, push);
+        }
+      }
+    }
+    if (maxMove < 0.2) break;
+  }
+  return pos;
+}
 
 export function LineupShareCard({
   teamName,
@@ -43,6 +82,7 @@ export function LineupShareCard({
   const shouldRenderLogo = Boolean(teamLogoUrl);
 
   const benchPlayers = benchPlayerIds
+    .slice(0, MAX_BENCH_DISPLAY)
     .map((playerId) => playerById.get(playerId))
     .filter((player): player is Player => Boolean(player));
 
@@ -51,6 +91,11 @@ export function LineupShareCard({
     .filter(
       (item): item is { node: LineupNode; player: Player } => Boolean(item.player),
     );
+
+  const adjustedPositions = useMemo(
+    () => deconflictPositions(visibleStarters.map(({ node }) => ({ x: node.x, y: node.y }))),
+    [visibleStarters],
+  );
 
   return (
     <LinearGradient
@@ -69,7 +114,7 @@ export function LineupShareCard({
             vs {opponentName}
           </Text>
           {matchLabel ? (
-            <Text numberOfLines={2} style={styles.matchLabel}>
+            <Text numberOfLines={1} style={styles.matchLabel}>
               {matchLabel}
             </Text>
           ) : null}
@@ -120,10 +165,11 @@ export function LineupShareCard({
           />
         ) : null}
 
-        {/* Tokens dos titulares */}
-        {visibleStarters.map(({ node, player }) => {
+        {/* Tokens dos titulares — posições ajustadas para evitar sobreposição */}
+        {visibleStarters.map(({ node, player }, index) => {
           const label = node.label?.trim() || player.nickname;
           const hasPhoto = Boolean(player.photoUrl);
+          const adj = adjustedPositions[index] ?? { x: node.x, y: node.y };
 
           return (
             <View
@@ -131,8 +177,8 @@ export function LineupShareCard({
               style={[
                 styles.token,
                 {
-                  left: `${clamp(node.x, 8, 92)}%`,
-                  top: `${clamp(node.y, 10, 90)}%`,
+                  left: `${clamp(adj.x, 7, 93)}%`,
+                  top: `${clamp(adj.y, 6, 94)}%`,
                   marginLeft: -(TOKEN_SIZE / 2),
                   marginTop: -(TOKEN_SIZE / 2),
                   borderColor: accent,
@@ -277,7 +323,7 @@ const styles = StyleSheet.create({
     aspectRatio: 1080 / 1350,
     borderRadius: 28,
     padding: 18,
-    gap: 14,
+    gap: 12,
     overflow: 'hidden',
   },
 
@@ -290,30 +336,30 @@ const styles = StyleSheet.create({
   },
   heroCopy: {
     flex: 1,
-    gap: 3,
+    gap: 2,
   },
   teamName: {
     fontFamily: fonts.heading,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
     color: '#F7FBF8',
   },
   matchTitle: {
     fontFamily: fonts.heading,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: 'rgba(247,251,248,0.9)',
   },
   matchLabel: {
     fontFamily: fonts.body,
-    fontSize: 11,
-    lineHeight: 16,
+    fontSize: 10,
+    lineHeight: 14,
     color: 'rgba(247,251,248,0.72)',
   },
   crest: {
-    width: 68,
-    height: 68,
-    borderRadius: 22,
+    width: 60,
+    height: 60,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -326,7 +372,7 @@ const styles = StyleSheet.create({
   },
   crestText: {
     fontFamily: fonts.heading,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
   },
 
@@ -366,11 +412,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: '50%',
     top: '50%',
-    width: 108,
-    height: 108,
-    marginLeft: -54,
-    marginTop: -54,
-    borderRadius: 54,
+    width: 100,
+    height: 100,
+    marginLeft: -50,
+    marginTop: -50,
+    borderRadius: 50,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.26)',
   },
@@ -379,7 +425,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: '22%',
     width: '56%',
-    height: 80,
+    height: 72,
     borderWidth: 1,
     borderTopWidth: 0,
     borderColor: 'rgba(255,255,255,0.26)',
@@ -389,7 +435,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: '22%',
     width: '56%',
-    height: 80,
+    height: 72,
     borderWidth: 1,
     borderBottomWidth: 0,
     borderColor: 'rgba(255,255,255,0.26)',
@@ -399,7 +445,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: '39%',
     width: '22%',
-    height: 16,
+    height: 14,
     borderWidth: 1,
     borderTopWidth: 0,
     borderColor: 'rgba(255,255,255,0.26)',
@@ -409,7 +455,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: '39%',
     width: '22%',
-    height: 16,
+    height: 14,
     borderWidth: 1,
     borderBottomWidth: 0,
     borderColor: 'rgba(255,255,255,0.26)',
@@ -428,7 +474,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: TOKEN_SIZE,
     height: TOKEN_SIZE,
-    borderRadius: 22,
+    borderRadius: 20,
     borderWidth: 2,
     overflow: 'hidden',
     justifyContent: 'flex-end',
@@ -442,38 +488,38 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingBottom: 16,
+    paddingBottom: 14,
   },
   tokenInitialsText: {
     fontFamily: fonts.heading,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '900',
     color: 'rgba(255,255,255,0.7)',
   },
   tokenBadge: {
     position: 'absolute',
-    top: 5,
-    right: 5,
-    minWidth: 24,
-    height: 24,
-    borderRadius: 12,
+    top: 4,
+    right: 4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 3,
     zIndex: 3,
   },
   tokenBadgeText: {
     fontFamily: fonts.heading,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '900',
   },
   tokenNameWrap: {
-    paddingHorizontal: 6,
-    paddingBottom: 6,
+    paddingHorizontal: 5,
+    paddingBottom: 5,
   },
   tokenName: {
     fontFamily: fonts.heading,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800',
     textAlign: 'center',
     color: '#F7FBF8',
@@ -484,11 +530,11 @@ const styles = StyleSheet.create({
 
   // Bench
   benchSection: {
-    gap: 8,
+    gap: 6,
   },
   sectionLabel: {
     fontFamily: fonts.heading,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '800',
     color: 'rgba(247,251,248,0.8)',
     textTransform: 'uppercase',
@@ -497,14 +543,14 @@ const styles = StyleSheet.create({
   benchWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 5,
   },
   benchChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingRight: 10,
-    paddingVertical: 4,
+    gap: 5,
+    paddingRight: 8,
+    paddingVertical: 3,
     borderRadius: 999,
     backgroundColor: 'rgba(6,14,9,0.50)',
     borderWidth: 1,
@@ -527,30 +573,30 @@ const styles = StyleSheet.create({
   },
   benchInitialsText: {
     fontFamily: fonts.heading,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '900',
     color: 'rgba(255,255,255,0.7)',
     zIndex: 1,
   },
   benchChipText: {
-    gap: 1,
+    gap: 0,
   },
   benchNumber: {
     fontFamily: fonts.heading,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '900',
   },
   benchName: {
     fontFamily: fonts.body,
-    fontSize: 11,
+    fontSize: 10,
     color: '#F7FBF8',
-    maxWidth: 80,
+    maxWidth: 72,
   },
 
   // Watermark
   watermark: {
     fontFamily: fonts.body,
-    fontSize: 10,
+    fontSize: 9,
     textAlign: 'right',
     color: 'rgba(247,251,248,0.55)',
   },

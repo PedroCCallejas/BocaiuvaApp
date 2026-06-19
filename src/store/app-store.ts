@@ -795,7 +795,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       throw new Error('Sessão expirada.');
     }
 
-    await repository.saveLineup(input, userId);
+    const savedLineup = await repository.saveLineup(input, userId);
+
+    const prev = get();
+    set({
+      snapshot: {
+        ...prev.snapshot,
+        lineups: [
+          ...prev.snapshot.lineups.filter((l) => l.matchId !== input.matchId),
+          savedLineup,
+        ],
+      },
+    });
+
     await refreshCurrentSession(set, get);
   },
 

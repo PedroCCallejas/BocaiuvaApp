@@ -297,6 +297,13 @@ export default function LineupScreen() {
         return;
       }
 
+      if (__DEV__) {
+        console.log('[lineup-store] lineup changed', {
+          starters: next.starters.length,
+          bench: next.benchPlayerIds.length,
+        });
+      }
+
       applyDraft({
         formationKey: draftRef.current.formationKey || fallbackPreset?.key || '',
         starters: next.starters,
@@ -349,6 +356,8 @@ export default function LineupScreen() {
     try {
       setSaveStatus('saving');
 
+      if (__DEV__) console.log('[lineup-store] save start');
+
       await saveLineup({
         matchId: currentMatch.id,
         formationKey: draftRef.current.formationKey || fallbackPreset.key,
@@ -359,12 +368,16 @@ export default function LineupScreen() {
       isDirtyRef.current = false;
       setSaveStatus('saved');
 
+      if (__DEV__) console.log('[lineup-store] save success');
+
       Alert.alert(
         'Escalação salva',
         'A distribuição dos jogadores foi atualizada com sucesso.',
       );
     } catch (error) {
       setSaveStatus('dirty');
+
+      if (__DEV__) console.log('[lineup-store] save failed', error);
 
       Alert.alert(
         'Não foi possível salvar',
@@ -453,7 +466,7 @@ export default function LineupScreen() {
 
       <Text style={[styles.helper, { color: theme.colors.textMuted }]}>
         {canManage
-          ? 'Arraste jogadores apenas dentro do campo. O banco usa toque para adicionar/remover, evitando troca automática.'
+          ? 'Toque num jogador para ver opções (trocar, mover para banco). Arraste para reposicionar no campo.'
           : 'Somente visualização. Apenas administradores podem alterar a escalação.'}
       </Text>
 

@@ -35,6 +35,11 @@ interface PixelPosition {
   top: number;
 }
 
+interface PendingSwap {
+  playerId: string;
+  type: 'field' | 'bench';
+}
+
 function useLatestRef<T>(value: T) {
   const ref = useRef(value);
 
@@ -58,16 +63,27 @@ export function LineupField({
 }: LineupFieldProps) {
   const theme = useAppTheme();
   const [fieldWidth, setFieldWidth] = useState(320);
+  const [pendingSwap, setPendingSwap] = useState<PendingSwap | null>(null);
 
   const nodeSize = resolveNodeSize(fieldWidth);
   const benchNodeSize = Math.max(nodeSize - 12, 62);
   const fieldHeight = resolveFieldHeight(fieldWidth);
-  const benchTop = fieldHeight + 18;
-  const benchHeight = benchNodeSize + 84;
-  const totalHeight = benchTop + benchHeight;
 
   const startersRef = useLatestRef(starters);
   const benchPlayerIdsRef = useLatestRef(benchPlayerIds);
+
+  // Limpa seleção pendente se o jogador selecionado saiu da posição esperada
+  useEffect(() => {
+    if (!pendingSwap) return;
+
+    const { playerId, type } = pendingSwap;
+
+    if (type === 'field' && !starters.some((n) => n.playerId === playerId)) {
+      setPendingSwap(null);
+    } else if (type === 'bench' && !benchPlayerIds.includes(playerId)) {
+      setPendingSwap(null);
+    }
+  }, [starters, benchPlayerIds, pendingSwap]);
 
   const playerById = useMemo(
     () => new Map(players.map((player) => [player.id, player])),
@@ -76,19 +92,14 @@ export function LineupField({
 
   const commit = useCallback(
     (nextStarters: LineupNode[], nextBenchPlayerIds: string[]) => {
-      onChange({
-        starters: nextStarters,
-        benchPlayerIds: nextBenchPlayerIds,
-      });
+      onChange({ starters: nextStarters, benchPlayerIds: nextBenchPlayerIds });
     },
     [onChange],
   );
 
   const updateStarterPosition = useCallback(
     (playerId: string, center: { x: number; y: number }) => {
-      if (!editable) {
-        return;
-      }
+      if (!editable) return;
 
       const x = Number(((center.x / fieldWidth) * 100).toFixed(1));
       const y = Number(((center.y / fieldHeight) * 100).toFixed(1));
@@ -96,12 +107,7 @@ export function LineupField({
       commit(
         startersRef.current.map((node) =>
           node.playerId === playerId
-            ? {
-                ...node,
-                x,
-                y,
-                zone: inferLineupZone(y),
-              }
+            ? { ...node, x, y, zone: inferLineupZone(y) }
             : node,
         ),
         benchPlayerIdsRef.current,
@@ -112,16 +118,14 @@ export function LineupField({
 
   const removeStarterToBench = useCallback(
     (playerId: string) => {
-      if (!editable) {
-        return;
-      }
+      if (!editable) return;
 
       const currentStarters = startersRef.current;
       const currentBenchPlayerIds = benchPlayerIdsRef.current;
 
-      if (currentBenchPlayerIds.includes(playerId)) {
-        return;
-      }
+      if (currentBenchPlayerIds.includes(playerId)) return;
+
+      if (__DEV__) console.log('[lineup-ui] move to bench', { playerId });
 
       commit(
         currentStarters.filter((node) => node.playerId !== playerId),
@@ -133,26 +137,21 @@ export function LineupField({
 
   const addBenchPlayerToField = useCallback(
     (playerId: string) => {
-      if (!editable) {
-        return;
-      }
+      if (!editable) return;
 
       const currentStarters = startersRef.current;
       const currentBenchPlayerIds = benchPlayerIdsRef.current;
 
-      if (currentStarters.some((node) => node.playerId === playerId)) {
-        return;
-      }
+      if (currentStarters.some((node) => node.playerId === playerId)) return;
 
       if (currentStarters.length >= starterLimit) {
-        Alert.alert(
-          'Campo cheio',
-          'Remova um jogador do campo antes de adicionar outro.',
-        );
+        Alert.alert('Campo cheio', 'Remova um jogador do campo antes de adicionar outro.');
         return;
       }
 
       const position = getNextStarterPosition(currentStarters);
+
+      if (__DEV__) console.log('[lineup-ui] move to starter', { playerId });
 
       commit(
         [
@@ -171,17 +170,84 @@ export function LineupField({
     [benchPlayerIdsRef, commit, editable, starterLimit, startersRef],
   );
 
+  // Troca um titular por um reserva (mantendo a posição do titular no campo)
+  const swapStarterWithBench = useCallback(
+    (fieldPlayerId: string, benchPlayerId: string) => {
+      if (!editable) return;
+
+      const currentStarters = startersRef.current;
+      const currentBench = benchPlayerIdsRef.current;
+
+      if (__DEV__) console.log('[lineup-ui] swap requested', { fieldPlayerId, benchPlayerId });
+
+      const newStarters = currentStarters.map((node) =>
+        node.playerId === fieldPlayerId ? { ...node, playerId: benchPlayerId } : node,
+      );
+
+      const newBench = currentBench.map((id) => (id === benchPlayerId ? fieldPlayerId : id));
+
+      commit(newStarters, newBench);
+    },
+    [benchPlayerIdsRef, commit, editable, startersRef],
+  );
+
+  // Troca as posições de dois titulares no campo
+  const swapStarterWithStarter = useCallback(
+    (playerIdA: string, playerIdB: string) => {
+      if (!editable) return;
+
+      const currentStarters = startersRef.current;
+
+      if (__DEV__) console.log('[lineup-ui] swap requested (field-field)', { playerIdA, playerIdB });
+
+      const nodeA = currentStarters.find((n) => n.playerId === playerIdA);
+      const nodeB = currentStarters.find((n) => n.playerId === playerIdB);
+
+      if (!nodeA || !nodeB) return;
+
+      const newStarters = currentStarters.map((node) => {
+        if (node.playerId === playerIdA) {
+          return { ...node, x: nodeB.x, y: nodeB.y, zone: nodeB.zone };
+        }
+        if (node.playerId === playerIdB) {
+          return { ...node, x: nodeA.x, y: nodeA.y, zone: nodeA.zone };
+        }
+        return node;
+      });
+
+      commit(newStarters, benchPlayerIdsRef.current);
+    },
+    [benchPlayerIdsRef, commit, editable, startersRef],
+  );
+
   const handleFieldPlayerPress = useCallback(
     (playerId: string) => {
-      if (!editable) {
+      if (!editable) return;
+
+      if (__DEV__) console.log('[lineup-ui] player selected', { playerId, type: 'field' });
+
+      // Toque no mesmo jogador → cancela seleção
+      if (pendingSwap?.playerId === playerId) {
+        setPendingSwap(null);
+        return;
+      }
+
+      // Há um reserva selecionado → troca reserva↔titular
+      if (pendingSwap?.type === 'bench') {
+        swapStarterWithBench(playerId, pendingSwap.playerId);
+        setPendingSwap(null);
+        return;
+      }
+
+      // Há outro titular selecionado → troca posições no campo
+      if (pendingSwap?.type === 'field') {
+        swapStarterWithStarter(pendingSwap.playerId, playerId);
+        setPendingSwap(null);
         return;
       }
 
       const player = playerById.get(playerId);
-
-      if (!player) {
-        return;
-      }
+      if (!player) return;
 
       Alert.alert(
         `${player.nickname} #${player.jerseyNumber}`,
@@ -189,33 +255,64 @@ export function LineupField({
         [
           { text: 'Fechar', style: 'cancel' },
           {
-            text: 'Remover do campo',
+            text: 'Trocar com jogador',
+            onPress: () => setPendingSwap({ playerId, type: 'field' }),
+          },
+          {
+            text: 'Mover para banco',
             style: 'destructive',
             onPress: () => removeStarterToBench(playerId),
           },
         ],
       );
     },
-    [editable, playerById, removeStarterToBench],
+    [
+      editable,
+      pendingSwap,
+      playerById,
+      removeStarterToBench,
+      swapStarterWithBench,
+      swapStarterWithStarter,
+    ],
   );
 
   const handleBenchPlayerPress = useCallback(
     (playerId: string) => {
-      if (!editable) {
+      if (!editable) return;
+
+      if (__DEV__) console.log('[lineup-ui] player selected', { playerId, type: 'bench' });
+
+      // Toque no mesmo jogador → cancela seleção
+      if (pendingSwap?.playerId === playerId) {
+        setPendingSwap(null);
+        return;
+      }
+
+      // Há um titular selecionado → troca titular↔reserva
+      if (pendingSwap?.type === 'field') {
+        swapStarterWithBench(pendingSwap.playerId, playerId);
+        setPendingSwap(null);
+        return;
+      }
+
+      // Há outro reserva selecionado → muda seleção para este
+      if (pendingSwap?.type === 'bench') {
+        setPendingSwap({ playerId, type: 'bench' });
         return;
       }
 
       const player = playerById.get(playerId);
-
-      if (!player) {
-        return;
-      }
+      if (!player) return;
 
       Alert.alert(
         `${player.nickname} #${player.jerseyNumber}`,
-        'Adicionar este jogador ao campo?',
+        'O que deseja fazer com este reserva?',
         [
-          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Fechar', style: 'cancel' },
+          {
+            text: 'Trocar com titular',
+            onPress: () => setPendingSwap({ playerId, type: 'bench' }),
+          },
           {
             text: 'Adicionar ao campo',
             onPress: () => addBenchPlayerToField(playerId),
@@ -223,24 +320,24 @@ export function LineupField({
         ],
       );
     },
-    [addBenchPlayerToField, editable, playerById],
+    [addBenchPlayerToField, editable, pendingSwap, playerById, swapStarterWithBench],
   );
 
   const MAX_FIELD_WIDTH = 560;
 
   const handleLayout = useCallback((width: number) => {
     const nextWidth = Math.min(Math.max(width - 20, 280), MAX_FIELD_WIDTH);
-
     setFieldWidth((current) => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
   }, []);
 
   const rootSize = useMemo(
-    () => ({
-      width: fieldWidth,
-      height: fieldHeight,
-    }),
+    () => ({ width: fieldWidth, height: fieldHeight }),
     [fieldHeight, fieldWidth],
   );
+
+  const pendingPlayerName = pendingSwap
+    ? (playerById.get(pendingSwap.playerId)?.nickname ?? '')
+    : '';
 
   return (
     <View
@@ -249,11 +346,32 @@ export function LineupField({
         {
           borderColor: `${theme.colors.accent}44`,
           backgroundColor: theme.colors.surface,
-          height: totalHeight + 12,
         },
       ]}
       onLayout={(event) => handleLayout(event.nativeEvent.layout.width)}
     >
+      {/* Banner de troca pendente */}
+      {pendingSwap && editable ? (
+        <Pressable
+          style={[
+            styles.swapBanner,
+            {
+              backgroundColor: `${theme.colors.warning}22`,
+              borderColor: `${theme.colors.warning}66`,
+            },
+          ]}
+          onPress={() => setPendingSwap(null)}
+        >
+          <Text style={[styles.swapBannerText, { color: theme.colors.text }]}>
+            {`Toque em outro jogador para trocar com ${pendingPlayerName}`}
+          </Text>
+          <Text style={[styles.swapBannerCancel, { color: theme.colors.warning }]}>
+            Cancelar
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {/* Campo de jogo */}
       <LinearGradient
         colors={[`${theme.colors.primary}66`, theme.colors.fieldStripe, theme.colors.field]}
         start={{ x: 0.1, y: 0 }}
@@ -294,9 +412,7 @@ export function LineupField({
         {starters.map((node) => {
           const player = playerById.get(node.playerId);
 
-          if (!player) {
-            return null;
-          }
+          if (!player) return null;
 
           return (
             <MemoDraggableFieldToken
@@ -307,6 +423,9 @@ export function LineupField({
               nodeSize={nodeSize}
               containerSize={rootSize}
               editable={editable}
+              selected={
+                pendingSwap?.playerId === node.playerId && pendingSwap?.type === 'field'
+              }
               onMove={updateStarterPosition}
               onPress={handleFieldPlayerPress}
               onDragStateChange={onDragStateChange}
@@ -315,12 +434,11 @@ export function LineupField({
         })}
       </LinearGradient>
 
+      {/* Banco de reservas — fluxo normal abaixo do campo */}
       <View
         style={[
           styles.benchPanel,
           {
-            top: benchTop,
-            height: benchHeight,
             backgroundColor: theme.colors.backgroundElevated,
             borderColor: `${theme.colors.primary}33`,
           },
@@ -332,7 +450,9 @@ export function LineupField({
 
         <Text style={[styles.benchHint, { color: theme.colors.textMuted }]}>
           {editable
-            ? 'Toque em um reserva para adicionar ao campo. Sem drag no banco.'
+            ? pendingSwap
+              ? 'Toque em outro jogador para completar a troca.'
+              : 'Toque num reserva para adicionar ou trocar com titular.'
             : 'Escalação em modo visualização.'}
         </Text>
 
@@ -351,9 +471,7 @@ export function LineupField({
             benchPlayerIds.map((playerId) => {
               const player = playerById.get(playerId);
 
-              if (!player) {
-                return null;
-              }
+              if (!player) return null;
 
               return (
                 <BenchPlayerCard
@@ -361,6 +479,9 @@ export function LineupField({
                   player={player}
                   nodeSize={benchNodeSize}
                   editable={editable}
+                  selected={
+                    pendingSwap?.playerId === playerId && pendingSwap?.type === 'bench'
+                  }
                   onPress={() => handleBenchPlayerPress(playerId)}
                 />
               );
@@ -379,6 +500,7 @@ function DraggableFieldToken({
   nodeSize,
   containerSize,
   editable = true,
+  selected = false,
   onMove,
   onPress,
   onDragStateChange,
@@ -389,6 +511,7 @@ function DraggableFieldToken({
   nodeSize: number;
   containerSize: { width: number; height: number };
   editable?: boolean;
+  selected?: boolean;
   onMove: (playerId: string, center: { x: number; y: number }) => void;
   onPress: (playerId: string) => void;
   onDragStateChange?: (dragging: boolean) => void;
@@ -428,9 +551,7 @@ function DraggableFieldToken({
 
   const finishDrag = useCallback(
     (gesture: PanResponderGestureState) => {
-      if (!editableRef.current) {
-        return;
-      }
+      if (!editableRef.current) return;
 
       const currentNodeSize = nodeSizeRef.current;
       const currentContainer = containerRef.current;
@@ -447,10 +568,7 @@ function DraggableFieldToken({
         currentContainer.height - currentNodeSize,
       );
 
-      const finalPosition = {
-        left,
-        top,
-      };
+      const finalPosition = { left, top };
 
       draggingRef.current = false;
       dragStateRef.current?.(false);
@@ -483,10 +601,7 @@ function DraggableFieldToken({
           (Math.abs(gesture.dx) > 2 || Math.abs(gesture.dy) > 2),
         onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: () => {
-          if (!editableRef.current) {
-            return;
-          }
-
+          if (!editableRef.current) return;
           draggingRef.current = true;
           movedRef.current = false;
           setDragging(true);
@@ -494,9 +609,7 @@ function DraggableFieldToken({
           dragStateRef.current?.(true);
         },
         onPanResponderMove: (_, gesture) => {
-          if (!editableRef.current) {
-            return;
-          }
+          if (!editableRef.current) return;
 
           const currentNodeSize = nodeSizeRef.current;
           const currentContainer = containerRef.current;
@@ -517,10 +630,7 @@ function DraggableFieldToken({
             movedRef.current = true;
           }
 
-          setPosition({
-            left: nextLeft,
-            top: nextTop,
-          });
+          setPosition({ left: nextLeft, top: nextTop });
         },
         onPanResponderRelease: (_, gesture) => finishDrag(gesture),
         onPanResponderTerminate: (_, gesture) => finishDrag(gesture),
@@ -530,6 +640,12 @@ function DraggableFieldToken({
 
   const accentColor = pickContrastText(theme.colors.accent);
   const hasPhoto = Boolean(player.photoUrl);
+
+  const borderColor = selected
+    ? theme.colors.warning
+    : dragging
+      ? theme.colors.accent
+      : `${theme.colors.secondary}AA`;
 
   return (
     <View
@@ -542,14 +658,15 @@ function DraggableFieldToken({
           width: nodeSize,
           minHeight: nodeSize,
           backgroundColor: theme.colors.primary,
-          borderColor: dragging ? theme.colors.accent : `${theme.colors.secondary}AA`,
-          shadowColor: theme.colors.accent,
-          shadowOpacity: dragging ? 0.38 : 0.18,
-          shadowRadius: dragging ? 14 : 8,
+          borderColor,
+          borderWidth: selected ? 3 : 2,
+          shadowColor: selected ? theme.colors.warning : theme.colors.accent,
+          shadowOpacity: dragging ? 0.38 : selected ? 0.5 : 0.18,
+          shadowRadius: dragging ? 14 : selected ? 12 : 8,
           shadowOffset: { width: 0, height: dragging ? 10 : 4 },
-          elevation: dragging ? 10 : 4,
-          transform: [{ scale: dragging ? 1.04 : 1 }],
-          zIndex: dragging ? 30 : 10,
+          elevation: dragging ? 10 : selected ? 8 : 4,
+          transform: [{ scale: dragging ? 1.04 : selected ? 1.06 : 1 }],
+          zIndex: dragging ? 30 : selected ? 20 : 10,
           opacity: editable ? 1 : 0.96,
         },
       ]}
@@ -569,7 +686,11 @@ function DraggableFieldToken({
         colors={
           hasPhoto
             ? ['rgba(6,10,8,0.02)', 'rgba(6,10,8,0.16)', 'rgba(6,10,8,0.92)']
-            : [`${theme.colors.primary}00`, `${theme.colors.primary}CC`, `${theme.colors.primary}F2`]
+            : [
+                `${theme.colors.primary}00`,
+                `${theme.colors.primary}CC`,
+                `${theme.colors.primary}F2`,
+              ]
         }
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
@@ -592,11 +713,12 @@ function DraggableFieldToken({
           styles.numberBadge,
           styles.fieldBadge,
           {
-            backgroundColor: theme.colors.accent,
+            backgroundColor: selected ? theme.colors.warning : theme.colors.accent,
             borderColor: 'rgba(255,255,255,0.2)',
           },
-        ]}>
-        <Text style={[styles.numberText, { color: accentColor }]}>
+        ]}
+      >
+        <Text style={[styles.numberText, { color: selected ? '#102118' : accentColor }]}>
           {player.jerseyNumber}
         </Text>
       </View>
@@ -620,6 +742,7 @@ const MemoDraggableFieldToken = memo(
     prev.label === next.label &&
     prev.nodeSize === next.nodeSize &&
     prev.editable === next.editable &&
+    prev.selected === next.selected &&
     prev.containerSize.width === next.containerSize.width &&
     prev.containerSize.height === next.containerSize.height &&
     prev.initialPosition.left === next.initialPosition.left &&
@@ -630,11 +753,13 @@ function BenchPlayerCard({
   player,
   nodeSize,
   editable,
+  selected = false,
   onPress,
 }: {
   player: Player;
   nodeSize: number;
   editable: boolean;
+  selected?: boolean;
   onPress: () => void;
 }) {
   const theme = useAppTheme();
@@ -649,13 +774,20 @@ function BenchPlayerCard({
         {
           width: Math.max(nodeSize + 30, 124),
           backgroundColor: theme.colors.surface,
-          borderColor: `${theme.colors.secondary}55`,
+          borderColor: selected
+            ? theme.colors.warning
+            : `${theme.colors.secondary}55`,
+          borderWidth: selected ? 2 : 1,
           opacity: editable ? 1 : 0.88,
         },
       ]}
     >
       <LinearGradient
-        colors={[`${theme.colors.primary}1F`, `${theme.colors.secondary}12`, 'transparent']}
+        colors={
+          selected
+            ? [`${theme.colors.warning}22`, `${theme.colors.warning}08`, 'transparent']
+            : [`${theme.colors.primary}1F`, `${theme.colors.secondary}12`, 'transparent']
+        }
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.benchGlow}
@@ -666,12 +798,19 @@ function BenchPlayerCard({
           styles.numberBadge,
           styles.benchBadge,
           {
-            backgroundColor: theme.colors.primary,
-            borderColor: `${theme.colors.primary}66`,
+            backgroundColor: selected ? theme.colors.warning : theme.colors.primary,
+            borderColor: selected
+              ? `${theme.colors.warning}66`
+              : `${theme.colors.primary}66`,
           },
         ]}
       >
-        <Text style={[styles.numberText, { color: pickContrastText(theme.colors.primary) }]}>
+        <Text
+          style={[
+            styles.numberText,
+            { color: selected ? '#102118' : pickContrastText(theme.colors.primary) },
+          ]}
+        >
           {player.jerseyNumber}
         </Text>
       </View>
@@ -695,10 +834,18 @@ function BenchPlayerCard({
         <View
           style={[
             styles.benchActionWrap,
-            { backgroundColor: theme.colors.primarySoft, borderColor: `${theme.colors.primary}22` },
-          ]}>
+            {
+              backgroundColor: selected
+                ? `${theme.colors.warning}22`
+                : theme.colors.primarySoft,
+              borderColor: selected
+                ? `${theme.colors.warning}44`
+                : `${theme.colors.primary}22`,
+            },
+          ]}
+        >
           <Text style={[styles.benchAction, { color: theme.colors.text }]}>
-            Adicionar
+            {selected ? 'Selecionado' : 'Adicionar'}
           </Text>
         </View>
       ) : null}
@@ -728,9 +875,7 @@ function getNextStarterPosition(starters: LineupNode[]) {
       !starters.some((node) => distance(node.x, node.y, candidate.x, candidate.y) < 12),
   );
 
-  if (freeCandidate) {
-    return freeCandidate;
-  }
+  if (freeCandidate) return freeCandidate;
 
   const fallback = candidates[starters.length % candidates.length] ?? { x: 50, y: 82 };
   const offset = Math.floor(starters.length / Math.max(candidates.length, 1)) * 4;
@@ -766,23 +911,15 @@ function resolveFieldHeight(width: number) {
 }
 
 function resolveNodeSize(width: number) {
-  if (width <= 340) {
-    return 80;
-  }
-
-  if (width <= 390) {
-    return 88;
-  }
-
+  if (width <= 340) return 80;
+  if (width <= 390) return 88;
   return 96;
 }
 
 function pickContrastText(color: string) {
   const normalized = color.replace('#', '');
 
-  if (normalized.length !== 6) {
-    return '#F3F7F3';
-  }
+  if (normalized.length !== 6) return '#F3F7F3';
 
   const red = Number.parseInt(normalized.slice(0, 2), 16);
   const green = Number.parseInt(normalized.slice(2, 4), 16);
@@ -797,16 +934,37 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 30,
     padding: 10,
-    position: 'relative',
-    overflow: 'hidden',
     width: '100%',
     maxWidth: 580,
     alignSelf: 'center',
+    overflow: 'hidden',
+  },
+  swapBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 10,
+    gap: 12,
+  },
+  swapBannerText: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+    flex: 1,
+  },
+  swapBannerCancel: {
+    fontFamily: fonts.heading,
+    fontSize: 12,
+    fontWeight: '700',
   },
   field: {
     borderRadius: 22,
     overflow: 'hidden',
-    position: 'relative',
+    width: '100%',
   },
   logoWatermark: {
     position: 'absolute',
@@ -887,15 +1045,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
   },
   benchPanel: {
-    position: 'absolute',
-    left: 10,
-    right: 10,
+    marginTop: 18,
     borderWidth: 1,
     borderRadius: 22,
     paddingHorizontal: 14,
     paddingTop: 12,
     paddingBottom: 14,
     gap: 10,
+    minHeight: 140,
   },
   benchTitle: {
     fontFamily: fonts.heading,
@@ -910,6 +1067,7 @@ const styles = StyleSheet.create({
   benchScrollContent: {
     gap: 10,
     paddingRight: 8,
+    alignItems: 'center',
   },
   fieldNode: {
     position: 'absolute',

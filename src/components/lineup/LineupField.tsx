@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Modal,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -29,7 +30,6 @@ interface LineupFieldProps {
   teamLogoUrl?: string | null;
   editable?: boolean;
   onChange: (next: { starters: LineupNode[]; benchPlayerIds: string[] }) => void;
-  /** Mantido por compatibilidade com o Screen pai; não usado sem drag. */
   onDragStateChange?: (dragging: boolean) => void;
 }
 
@@ -45,7 +45,6 @@ interface ActionTarget {
 interface PickerConfig {
   title: string;
   hint?: string;
-  /** IDs dos candidatos a escolher (titulares ou reservas conforme o contexto). */
   candidateIds: string[];
   onSelect: (candidateId: string) => void;
 }
@@ -63,16 +62,17 @@ export function LineupField({
   teamLogoUrl,
   editable = true,
   onChange,
+  onDragStateChange,
 }: LineupFieldProps) {
   const theme = useAppTheme();
   const [fieldWidth, setFieldWidth] = useState(320);
+  const [positioningMode, setPositioningMode] = useState(false);
   const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
   const [pickerConfig, setPickerConfig] = useState<PickerConfig | null>(null);
 
   const nodeSize = resolveNodeSize(fieldWidth);
   const fieldHeight = resolveFieldHeight(fieldWidth);
 
-  // Refs sempre atualizados para uso dentro de closures
   const startersRef = useRef(starters);
   const benchRef = useRef(benchPlayerIds);
   useEffect(() => { startersRef.current = starters; }, [starters]);
@@ -84,7 +84,7 @@ export function LineupField({
   );
 
   // ---------------------------------------------------------------------------
-  // Core mutations — todas lêem do ref para evitar stale closures
+  // Core mutations
   // ---------------------------------------------------------------------------
 
   const commit = useCallback(
@@ -158,8 +158,38 @@ export function LineupField({
     [commit],
   );
 
+  // Atualiza posição do titular após drag (converte pixels → porcentagem)
+  const updateStarterPosition = useCallback(
+    (playerId: string, center: { x: number; y: number }) => {
+      const x = Number(((center.x / fieldWidth) * 100).toFixed(1));
+      const y = Number(((center.y / fieldHeight) * 100).toFixed(1));
+      if (__DEV__) console.log('[lineup-drag] position updated', { playerId, x, y });
+      commit(
+        startersRef.current.map((node) =>
+          node.playerId === playerId
+            ? { ...node, x, y, zone: inferLineupZone(y) }
+            : node,
+        ),
+        benchRef.current,
+      );
+    },
+    [commit, fieldWidth, fieldHeight],
+  );
+
   // ---------------------------------------------------------------------------
-  // Tap handlers — abrem ActionModal
+  // Positioning mode
+  // ---------------------------------------------------------------------------
+
+  const togglePositioningMode = useCallback(() => {
+    setPositioningMode((prev) => {
+      const next = !prev;
+      if (__DEV__) console.log('[lineup-drag] positioning mode', next ? 'on' : 'off');
+      return next;
+    });
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Tap handlers — abrem ActionModal (só no modo ação)
   // ---------------------------------------------------------------------------
 
   const handleStarterPress = useCallback(
@@ -240,7 +270,6 @@ export function LineupField({
       addBenchToField(benchPlayerId);
       closeAction();
     } else {
-      // Campo cheio — escolher qual titular trocar
       if (__DEV__) console.log('[lineup-ui] action panel opened', { type: 'picker-field-full', benchPlayerId });
       setActionTarget(null);
       setPickerConfig({
@@ -296,6 +325,47 @@ export function LineupField({
       ]}
       onLayout={(e) => handleLayout(e.nativeEvent.layout.width)}
     >
+      {/* ── Botão modo posicionar ── */}
+      {editable ? (
+        <Pressable
+          style={[
+            styles.posModeBtn,
+            {
+              backgroundColor: positioningMode
+                ? `${theme.colors.warning ?? '#F5A623'}22`
+                : theme.colors.primarySoft,
+              borderColor: positioningMode
+                ? (theme.colors.warning ?? '#F5A623')
+                : `${theme.colors.accent}44`,
+            },
+          ]}
+          onPress={togglePositioningMode}
+        >
+          <Text style={[styles.posModeBtnText, {
+            color: positioningMode
+              ? (theme.colors.warning ?? '#F5A623')
+              : theme.colors.text,
+          }]}>
+            {positioningMode ? '✓  Concluir posicionamento' : '↕  Mover jogadores'}
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {/* ── Banner modo posicionar ── */}
+      {positioningMode ? (
+        <View style={[
+          styles.posBanner,
+          {
+            backgroundColor: `${theme.colors.warning ?? '#F5A623'}18`,
+            borderColor: `${theme.colors.warning ?? '#F5A623'}55`,
+          },
+        ]}>
+          <Text style={[styles.posBannerText, { color: theme.colors.text }]}>
+            Arraste os jogadores no campo para reposicioná-los
+          </Text>
+        </View>
+      ) : null}
+
       {/* ── Campo ── */}
       <LinearGradient
         colors={[`${theme.colors.primary}66`, theme.colors.fieldStripe, theme.colors.field]}
@@ -323,12 +393,27 @@ export function LineupField({
           <View style={[styles.goalBottom, { borderColor: `${theme.colors.secondary}55` }]} />
         </View>
 
-        {/* Tokens dos titulares — Pressable direto, sem PanResponder */}
+        {/* Tokens dos titulares:
+            - modo ação: Pressable direto → abre modal
+            - modo posicionar: PanResponder com threshold → arrasta */}
         {starters.map((node) => {
           const player = playerById.get(node.playerId);
           if (!player) return null;
           const pos = toFieldPixels(node, fieldWidth, fieldHeight, nodeSize);
-          return (
+          return positioningMode ? (
+            <DraggableToken
+              key={`drag-${node.playerId}`}
+              player={player}
+              label={node.label}
+              left={pos.left}
+              top={pos.top}
+              nodeSize={nodeSize}
+              fieldWidth={fieldWidth}
+              fieldHeight={fieldHeight}
+              onMove={updateStarterPosition}
+              onDragStateChange={onDragStateChange}
+            />
+          ) : (
             <FieldToken
               key={`field-${node.playerId}`}
               player={player}
@@ -342,8 +427,8 @@ export function LineupField({
           );
         })}
 
-        {/* Botão "Adicionar" visível quando há espaço e há reservas */}
-        {editable && canAdd ? (
+        {/* Botão "Adicionar" — só no modo ação */}
+        {!positioningMode && editable && canAdd ? (
           <Pressable
             style={[
               styles.addSlotBtn,
@@ -374,7 +459,6 @@ export function LineupField({
             : 'Escalação em modo visualização.'}
         </Text>
 
-        {/* Uso de layout em colunas para evitar conflito de gesture do ScrollView horizontal */}
         <View style={styles.benchGrid}>
           {benchPlayerIds.length === 0 ? (
             <Text style={[styles.emptyBenchText, { color: theme.colors.textMuted }]}>
@@ -405,7 +489,6 @@ export function LineupField({
         onRequestClose={closeAction}
       >
         <Pressable style={styles.backdrop} onPress={closeAction}>
-          {/* Pressable interno consome o toque para não fechar o modal */}
           <Pressable
             style={[
               styles.actionCard,
@@ -555,7 +638,7 @@ export function LineupField({
 }
 
 // ---------------------------------------------------------------------------
-// FieldToken — Pressable simples, sem PanResponder
+// FieldToken — Pressable puro (modo ação)
 // ---------------------------------------------------------------------------
 
 function FieldToken({
@@ -652,6 +735,228 @@ function FieldToken({
         </Text>
       </View>
     </Pressable>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DraggableToken — PanResponder com threshold (modo posicionar)
+// Nunca usa onStartShouldSetPanResponder: () => true
+// Só captura o gesto após 8px de movimento (onMoveShouldSetPanResponder)
+// ---------------------------------------------------------------------------
+
+function DraggableToken({
+  player,
+  label,
+  left: initialLeft,
+  top: initialTop,
+  nodeSize,
+  fieldWidth,
+  fieldHeight,
+  onMove,
+  onDragStateChange,
+}: {
+  player: Player;
+  label?: string | null;
+  left: number;
+  top: number;
+  nodeSize: number;
+  fieldWidth: number;
+  fieldHeight: number;
+  onMove: (playerId: string, center: { x: number; y: number }) => void;
+  onDragStateChange?: (dragging: boolean) => void;
+}) {
+  const theme = useAppTheme();
+  const hasPhoto = Boolean(player.photoUrl);
+  const accentColor = pickContrastText(theme.colors.accent);
+
+  const [dragging, setDragging] = useState(false);
+  const [position, setPosition] = useState({ left: initialLeft, top: initialTop });
+
+  const startRef = useRef({ left: initialLeft, top: initialTop });
+  const latestRef = useRef({ left: initialLeft, top: initialTop });
+  const draggingRef = useRef(false);
+
+  // Refs para valores dinâmicos acessados dentro do PanResponder (criado uma vez)
+  const fieldWidthRef = useRef(fieldWidth);
+  const fieldHeightRef = useRef(fieldHeight);
+  const nodeSizeRef = useRef(nodeSize);
+  const onMoveRef = useRef(onMove);
+  const onDragStateRef = useRef(onDragStateChange);
+  const playerIdRef = useRef(player.id);
+
+  useEffect(() => { fieldWidthRef.current = fieldWidth; }, [fieldWidth]);
+  useEffect(() => { fieldHeightRef.current = fieldHeight; }, [fieldHeight]);
+  useEffect(() => { nodeSizeRef.current = nodeSize; }, [nodeSize]);
+  useEffect(() => { onMoveRef.current = onMove; }, [onMove]);
+  useEffect(() => { onDragStateRef.current = onDragStateChange; }, [onDragStateChange]);
+  useEffect(() => { playerIdRef.current = player.id; }, [player.id]);
+
+  // Sincroniza posição visual quando as props mudam (ex: organizar automaticamente)
+  useEffect(() => {
+    if (!draggingRef.current) {
+      const newPos = { left: initialLeft, top: initialTop };
+      setPosition((curr) => {
+        if (Math.abs(curr.left - newPos.left) < 1 && Math.abs(curr.top - newPos.top) < 1) {
+          return curr;
+        }
+        return newPos;
+      });
+      startRef.current = newPos;
+      latestRef.current = newPos;
+    }
+  }, [initialLeft, initialTop]);
+
+  // PanResponder criado uma vez — todos os valores dinâmicos via refs
+  const responder = useMemo(
+    () =>
+      PanResponder.create({
+        // NÃO captura no início do toque (esse era o bug original)
+        onStartShouldSetPanResponder: () => false,
+        // Captura apenas após 8px de movimento
+        onMoveShouldSetPanResponder: (_, gesture) =>
+          Math.abs(gesture.dx) > 8 || Math.abs(gesture.dy) > 8,
+        // Não cede o responder a outro elemento durante o drag
+        onPanResponderTerminationRequest: () => false,
+
+        onPanResponderGrant: () => {
+          draggingRef.current = true;
+          startRef.current = latestRef.current;
+          setDragging(true);
+          onDragStateRef.current?.(true);
+          if (__DEV__) console.log('[lineup-drag] drag start', { playerId: playerIdRef.current });
+        },
+
+        onPanResponderMove: (_, gesture) => {
+          const fw = fieldWidthRef.current;
+          const fh = fieldHeightRef.current;
+          const ns = nodeSizeRef.current;
+          const nextLeft = clamp(startRef.current.left + gesture.dx, 0, fw - ns);
+          const nextTop = clamp(startRef.current.top + gesture.dy, 0, fh - ns);
+          setPosition({ left: nextLeft, top: nextTop });
+          latestRef.current = { left: nextLeft, top: nextTop };
+          if (__DEV__) console.log('[lineup-drag] drag move', { left: nextLeft, top: nextTop });
+        },
+
+        onPanResponderRelease: (_, gesture) => {
+          const fw = fieldWidthRef.current;
+          const fh = fieldHeightRef.current;
+          const ns = nodeSizeRef.current;
+          const finalLeft = clamp(startRef.current.left + gesture.dx, 0, fw - ns);
+          const finalTop = clamp(startRef.current.top + gesture.dy, 0, fh - ns);
+
+          draggingRef.current = false;
+          setDragging(false);
+          onDragStateRef.current?.(false);
+
+          const finalPos = { left: finalLeft, top: finalTop };
+          setPosition(finalPos);
+          startRef.current = finalPos;
+          latestRef.current = finalPos;
+
+          if (__DEV__) console.log('[lineup-drag] drag end', { finalLeft, finalTop });
+          if (__DEV__) {
+            const fw2 = fieldWidthRef.current;
+            const fh2 = fieldHeightRef.current;
+            const ns2 = nodeSizeRef.current;
+            const x = Number((((finalLeft + ns2 / 2) / fw2) * 100).toFixed(1));
+            const y = Number((((finalTop + ns2 / 2) / fh2) * 100).toFixed(1));
+            console.log('[lineup-drag] position updated', { playerId: playerIdRef.current, x, y });
+          }
+
+          onMoveRef.current(playerIdRef.current, {
+            x: finalLeft + ns / 2,
+            y: finalTop + ns / 2,
+          });
+        },
+
+        onPanResponderTerminate: () => {
+          draggingRef.current = false;
+          setDragging(false);
+          onDragStateRef.current?.(false);
+          setPosition(startRef.current);
+          latestRef.current = startRef.current;
+        },
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  return (
+    <View
+      {...responder.panHandlers}
+      style={[
+        styles.fieldToken,
+        {
+          left: position.left,
+          top: position.top,
+          width: nodeSize,
+          minHeight: nodeSize,
+          backgroundColor: theme.colors.primary,
+          borderColor: dragging ? theme.colors.accent : `${theme.colors.secondary}AA`,
+          borderWidth: dragging ? 3 : 2,
+          shadowColor: theme.colors.accent,
+          shadowOpacity: dragging ? 0.45 : 0.2,
+          shadowRadius: dragging ? 18 : 8,
+          shadowOffset: { width: 0, height: dragging ? 10 : 4 },
+          elevation: dragging ? 12 : 4,
+          transform: [{ scale: dragging ? 1.06 : 1 }],
+          zIndex: dragging ? 30 : 10,
+        },
+      ]}
+    >
+      {hasPhoto ? (
+        <Image source={{ uri: player.photoUrl ?? undefined }} style={styles.tokenPhoto} />
+      ) : (
+        <LinearGradient
+          colors={[theme.colors.primary, theme.colors.secondary]}
+          start={{ x: 0.1, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+      )}
+
+      <LinearGradient
+        colors={
+          hasPhoto
+            ? ['rgba(6,10,8,0.02)', 'rgba(6,10,8,0.18)', 'rgba(6,10,8,0.9)']
+            : [`${theme.colors.primary}00`, `${theme.colors.primary}CC`, `${theme.colors.primary}F2`]
+        }
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+
+      {!hasPhoto ? (
+        <View style={styles.tokenFallback}>
+          <Avatar
+            name={player.nickname}
+            photoUrl={player.photoUrl}
+            size={nodeSize < 88 ? 40 : 46}
+            accent="rgba(255,255,255,0.16)"
+          />
+        </View>
+      ) : null}
+
+      <View
+        style={[
+          styles.tokenBadge,
+          {
+            backgroundColor: dragging ? theme.colors.accent : theme.colors.accent,
+            borderColor: 'rgba(255,255,255,0.2)',
+          },
+        ]}
+      >
+        <Text style={[styles.tokenBadgeText, { color: accentColor }]}>
+          {player.jerseyNumber}
+        </Text>
+      </View>
+
+      <View style={styles.tokenNameWrap}>
+        <Text numberOfLines={1} style={styles.tokenName}>
+          {label?.trim() || player.nickname}
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -804,6 +1109,39 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
+  // Positioning mode toggle button
+  posModeBtn: {
+    alignSelf: 'center',
+    marginBottom: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    alignItems: 'center',
+  },
+  posModeBtnText: {
+    fontFamily: fonts.heading,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  // Positioning mode banner
+  posBanner: {
+    marginBottom: 8,
+    marginHorizontal: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  posBannerText: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+
   // Field
   field: {
     borderRadius: 22,
@@ -850,7 +1188,7 @@ const styles = StyleSheet.create({
     width: '22%', height: 18, borderWidth: 1, borderBottomWidth: 0,
   },
 
-  // Field token
+  // Field token (shared between FieldToken e DraggableToken)
   fieldToken: {
     position: 'absolute',
     borderRadius: 24,
@@ -938,7 +1276,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
   },
-  // Grid flexível — evita conflito de gestos do ScrollView horizontal
   benchGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

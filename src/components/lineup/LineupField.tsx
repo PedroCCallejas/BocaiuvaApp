@@ -89,6 +89,7 @@ export function LineupField({
 
   const commit = useCallback(
     (nextStarters: LineupNode[], nextBench: string[]) => {
+      if (__DEV__) console.log('[lineup-ui] onChange fired', { starters: nextStarters.length, bench: nextBench.length });
       onChange({ starters: nextStarters, benchPlayerIds: nextBench });
     },
     [onChange],

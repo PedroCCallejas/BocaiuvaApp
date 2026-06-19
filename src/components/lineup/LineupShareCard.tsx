@@ -20,7 +20,8 @@ interface LineupShareCardProps {
   };
 }
 
-const TOKEN_SIZE = 68;
+const TOKEN_SIZE = 72;
+const BENCH_PHOTO_SIZE = 36;
 
 export function LineupShareCard({
   teamName,
@@ -38,16 +39,13 @@ export function LineupShareCard({
   );
   const accent = colors.accent?.trim() || '#F4C542';
   const crestText = pickContrastText(accent);
-  const shouldRenderLogo =
-    Boolean(teamLogoUrl) &&
-    (
-      Platform.OS !== 'web' ||
-      teamLogoUrl?.startsWith('data:image/') ||
-      teamLogoUrl?.startsWith('blob:')
-    );
+
+  const shouldRenderLogo = Boolean(teamLogoUrl);
+
   const benchPlayers = benchPlayerIds
     .map((playerId) => playerById.get(playerId))
     .filter((player): player is Player => Boolean(player));
+
   const visibleStarters = starters
     .map((node) => ({ node, player: playerById.get(node.playerId) }))
     .filter(
@@ -61,13 +59,14 @@ export function LineupShareCard({
       end={{ x: 1, y: 1 }}
       style={styles.card}
     >
+      {/* ── Header ── */}
       <View style={styles.hero}>
         <View style={styles.heroCopy}>
           <Text numberOfLines={2} style={styles.teamName}>
             {teamName}
           </Text>
           <Text numberOfLines={2} style={styles.matchTitle}>
-            {opponentName}
+            vs {opponentName}
           </Text>
           {matchLabel ? (
             <Text numberOfLines={2} style={styles.matchLabel}>
@@ -78,7 +77,11 @@ export function LineupShareCard({
 
         <View style={[styles.crest, { backgroundColor: accent }]}>
           {shouldRenderLogo ? (
-            <Image source={{ uri: teamLogoUrl ?? undefined }} resizeMode="contain" style={styles.crestImage} />
+            <Image
+              source={{ uri: teamLogoUrl ?? undefined }}
+              resizeMode="contain"
+              style={styles.crestImage}
+            />
           ) : (
             <Text style={[styles.crestText, { color: crestText }]}>
               {buildInitials(teamName)}
@@ -87,101 +90,163 @@ export function LineupShareCard({
         </View>
       </View>
 
+      {/* ── Campo ── */}
       <View style={styles.fieldShell}>
         <LinearGradient
-          colors={['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.02)']}
+          colors={['rgba(11,94,45,0.95)', 'rgba(7,62,30,0.98)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={styles.fieldGlow}
+          style={StyleSheet.absoluteFillObject}
         />
 
-        <View style={styles.field}>
+        {/* Decorações do campo */}
+        <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
           <View style={styles.pitchStripeLeft} />
           <View style={styles.pitchStripeRight} />
           <View style={styles.centerLine} />
           <View style={styles.centerCircle} />
           <View style={styles.boxTop} />
           <View style={styles.boxBottom} />
+          <View style={styles.goalTop} />
+          <View style={styles.goalBottom} />
+        </View>
 
-          {visibleStarters.map(({ node, player }) => {
-            const label = node.label?.trim() || player.nickname;
+        {/* Watermark logo no campo */}
+        {shouldRenderLogo && Platform.OS !== 'web' ? (
+          <Image
+            source={{ uri: teamLogoUrl ?? undefined }}
+            resizeMode="contain"
+            style={styles.fieldLogoWatermark}
+          />
+        ) : null}
 
-            return (
-              <View
-                key={player.id}
-                style={[
-                  styles.token,
-                  {
-                    left: `${clamp(node.x, 8, 92)}%`,
-                    top: `${clamp(node.y, 10, 90)}%`,
-                    marginLeft: -(TOKEN_SIZE / 2),
-                    marginTop: -(TOKEN_SIZE / 2),
-                    backgroundColor: 'rgba(8,20,12,0.82)',
-                    borderColor: accent,
-                  },
-                ]}
-              >
-                <View style={[styles.tokenBadge, { backgroundColor: accent }]}>
-                  <Text style={[styles.tokenBadgeText, { color: crestText }]}>
-                    {player.jerseyNumber}
+        {/* Tokens dos titulares */}
+        {visibleStarters.map(({ node, player }) => {
+          const label = node.label?.trim() || player.nickname;
+          const hasPhoto = Boolean(player.photoUrl);
+
+          return (
+            <View
+              key={player.id}
+              style={[
+                styles.token,
+                {
+                  left: `${clamp(node.x, 8, 92)}%`,
+                  top: `${clamp(node.y, 10, 90)}%`,
+                  marginLeft: -(TOKEN_SIZE / 2),
+                  marginTop: -(TOKEN_SIZE / 2),
+                  borderColor: accent,
+                },
+              ]}
+            >
+              {hasPhoto ? (
+                <Image
+                  source={{ uri: player.photoUrl ?? undefined }}
+                  style={styles.tokenPhoto}
+                />
+              ) : (
+                <LinearGradient
+                  colors={[colors.primary, mixColor(colors.primary, colors.secondary, 0.6)]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFillObject}
+                />
+              )}
+
+              <LinearGradient
+                colors={['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)']}
+                start={{ x: 0.5, y: 0 }}
+                end={{ x: 0.5, y: 1 }}
+                style={StyleSheet.absoluteFillObject}
+              />
+
+              {!hasPhoto ? (
+                <View style={styles.tokenInitialsWrap}>
+                  <Text style={styles.tokenInitialsText}>
+                    {buildInitials(player.nickname)}
                   </Text>
                 </View>
-                <Text numberOfLines={2} style={styles.tokenName}>
+              ) : null}
+
+              <View style={[styles.tokenBadge, { backgroundColor: accent }]}>
+                <Text style={[styles.tokenBadgeText, { color: crestText }]}>
+                  {player.jerseyNumber}
+                </Text>
+              </View>
+
+              <View style={styles.tokenNameWrap}>
+                <Text numberOfLines={1} style={styles.tokenName}>
                   {label}
                 </Text>
               </View>
-            );
-          })}
-        </View>
-      </View>
-
-      <View style={styles.benchSection}>
-        <Text style={styles.sectionLabel}>Banco</Text>
-        <View style={styles.benchWrap}>
-          {benchPlayers.length === 0 ? (
-            <View style={styles.emptyBenchChip}>
-              <Text style={styles.emptyBenchText}>Sem reservas nesta arte.</Text>
             </View>
-          ) : (
-            benchPlayers.map((player) => (
-              <View key={player.id} style={styles.benchChip}>
-                <Text style={styles.benchNumber}>#{player.jerseyNumber}</Text>
-                <Text numberOfLines={1} style={styles.benchName}>
-                  {player.nickname}
-                </Text>
-              </View>
-            ))
-          )}
-        </View>
+          );
+        })}
       </View>
 
-      <Text style={styles.watermark}>Gerado no Professo FC</Text>
+      {/* ── Banco ── */}
+      {benchPlayers.length > 0 ? (
+        <View style={styles.benchSection}>
+          <Text style={styles.sectionLabel}>Banco</Text>
+          <View style={styles.benchWrap}>
+            {benchPlayers.map((player) => {
+              const hasPhoto = Boolean(player.photoUrl);
+              return (
+                <View key={player.id} style={styles.benchChip}>
+                  <View style={styles.benchPhotoWrap}>
+                    {hasPhoto ? (
+                      <Image
+                        source={{ uri: player.photoUrl ?? undefined }}
+                        style={styles.benchPhoto}
+                      />
+                    ) : (
+                      <LinearGradient
+                        colors={[colors.primary, mixColor(colors.primary, colors.secondary, 0.5)]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={StyleSheet.absoluteFillObject}
+                      />
+                    )}
+                    {!hasPhoto ? (
+                      <Text style={styles.benchInitialsText}>
+                        {buildInitials(player.nickname)}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.benchChipText}>
+                    <Text style={[styles.benchNumber, { color: accent }]}>
+                      #{player.jerseyNumber}
+                    </Text>
+                    <Text numberOfLines={1} style={styles.benchName}>
+                      {player.nickname}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
+      <Text style={styles.watermark}>Gerado no Professô FC</Text>
     </LinearGradient>
   );
 }
 
 function buildInitials(value: string) {
   const normalized = value.trim();
-  if (!normalized) {
-    return 'PF';
-  }
-
+  if (!normalized) return 'PF';
   const parts = normalized.split(/\s+/).filter(Boolean);
   const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '');
-
   return initials.join('') || normalized.slice(0, 2).toUpperCase();
 }
 
 function pickContrastText(color: string) {
   const normalized = color.replace('#', '');
-  if (normalized.length !== 6) {
-    return '#F5F7F6';
-  }
-
+  if (normalized.length !== 6) return '#F5F7F6';
   const r = parseInt(normalized.slice(0, 2), 16);
   const g = parseInt(normalized.slice(2, 4), 16);
   const b = parseInt(normalized.slice(4, 6), 16);
-
   return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? '#102118' : '#F5F7F6';
 }
 
@@ -189,16 +254,12 @@ function mixColor(left: string, right: string, ratio: number) {
   const safeRatio = clamp(ratio, 0, 1);
   const [lr, lg, lb] = hexToRgb(left);
   const [rr, rg, rb] = hexToRgb(right);
-
   return `rgb(${Math.round(lr + (rr - lr) * safeRatio)}, ${Math.round(lg + (rg - lg) * safeRatio)}, ${Math.round(lb + (rb - lb) * safeRatio)})`;
 }
 
 function hexToRgb(color: string): [number, number, number] {
   const normalized = color.replace('#', '');
-  if (normalized.length !== 6) {
-    return [14, 138, 67];
-  }
-
+  if (normalized.length !== 6) return [14, 138, 67];
   return [
     parseInt(normalized.slice(0, 2), 16),
     parseInt(normalized.slice(2, 4), 16),
@@ -215,42 +276,44 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 1080 / 1350,
     borderRadius: 28,
-    padding: 20,
-    gap: 16,
+    padding: 18,
+    gap: 14,
     overflow: 'hidden',
   },
+
+  // Header
   hero: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 16,
+    gap: 14,
   },
   heroCopy: {
     flex: 1,
-    gap: 4,
+    gap: 3,
   },
   teamName: {
     fontFamily: fonts.heading,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
     color: '#F7FBF8',
   },
   matchTitle: {
     fontFamily: fonts.heading,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
-    color: '#F7FBF8',
+    color: 'rgba(247,251,248,0.9)',
   },
   matchLabel: {
     fontFamily: fonts.body,
-    fontSize: 12,
-    lineHeight: 18,
-    color: 'rgba(247,251,248,0.82)',
+    fontSize: 11,
+    lineHeight: 16,
+    color: 'rgba(247,251,248,0.72)',
   },
   crest: {
-    width: 72,
-    height: 72,
-    borderRadius: 24,
+    width: 68,
+    height: 68,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -263,23 +326,17 @@ const styles = StyleSheet.create({
   },
   crestText: {
     fontFamily: fonts.heading,
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '900',
   },
+
+  // Field
   fieldShell: {
     flex: 1,
-    borderRadius: 24,
+    borderRadius: 22,
     overflow: 'hidden',
-    backgroundColor: 'rgba(7,22,12,0.24)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-  },
-  fieldGlow: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  field: {
-    flex: 1,
-    backgroundColor: 'rgba(16,110,53,0.84)',
+    borderColor: 'rgba(255,255,255,0.12)',
   },
   pitchStripeLeft: {
     position: 'absolute',
@@ -287,7 +344,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     width: '32%',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
   },
   pitchStripeRight: {
     position: 'absolute',
@@ -295,7 +352,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     right: 0,
     width: '32%',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(255,255,255,0.035)',
   },
   centerLine: {
     position: 'absolute',
@@ -303,127 +360,198 @@ const styles = StyleSheet.create({
     right: 0,
     top: '50%',
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.32)',
+    backgroundColor: 'rgba(255,255,255,0.30)',
   },
   centerCircle: {
     position: 'absolute',
     left: '50%',
     top: '50%',
-    width: 112,
-    height: 112,
-    marginLeft: -56,
-    marginTop: -56,
-    borderRadius: 56,
+    width: 108,
+    height: 108,
+    marginLeft: -54,
+    marginTop: -54,
+    borderRadius: 54,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
+    borderColor: 'rgba(255,255,255,0.26)',
   },
   boxTop: {
     position: 'absolute',
     top: 0,
-    left: '23%',
-    width: '54%',
-    height: 84,
+    left: '22%',
+    width: '56%',
+    height: 80,
     borderWidth: 1,
     borderTopWidth: 0,
-    borderColor: 'rgba(255,255,255,0.28)',
+    borderColor: 'rgba(255,255,255,0.26)',
   },
   boxBottom: {
     position: 'absolute',
     bottom: 0,
-    left: '23%',
-    width: '54%',
-    height: 84,
+    left: '22%',
+    width: '56%',
+    height: 80,
     borderWidth: 1,
     borderBottomWidth: 0,
-    borderColor: 'rgba(255,255,255,0.28)',
+    borderColor: 'rgba(255,255,255,0.26)',
   },
+  goalTop: {
+    position: 'absolute',
+    top: 0,
+    left: '39%',
+    width: '22%',
+    height: 16,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: 'rgba(255,255,255,0.26)',
+  },
+  goalBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: '39%',
+    width: '22%',
+    height: 16,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: 'rgba(255,255,255,0.26)',
+  },
+  fieldLogoWatermark: {
+    position: 'absolute',
+    top: '23%',
+    left: '24%',
+    width: '52%',
+    height: '52%',
+    opacity: 0.07,
+  },
+
+  // Token
   token: {
     position: 'absolute',
     width: TOKEN_SIZE,
-    minHeight: TOKEN_SIZE,
-    borderRadius: 20,
+    height: TOKEN_SIZE,
+    borderRadius: 22,
     borderWidth: 2,
-    paddingHorizontal: 8,
-    paddingVertical: 10,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  tokenPhoto: {
+    ...StyleSheet.absoluteFillObject,
+    width: undefined,
+    height: undefined,
+  },
+  tokenInitialsWrap: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    paddingBottom: 16,
+  },
+  tokenInitialsText: {
+    fontFamily: fonts.heading,
+    fontSize: 18,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.7)',
   },
   tokenBadge: {
-    minWidth: 28,
-    height: 28,
-    borderRadius: 14,
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    minWidth: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
+    zIndex: 3,
   },
   tokenBadgeText: {
     fontFamily: fonts.heading,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '900',
+  },
+  tokenNameWrap: {
+    paddingHorizontal: 6,
+    paddingBottom: 6,
   },
   tokenName: {
     fontFamily: fonts.heading,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
-    lineHeight: 13,
     textAlign: 'center',
     color: '#F7FBF8',
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
+
+  // Bench
   benchSection: {
-    gap: 10,
+    gap: 8,
   },
   sectionLabel: {
     fontFamily: fonts.heading,
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '800',
-    color: '#F7FBF8',
+    color: 'rgba(247,251,248,0.8)',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   benchWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
   },
   benchChip: {
-    minHeight: 42,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 16,
-    backgroundColor: 'rgba(6,14,9,0.42)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    paddingRight: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(6,14,9,0.50)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    overflow: 'hidden',
+  },
+  benchPhotoWrap: {
+    width: BENCH_PHOTO_SIZE,
+    height: BENCH_PHOTO_SIZE,
+    borderRadius: BENCH_PHOTO_SIZE / 2,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(10,20,14,0.6)',
+  },
+  benchPhoto: {
+    width: BENCH_PHOTO_SIZE,
+    height: BENCH_PHOTO_SIZE,
+    borderRadius: BENCH_PHOTO_SIZE / 2,
+  },
+  benchInitialsText: {
+    fontFamily: fonts.heading,
+    fontSize: 12,
+    fontWeight: '900',
+    color: 'rgba(255,255,255,0.7)',
+    zIndex: 1,
+  },
+  benchChipText: {
+    gap: 1,
   },
   benchNumber: {
     fontFamily: fonts.heading,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '900',
-    color: '#F4C542',
   },
   benchName: {
     fontFamily: fonts.body,
-    fontSize: 12,
+    fontSize: 11,
     color: '#F7FBF8',
+    maxWidth: 80,
   },
-  emptyBenchChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 16,
-    backgroundColor: 'rgba(6,14,9,0.32)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
-  },
-  emptyBenchText: {
-    fontFamily: fonts.body,
-    fontSize: 12,
-    color: 'rgba(247,251,248,0.82)',
-  },
+
+  // Watermark
   watermark: {
     fontFamily: fonts.body,
-    fontSize: 11,
+    fontSize: 10,
     textAlign: 'right',
-    color: 'rgba(247,251,248,0.72)',
+    color: 'rgba(247,251,248,0.55)',
   },
 });

@@ -339,6 +339,12 @@ export default function LineupScreen() {
     sourceDraftRef.current = editableSourceLineup;
 
     if (isDraggingRef.current || isDragging || isDirtyRef.current) {
+      if (__DEV__) {
+        console.log('[lineup-snapshot] ignored stale', {
+          isDragging: isDraggingRef.current || isDragging,
+          isDirty: isDirtyRef.current,
+        });
+      }
       return;
     }
 
@@ -384,8 +390,8 @@ export default function LineupScreen() {
 
   usePreventRemove(hasUnsavedChanges, (event) => {
     Alert.alert(
-      'Escalacao nao salva',
-      'Voce tem alteracoes pendentes na escalacao. Deseja sair sem salvar?',
+      'Escalação não salva',
+      'Você tem alterações pendentes na escalação. Deseja sair sem salvar?',
       [
         { text: 'Continuar editando', style: 'cancel' },
         {
@@ -447,12 +453,12 @@ export default function LineupScreen() {
   }, [applyDraft, canManage, confirmedPlayers, fallbackPreset]);
 
   const handleSave = useCallback(async () => {
-    if (
-      !canManage ||
-      !currentMatch ||
-      !fallbackPreset ||
-      saveStatusRef.current !== 'dirty'
-    ) {
+    if (!canManage || !currentMatch || !fallbackPreset) {
+      return;
+    }
+
+    if (saveStatusRef.current !== 'dirty') {
+      if (__DEV__) console.warn('[lineup-save] blocked: status is', saveStatusRef.current);
       return;
     }
 
@@ -463,33 +469,21 @@ export default function LineupScreen() {
     });
 
     if (__DEV__) {
-      console.log('[lineup-save] start', {
-        matchId: currentMatch.id,
-        formationKey: payload.formationKey,
-      });
       console.log('[lineup-save] draft before save', {
         formationKey: payload.formationKey,
         starters: payload.starters.length,
         bench: payload.benchPlayerIds.length,
       });
-      console.log('[lineup-save] starters', payload.starters.map((node) => node.playerId));
+      console.log('[lineup-save] starters', payload.starters.map((n) => n.playerId));
       console.log('[lineup-save] bench', payload.benchPlayerIds);
-      console.log('[lineup-save] positions', payload.starters.map((node) => ({
-        id: node.playerId,
-        x: node.x,
-        y: node.y,
-        zone: node.zone,
-      })));
-      console.log('[lineup-save] payload', {
-        matchId: currentMatch.id,
-        formationKey: payload.formationKey,
-        starters: payload.starters,
-        benchPlayerIds: payload.benchPlayerIds,
-      });
+      console.log('[lineup-save] positions', payload.starters.map((n) => ({ id: n.playerId, x: n.x, y: n.y, zone: n.zone })));
+      console.log('[lineup-save] payload', { matchId: currentMatch.id, formationKey: payload.formationKey, starters: payload.starters, benchPlayerIds: payload.benchPlayerIds });
     }
 
     try {
       setSavePhase('saving');
+
+      if (__DEV__) console.log('[lineup-save] firebase write start', { matchId: currentMatch.id });
 
       await saveLineup({
         matchId: currentMatch.id,
@@ -497,6 +491,8 @@ export default function LineupScreen() {
         starters: payload.starters,
         benchPlayerIds: payload.benchPlayerIds,
       });
+
+      if (__DEV__) console.log('[lineup-save] firebase write success', { matchId: currentMatch.id });
 
       sourceDraftRef.current = payload;
       draftRef.current = payload;
@@ -506,15 +502,36 @@ export default function LineupScreen() {
       setSavePhase('saved');
 
       if (__DEV__) {
-        console.log('[lineup-save] success', {
-          matchId: currentMatch.id,
-          formationKey: payload.formationKey,
+        const storeLineups = useAppStore.getState().snapshot.lineups;
+        const savedDoc = storeLineups.find((l) => l.matchId === currentMatch.id) ?? null;
+        console.log('[lineup-save] saved document after write', {
+          found: Boolean(savedDoc),
+          formationKey: savedDoc?.formationKey,
+          starters: savedDoc?.starters.length,
+          bench: savedDoc?.benchPlayerIds.length,
         });
+        if (savedDoc && editablePreset) {
+          const savedState = buildLineupStateFromSource({
+            existingLineup: savedDoc,
+            preset: editablePreset,
+            players: confirmedPlayers,
+          });
+          const isMatch = areLineupStatesEqual(payload, savedState);
+          console.log('[lineup-save] compare draft vs saved', { match: isMatch });
+          if (!isMatch) {
+            console.warn('[lineup-save] MISMATCH', {
+              payloadStarters: payload.starters.map((n) => ({ id: n.playerId, x: n.x, y: n.y })),
+              savedStarters: savedState.starters.map((n) => ({ id: n.playerId, x: n.x, y: n.y })),
+              payloadBench: payload.benchPlayerIds,
+              savedBench: savedState.benchPlayerIds,
+            });
+          }
+        }
       }
 
       Alert.alert(
-        'Escalacao salva',
-        'A distribuicao dos jogadores foi atualizada com sucesso.',
+        'Escalação salva',
+        'A distribuição dos jogadores foi atualizada com sucesso.',
       );
     } catch (error) {
       setSavePhase('dirty');
@@ -523,7 +540,7 @@ export default function LineupScreen() {
       const errorMessage = error instanceof Error ? error.message : 'Tente novamente.';
 
       if (__DEV__) {
-        console.log('[lineup-save] failed', {
+        console.log('[lineup-save] firebase write failed', {
           code: errorCode,
           message: errorMessage,
           error,
@@ -531,11 +548,11 @@ export default function LineupScreen() {
       }
 
       Alert.alert(
-        'Nao foi possivel salvar',
+        'Não foi possível salvar',
         errorCode ? `${errorMessage}\n(${errorCode})` : errorMessage,
       );
     }
-  }, [canManage, currentMatch, fallbackPreset, normalizeDraft, saveLineup, setSavePhase]);
+  }, [canManage, confirmedPlayers, currentMatch, editablePreset, fallbackPreset, normalizeDraft, saveLineup, setSavePhase]);
 
   const handleShareOrDownload = useCallback(
     async (mode: 'share' | 'download') => {
@@ -547,7 +564,7 @@ export default function LineupScreen() {
         if (hasUnsavedChanges) {
           Alert.alert(
             'Salve antes de compartilhar',
-            'A imagem da escalacao so fica disponivel depois que a versao atual for salva.',
+            'A imagem da escalação só fica disponível depois que a versão atual for salva.',
           );
         }
         return;
@@ -582,7 +599,7 @@ export default function LineupScreen() {
 
         if (mode === 'download') {
           if (Platform.OS !== 'web') {
-            throw new Error('O download direto da imagem esta disponivel apenas no navegador.');
+            throw new Error('O download direto da imagem está disponível apenas no navegador.');
           }
 
           downloadDataUri(
@@ -603,7 +620,7 @@ export default function LineupScreen() {
           if (shareAvailable) {
             try {
               await Sharing.shareAsync(imageResult, {
-                dialogTitle: 'Compartilhar escalacao',
+                dialogTitle: 'Compartilhar escalação',
               });
             } catch (error) {
               if (__DEV__) {
@@ -642,13 +659,13 @@ export default function LineupScreen() {
             console.log('[lineup-share] share unavailable');
           }
 
-          throw new Error('O compartilhamento nao esta disponivel neste dispositivo.');
+          throw new Error('O compartilhamento não está disponível neste dispositivo.');
         }
 
         await Sharing.shareAsync(
           imageResult.startsWith('file://') ? imageResult : `file://${imageResult}`,
           {
-            dialogTitle: 'Compartilhar escalacao',
+            dialogTitle: 'Compartilhar escalação',
             mimeType: 'image/png',
           },
         );
@@ -661,7 +678,7 @@ export default function LineupScreen() {
         }
 
         Alert.alert(
-          'Nao foi possivel gerar a imagem da escalacao.',
+          'Não foi possível gerar a imagem da escalação.',
           error instanceof Error ? error.message : 'Tente novamente.',
         );
       } finally {
@@ -675,8 +692,8 @@ export default function LineupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Escalacao indisponivel"
-          description="Nao foi possivel encontrar esta partida ou o time ativo."
+          title="Escalação indisponível"
+          description="Não foi possível encontrar esta partida ou o time ativo."
         />
       </Screen>
     );
@@ -686,8 +703,8 @@ export default function LineupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Sem formacao disponivel"
-          description="Ainda nao encontramos uma formacao compativel com este tipo de partida."
+          title="Sem formação disponível"
+          description="Ainda não encontramos uma formação compatível com este tipo de partida."
         />
       </Screen>
     );
@@ -697,8 +714,8 @@ export default function LineupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Escalacao ainda nao publicada"
-          description="O administrador ainda nao salvou a escalacao desta partida."
+          title="Escalação ainda não publicada"
+          description="O administrador ainda não salvou a escalação desta partida."
         />
       </Screen>
     );
@@ -711,8 +728,8 @@ export default function LineupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Escalacao bloqueada"
-          description="A escalacao pode ser ajustada apenas antes do encerramento da partida."
+          title="Escalação bloqueada"
+          description="A escalação pode ser ajustada apenas antes do encerramento da partida."
         />
       </Screen>
     );
@@ -723,7 +740,7 @@ export default function LineupScreen() {
       <Screen>
         <EmptyState
           title="Sem jogadores confirmados"
-          description="Confirme a presenca do elenco antes de montar a escalacao."
+          description="Confirme a presença do elenco antes de montar a escalação."
         />
       </Screen>
     );
@@ -733,8 +750,8 @@ export default function LineupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Escalacao indisponivel"
-          description="Nao foi possivel carregar a escalacao desta partida."
+          title="Escalação indisponível"
+          description="Não foi possível carregar a escalação desta partida."
         />
       </Screen>
     );
@@ -743,14 +760,14 @@ export default function LineupScreen() {
   return (
     <Screen keyboardAware={false} scrollEnabled={!isDragging}>
       <SectionHeader
-        title="Escalacao visual"
+        title="Escalação visual"
         subtitle={`${currentMatch.opponentName} - ${starterLimit} em campo`}
       />
 
       <Text style={[styles.helper, { color: theme.colors.textMuted }]}>
         {canManage
-          ? 'Toque num jogador para ver opcoes, trocar ou mover para o banco. Arraste para reposicionar no campo.'
-          : 'Somente visualizacao. Apenas administradores podem alterar a escalacao.'}
+          ? 'Toque num jogador para ver opções, trocar ou mover para o banco. Arraste para reposicionar no campo.'
+          : 'Somente visualização. Apenas administradores podem alterar a escalação.'}
       </Text>
 
       <View style={styles.metricsRow}>
@@ -765,7 +782,7 @@ export default function LineupScreen() {
           helper={
             canManage
               ? `${confirmedPlayers.length} confirmados`
-              : `${lineupPlayers.length} na escalacao`
+              : `${lineupPlayers.length} na escalação`
           }
         />
         <MetricCard
@@ -793,25 +810,25 @@ export default function LineupScreen() {
       >
         <Text style={[styles.statusTitle, { color: theme.colors.text }]}>
           {!canManage
-            ? 'Somente visualizacao'
+            ? 'Somente visualização'
             : saveStatus === 'saving'
               ? 'Salvando...'
               : saveStatus === 'saved'
-                ? 'Escalacao salva'
+                ? 'Escalação salva'
                 : saveStatus === 'dirty'
-                  ? 'Escalacao nao salva'
-                  : 'Escalacao pronta'}
+                  ? 'Escalação não salva'
+                  : 'Escalação pronta'}
         </Text>
 
         <Text style={[styles.statusText, { color: theme.colors.textMuted }]}>
           {!canManage
-            ? 'Apenas administradores podem organizar, limpar ou salvar a escalacao.'
+            ? 'Apenas administradores podem organizar, limpar ou salvar a escalação.'
             : saveStatus === 'saving'
-              ? 'Persistindo a distribuicao atual no time.'
+              ? 'Persistindo a distribuição atual no time.'
               : saveStatus === 'saved'
-                ? 'As coordenadas atuais ja estao sincronizadas.'
+                ? 'As coordenadas atuais já estão sincronizadas.'
                 : saveStatus === 'dirty'
-                  ? 'Voce tem alteracoes pendentes. So enviamos para o banco ao tocar em salvar.'
+                  ? 'Você tem alterações pendentes. Só enviamos para o banco ao tocar em salvar.'
                   : 'Mova jogadores livremente e salve apenas quando terminar.'}
         </Text>
       </View>
@@ -868,12 +885,12 @@ export default function LineupScreen() {
             onPress={() => handleAutoArrange()}
           />
           <AppButton
-            label="Limpar escalacao"
+            label="Limpar escalação"
             variant="ghost"
             onPress={handleClearLineup}
           />
           <AppButton
-            label="Salvar escalacao"
+            label="Salvar escalação"
             disabled={saveStatus !== 'dirty'}
             loading={saveStatus === 'saving'}
             onPress={() => void handleSave()}
@@ -887,8 +904,8 @@ export default function LineupScreen() {
             title="Arte para compartilhar"
             subtitle={
               hasUnsavedChanges
-                ? 'Salve a versao atual antes de compartilhar ou baixar a imagem.'
-                : 'Geramos uma arte limpa da escalacao, separada dos botoes de edicao.'
+                ? 'Salve a versão atual antes de compartilhar ou baixar a imagem.'
+                : 'Arte da escalação para compartilhar — separada dos botões de edição.'
             }
           />
 
@@ -917,15 +934,15 @@ export default function LineupScreen() {
           <Text style={[styles.shareHint, { color: theme.colors.textMuted }]}>
             {Platform.OS === 'web'
               ? shareAvailability === 'available'
-                ? 'No navegador compativel voce pode compartilhar ou baixar a imagem PNG.'
-                : 'Se o navegador nao oferecer compartilhamento nativo, o fluxo cai para download do PNG.'
-              : 'No celular, o botao usa o compartilhamento nativo quando ele estiver disponivel.'}
+                ? 'No navegador compatível você pode compartilhar ou baixar a imagem PNG.'
+                : 'Se o navegador não oferecer compartilhamento nativo, o fluxo cai para download do PNG.'
+              : 'No celular, o botão usa o compartilhamento nativo quando disponível.'}
           </Text>
 
           <View style={styles.actionRow}>
             {Platform.OS === 'web' && shareAvailability === 'available' ? (
               <AppButton
-                label="Compartilhar escalacao"
+                label="Compartilhar escalação"
                 variant="secondary"
                 disabled={!canExportLineup || shareAction !== 'idle'}
                 loading={shareAction === 'sharing'}
@@ -935,7 +952,7 @@ export default function LineupScreen() {
 
             {Platform.OS === 'web' ? (
               <AppButton
-                label="Baixar imagem"
+                label="Baixar imagem PNG"
                 variant={shareAvailability === 'available' ? 'ghost' : 'secondary'}
                 disabled={!canExportLineup || shareAction !== 'idle'}
                 loading={shareAction === 'downloading'}
@@ -943,7 +960,7 @@ export default function LineupScreen() {
               />
             ) : (
               <AppButton
-                label="Compartilhar escalacao"
+                label="Compartilhar escalação"
                 variant="secondary"
                 disabled={!canExportLineup || shareAction !== 'idle'}
                 loading={shareAction === 'sharing'}
@@ -987,7 +1004,7 @@ function slugifyShareValue(value: string) {
 
 function downloadDataUri(dataUri: string, fileName: string) {
   if (typeof document === 'undefined') {
-    throw new Error('O navegador nao disponibilizou o download da imagem.');
+    throw new Error('O navegador não disponibilizou o download da imagem.');
   }
 
   const anchor = document.createElement('a');

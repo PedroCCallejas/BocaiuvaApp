@@ -198,6 +198,7 @@ export default function LineupScreen() {
         isDirtyRef.current = false;
       } else {
         isDirtyRef.current = true;
+        if (__DEV__) console.log('[lineup-store] save enabled');
       }
 
       setSaveStatus(

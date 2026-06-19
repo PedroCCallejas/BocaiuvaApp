@@ -1,14 +1,12 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   Image,
-  PanResponder,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
-  type PanResponderGestureState,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -17,6 +15,10 @@ import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { inferLineupZone } from '@/lib/lineup';
 import type { LineupNode, Player } from '@/types/domain';
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
 
 interface LineupFieldProps {
   starters: LineupNode[];
@@ -27,28 +29,30 @@ interface LineupFieldProps {
   teamLogoUrl?: string | null;
   editable?: boolean;
   onChange: (next: { starters: LineupNode[]; benchPlayerIds: string[] }) => void;
+  /** Mantido por compatibilidade com o Screen pai; não usado sem drag. */
   onDragStateChange?: (dragging: boolean) => void;
 }
 
-interface PixelPosition {
-  left: number;
-  top: number;
-}
+// ---------------------------------------------------------------------------
+// Internal types
+// ---------------------------------------------------------------------------
 
-interface PendingSwap {
+interface ActionTarget {
+  type: 'starter' | 'bench';
   playerId: string;
-  type: 'field' | 'bench';
 }
 
-function useLatestRef<T>(value: T) {
-  const ref = useRef(value);
-
-  useEffect(() => {
-    ref.current = value;
-  }, [value]);
-
-  return ref;
+interface PickerConfig {
+  title: string;
+  hint?: string;
+  /** IDs dos candidatos a escolher (titulares ou reservas conforme o contexto). */
+  candidateIds: string[];
+  onSelect: (candidateId: string) => void;
 }
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
 
 export function LineupField({
   starters,
@@ -59,319 +63,240 @@ export function LineupField({
   teamLogoUrl,
   editable = true,
   onChange,
-  onDragStateChange,
 }: LineupFieldProps) {
   const theme = useAppTheme();
   const [fieldWidth, setFieldWidth] = useState(320);
-  const [pendingSwap, setPendingSwap] = useState<PendingSwap | null>(null);
+  const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
+  const [pickerConfig, setPickerConfig] = useState<PickerConfig | null>(null);
 
   const nodeSize = resolveNodeSize(fieldWidth);
-  const benchNodeSize = Math.max(nodeSize - 12, 62);
   const fieldHeight = resolveFieldHeight(fieldWidth);
 
-  const startersRef = useLatestRef(starters);
-  const benchPlayerIdsRef = useLatestRef(benchPlayerIds);
-
-  // Limpa seleção pendente se o jogador selecionado saiu da posição esperada
-  useEffect(() => {
-    if (!pendingSwap) return;
-
-    const { playerId, type } = pendingSwap;
-
-    if (type === 'field' && !starters.some((n) => n.playerId === playerId)) {
-      setPendingSwap(null);
-    } else if (type === 'bench' && !benchPlayerIds.includes(playerId)) {
-      setPendingSwap(null);
-    }
-  }, [starters, benchPlayerIds, pendingSwap]);
+  // Refs sempre atualizados para uso dentro de closures
+  const startersRef = useRef(starters);
+  const benchRef = useRef(benchPlayerIds);
+  useEffect(() => { startersRef.current = starters; }, [starters]);
+  useEffect(() => { benchRef.current = benchPlayerIds; }, [benchPlayerIds]);
 
   const playerById = useMemo(
-    () => new Map(players.map((player) => [player.id, player])),
+    () => new Map(players.map((p) => [p.id, p])),
     [players],
   );
 
+  // ---------------------------------------------------------------------------
+  // Core mutations — todas lêem do ref para evitar stale closures
+  // ---------------------------------------------------------------------------
+
   const commit = useCallback(
-    (nextStarters: LineupNode[], nextBenchPlayerIds: string[]) => {
-      onChange({ starters: nextStarters, benchPlayerIds: nextBenchPlayerIds });
+    (nextStarters: LineupNode[], nextBench: string[]) => {
+      onChange({ starters: nextStarters, benchPlayerIds: nextBench });
     },
     [onChange],
   );
 
-  const updateStarterPosition = useCallback(
-    (playerId: string, center: { x: number; y: number }) => {
-      if (!editable) return;
-
-      const x = Number(((center.x / fieldWidth) * 100).toFixed(1));
-      const y = Number(((center.y / fieldHeight) * 100).toFixed(1));
-
-      commit(
-        startersRef.current.map((node) =>
-          node.playerId === playerId
-            ? { ...node, x, y, zone: inferLineupZone(y) }
-            : node,
-        ),
-        benchPlayerIdsRef.current,
-      );
-    },
-    [benchPlayerIdsRef, commit, editable, fieldHeight, fieldWidth, startersRef],
-  );
-
   const removeStarterToBench = useCallback(
     (playerId: string) => {
-      if (!editable) return;
-
-      const currentStarters = startersRef.current;
-      const currentBenchPlayerIds = benchPlayerIdsRef.current;
-
-      if (currentBenchPlayerIds.includes(playerId)) return;
-
-      if (__DEV__) console.log('[lineup-ui] move to bench', { playerId });
-
+      const curr = startersRef.current;
+      const bench = benchRef.current;
+      if (bench.includes(playerId)) return;
+      if (__DEV__) console.log('[lineup-ui] move applied', { from: 'field', to: 'bench', playerId });
       commit(
-        currentStarters.filter((node) => node.playerId !== playerId),
-        [...currentBenchPlayerIds, playerId],
+        curr.filter((n) => n.playerId !== playerId),
+        [...bench, playerId],
       );
     },
-    [benchPlayerIdsRef, commit, editable, startersRef],
+    [commit],
   );
 
-  const addBenchPlayerToField = useCallback(
+  const addBenchToField = useCallback(
     (playerId: string) => {
-      if (!editable) return;
-
-      const currentStarters = startersRef.current;
-      const currentBenchPlayerIds = benchPlayerIdsRef.current;
-
-      if (currentStarters.some((node) => node.playerId === playerId)) return;
-
-      if (currentStarters.length >= starterLimit) {
-        Alert.alert('Campo cheio', 'Remova um jogador do campo antes de adicionar outro.');
-        return;
-      }
-
-      const position = getNextStarterPosition(currentStarters);
-
-      if (__DEV__) console.log('[lineup-ui] move to starter', { playerId });
-
+      const curr = startersRef.current;
+      const bench = benchRef.current;
+      if (curr.some((n) => n.playerId === playerId)) return;
+      const pos = getNextStarterPosition(curr);
+      if (__DEV__) console.log('[lineup-ui] move applied', { from: 'bench', to: 'field', playerId });
       commit(
         [
-          ...currentStarters,
-          {
-            playerId,
-            x: position.x,
-            y: position.y,
-            zone: inferLineupZone(position.y),
-            label: null,
-          },
+          ...curr,
+          { playerId, x: pos.x, y: pos.y, zone: inferLineupZone(pos.y), label: null },
         ],
-        currentBenchPlayerIds.filter((benchPlayerId) => benchPlayerId !== playerId),
+        bench.filter((id) => id !== playerId),
       );
     },
-    [benchPlayerIdsRef, commit, editable, starterLimit, startersRef],
+    [commit],
   );
 
-  // Troca um titular por um reserva (mantendo a posição do titular no campo)
-  const swapStarterWithBench = useCallback(
+  const swapFieldBench = useCallback(
     (fieldPlayerId: string, benchPlayerId: string) => {
-      if (!editable) return;
-
-      const currentStarters = startersRef.current;
-      const currentBench = benchPlayerIdsRef.current;
-
-      if (__DEV__) console.log('[lineup-ui] swap requested', { fieldPlayerId, benchPlayerId });
-
-      const newStarters = currentStarters.map((node) =>
-        node.playerId === fieldPlayerId ? { ...node, playerId: benchPlayerId } : node,
+      const curr = startersRef.current;
+      const bench = benchRef.current;
+      if (__DEV__) console.log('[lineup-ui] swap applied', { type: 'field-bench', fieldPlayerId, benchPlayerId });
+      commit(
+        curr.map((n) => (n.playerId === fieldPlayerId ? { ...n, playerId: benchPlayerId } : n)),
+        bench.map((id) => (id === benchPlayerId ? fieldPlayerId : id)),
       );
-
-      const newBench = currentBench.map((id) => (id === benchPlayerId ? fieldPlayerId : id));
-
-      commit(newStarters, newBench);
     },
-    [benchPlayerIdsRef, commit, editable, startersRef],
+    [commit],
   );
 
-  // Troca as posições de dois titulares no campo
-  const swapStarterWithStarter = useCallback(
+  const swapFieldField = useCallback(
     (playerIdA: string, playerIdB: string) => {
-      if (!editable) return;
-
-      const currentStarters = startersRef.current;
-
-      if (__DEV__) console.log('[lineup-ui] swap requested (field-field)', { playerIdA, playerIdB });
-
-      const nodeA = currentStarters.find((n) => n.playerId === playerIdA);
-      const nodeB = currentStarters.find((n) => n.playerId === playerIdB);
-
+      const curr = startersRef.current;
+      const nodeA = curr.find((n) => n.playerId === playerIdA);
+      const nodeB = curr.find((n) => n.playerId === playerIdB);
       if (!nodeA || !nodeB) return;
+      if (__DEV__) console.log('[lineup-ui] swap applied', { type: 'field-field', playerIdA, playerIdB });
+      commit(
+        curr.map((n) => {
+          if (n.playerId === playerIdA) return { ...n, x: nodeB.x, y: nodeB.y, zone: nodeB.zone };
+          if (n.playerId === playerIdB) return { ...n, x: nodeA.x, y: nodeA.y, zone: nodeA.zone };
+          return n;
+        }),
+        benchRef.current,
+      );
+    },
+    [commit],
+  );
 
-      const newStarters = currentStarters.map((node) => {
-        if (node.playerId === playerIdA) {
-          return { ...node, x: nodeB.x, y: nodeB.y, zone: nodeB.zone };
-        }
-        if (node.playerId === playerIdB) {
-          return { ...node, x: nodeA.x, y: nodeA.y, zone: nodeA.zone };
-        }
-        return node;
+  // ---------------------------------------------------------------------------
+  // Tap handlers — abrem ActionModal
+  // ---------------------------------------------------------------------------
+
+  const handleStarterPress = useCallback(
+    (playerId: string) => {
+      if (!editable) return;
+      if (__DEV__) console.log('[lineup-ui] starter pressed', { playerId });
+      if (__DEV__) console.log('[lineup-ui] action panel opened', { type: 'starter', playerId });
+      setActionTarget({ type: 'starter', playerId });
+    },
+    [editable],
+  );
+
+  const handleBenchPress = useCallback(
+    (playerId: string) => {
+      if (!editable) return;
+      if (__DEV__) console.log('[lineup-ui] bench player pressed', { playerId });
+      if (__DEV__) console.log('[lineup-ui] action panel opened', { type: 'bench', playerId });
+      setActionTarget({ type: 'bench', playerId });
+    },
+    [editable],
+  );
+
+  const handleAddSlotPress = useCallback(() => {
+    if (!editable || benchPlayerIds.length === 0) return;
+    if (__DEV__) console.log('[lineup-ui] empty slot pressed');
+    if (__DEV__) console.log('[lineup-ui] action panel opened', { type: 'add-slot' });
+    setPickerConfig({
+      title: 'Adicionar ao campo',
+      hint: 'Escolha um reserva para entrar como titular',
+      candidateIds: benchPlayerIds,
+      onSelect: (id) => {
+        if (__DEV__) console.log('[lineup-ui] player picked', { id, action: 'add-to-field' });
+        addBenchToField(id);
+      },
+    });
+  }, [editable, benchPlayerIds, addBenchToField]);
+
+  // ---------------------------------------------------------------------------
+  // ActionModal handlers
+  // ---------------------------------------------------------------------------
+
+  const closeAction = useCallback(() => setActionTarget(null), []);
+  const closePicker = useCallback(() => setPickerConfig(null), []);
+
+  const handleMoveToBench = useCallback(() => {
+    if (actionTarget?.type !== 'starter') return;
+    removeStarterToBench(actionTarget.playerId);
+    closeAction();
+  }, [actionTarget, removeStarterToBench, closeAction]);
+
+  const handleStarterTrocar = useCallback(() => {
+    if (actionTarget?.type !== 'starter') return;
+    const fromId = actionTarget.playerId;
+    const candidateIds = [
+      ...starters.filter((n) => n.playerId !== fromId).map((n) => n.playerId),
+      ...benchPlayerIds,
+    ];
+    if (candidateIds.length === 0) { closeAction(); return; }
+    if (__DEV__) console.log('[lineup-ui] action panel opened', { type: 'picker-swap-from-starter', fromId });
+    setActionTarget(null);
+    setPickerConfig({
+      title: 'Trocar com quem?',
+      hint: 'Escolha um reserva ou outro titular',
+      candidateIds,
+      onSelect: (targetId) => {
+        if (__DEV__) console.log('[lineup-ui] player picked', { targetId });
+        const isField = startersRef.current.some((n) => n.playerId === targetId);
+        if (isField) swapFieldField(fromId, targetId);
+        else swapFieldBench(fromId, targetId);
+      },
+    });
+  }, [actionTarget, starters, benchPlayerIds, closeAction, swapFieldField, swapFieldBench]);
+
+  const handleBenchAddToField = useCallback(() => {
+    if (actionTarget?.type !== 'bench') return;
+    const benchPlayerId = actionTarget.playerId;
+    if (starters.length < starterLimit) {
+      addBenchToField(benchPlayerId);
+      closeAction();
+    } else {
+      // Campo cheio — escolher qual titular trocar
+      if (__DEV__) console.log('[lineup-ui] action panel opened', { type: 'picker-field-full', benchPlayerId });
+      setActionTarget(null);
+      setPickerConfig({
+        title: 'Campo cheio. Trocar com qual titular?',
+        hint: 'O titular escolhido vai para o banco',
+        candidateIds: starters.map((n) => n.playerId),
+        onSelect: (starterId) => {
+          if (__DEV__) console.log('[lineup-ui] player picked', { starterId, action: 'swap-field-full' });
+          swapFieldBench(starterId, benchPlayerId);
+        },
       });
+    }
+  }, [actionTarget, starters, starterLimit, addBenchToField, closeAction, swapFieldBench]);
 
-      commit(newStarters, benchPlayerIdsRef.current);
-    },
-    [benchPlayerIdsRef, commit, editable, startersRef],
-  );
+  const handleBenchTrocar = useCallback(() => {
+    if (actionTarget?.type !== 'bench') return;
+    const benchPlayerId = actionTarget.playerId;
+    if (starters.length === 0) { closeAction(); return; }
+    if (__DEV__) console.log('[lineup-ui] action panel opened', { type: 'picker-swap-from-bench', benchPlayerId });
+    setActionTarget(null);
+    setPickerConfig({
+      title: 'Trocar com qual titular?',
+      hint: 'O titular vai para o banco e o reserva entra no campo',
+      candidateIds: starters.map((n) => n.playerId),
+      onSelect: (starterId) => {
+        if (__DEV__) console.log('[lineup-ui] player picked', { starterId, action: 'swap-bench-starter' });
+        swapFieldBench(starterId, benchPlayerId);
+      },
+    });
+  }, [actionTarget, starters, closeAction, swapFieldBench]);
 
-  const handleFieldPlayerPress = useCallback(
-    (playerId: string) => {
-      if (!editable) return;
-
-      if (__DEV__) console.log('[lineup-ui] player selected', { playerId, type: 'field' });
-
-      // Toque no mesmo jogador → cancela seleção
-      if (pendingSwap?.playerId === playerId) {
-        setPendingSwap(null);
-        return;
-      }
-
-      // Há um reserva selecionado → troca reserva↔titular
-      if (pendingSwap?.type === 'bench') {
-        swapStarterWithBench(playerId, pendingSwap.playerId);
-        setPendingSwap(null);
-        return;
-      }
-
-      // Há outro titular selecionado → troca posições no campo
-      if (pendingSwap?.type === 'field') {
-        swapStarterWithStarter(pendingSwap.playerId, playerId);
-        setPendingSwap(null);
-        return;
-      }
-
-      const player = playerById.get(playerId);
-      if (!player) return;
-
-      Alert.alert(
-        `${player.nickname} #${player.jerseyNumber}`,
-        player.fullName,
-        [
-          { text: 'Fechar', style: 'cancel' },
-          {
-            text: 'Trocar com jogador',
-            onPress: () => setPendingSwap({ playerId, type: 'field' }),
-          },
-          {
-            text: 'Mover para banco',
-            style: 'destructive',
-            onPress: () => removeStarterToBench(playerId),
-          },
-        ],
-      );
-    },
-    [
-      editable,
-      pendingSwap,
-      playerById,
-      removeStarterToBench,
-      swapStarterWithBench,
-      swapStarterWithStarter,
-    ],
-  );
-
-  const handleBenchPlayerPress = useCallback(
-    (playerId: string) => {
-      if (!editable) return;
-
-      if (__DEV__) console.log('[lineup-ui] player selected', { playerId, type: 'bench' });
-
-      // Toque no mesmo jogador → cancela seleção
-      if (pendingSwap?.playerId === playerId) {
-        setPendingSwap(null);
-        return;
-      }
-
-      // Há um titular selecionado → troca titular↔reserva
-      if (pendingSwap?.type === 'field') {
-        swapStarterWithBench(pendingSwap.playerId, playerId);
-        setPendingSwap(null);
-        return;
-      }
-
-      // Há outro reserva selecionado → muda seleção para este
-      if (pendingSwap?.type === 'bench') {
-        setPendingSwap({ playerId, type: 'bench' });
-        return;
-      }
-
-      const player = playerById.get(playerId);
-      if (!player) return;
-
-      Alert.alert(
-        `${player.nickname} #${player.jerseyNumber}`,
-        'O que deseja fazer com este reserva?',
-        [
-          { text: 'Fechar', style: 'cancel' },
-          {
-            text: 'Trocar com titular',
-            onPress: () => setPendingSwap({ playerId, type: 'bench' }),
-          },
-          {
-            text: 'Adicionar ao campo',
-            onPress: () => addBenchPlayerToField(playerId),
-          },
-        ],
-      );
-    },
-    [addBenchPlayerToField, editable, pendingSwap, playerById, swapStarterWithBench],
-  );
-
-  const MAX_FIELD_WIDTH = 560;
+  // ---------------------------------------------------------------------------
+  // Layout
+  // ---------------------------------------------------------------------------
 
   const handleLayout = useCallback((width: number) => {
-    const nextWidth = Math.min(Math.max(width - 20, 280), MAX_FIELD_WIDTH);
-    setFieldWidth((current) => (Math.abs(current - nextWidth) > 1 ? nextWidth : current));
+    const next = Math.min(Math.max(width - 20, 280), 560);
+    setFieldWidth((curr) => (Math.abs(curr - next) > 1 ? next : curr));
   }, []);
 
-  const rootSize = useMemo(
-    () => ({ width: fieldWidth, height: fieldHeight }),
-    [fieldHeight, fieldWidth],
-  );
+  const canAdd = starters.length < starterLimit && benchPlayerIds.length > 0;
+  const actionPlayer = actionTarget ? playerById.get(actionTarget.playerId) : null;
 
-  const pendingPlayerName = pendingSwap
-    ? (playerById.get(pendingSwap.playerId)?.nickname ?? '')
-    : '';
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
 
   return (
     <View
       style={[
         styles.shell,
-        {
-          borderColor: `${theme.colors.accent}44`,
-          backgroundColor: theme.colors.surface,
-        },
+        { borderColor: `${theme.colors.accent}44`, backgroundColor: theme.colors.surface },
       ]}
-      onLayout={(event) => handleLayout(event.nativeEvent.layout.width)}
+      onLayout={(e) => handleLayout(e.nativeEvent.layout.width)}
     >
-      {/* Banner de troca pendente */}
-      {pendingSwap && editable ? (
-        <Pressable
-          style={[
-            styles.swapBanner,
-            {
-              backgroundColor: `${theme.colors.warning}22`,
-              borderColor: `${theme.colors.warning}66`,
-            },
-          ]}
-          onPress={() => setPendingSwap(null)}
-        >
-          <Text style={[styles.swapBannerText, { color: theme.colors.text }]}>
-            {`Toque em outro jogador para trocar com ${pendingPlayerName}`}
-          </Text>
-          <Text style={[styles.swapBannerCancel, { color: theme.colors.warning }]}>
-            Cancelar
-          </Text>
-        </Pressable>
-      ) : null}
-
-      {/* Campo de jogo */}
+      {/* ── Campo ── */}
       <LinearGradient
         colors={[`${theme.colors.primary}66`, theme.colors.fieldStripe, theme.colors.field]}
         start={{ x: 0.1, y: 0 }}
@@ -386,21 +311,10 @@ export function LineupField({
           />
         ) : null}
 
-        <View pointerEvents="none" style={styles.patternWrap}>
-          <View
-            style={[
-              styles.stripe,
-              styles.stripeLeft,
-              { backgroundColor: 'rgba(255,255,255,0.04)' },
-            ]}
-          />
-          <View
-            style={[
-              styles.stripe,
-              styles.stripeRight,
-              { backgroundColor: 'rgba(255,255,255,0.05)' },
-            ]}
-          />
+        {/* Decorações estáticas do campo */}
+        <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+          <View style={[styles.stripe, styles.stripeLeft, { backgroundColor: 'rgba(255,255,255,0.04)' }]} />
+          <View style={[styles.stripe, styles.stripeRight, { backgroundColor: 'rgba(255,255,255,0.05)' }]} />
           <View style={[styles.centerLine, { backgroundColor: `${theme.colors.secondary}55` }]} />
           <View style={[styles.circle, { borderColor: `${theme.colors.secondary}55` }]} />
           <View style={[styles.boxTop, { borderColor: `${theme.colors.secondary}55` }]} />
@@ -409,270 +323,287 @@ export function LineupField({
           <View style={[styles.goalBottom, { borderColor: `${theme.colors.secondary}55` }]} />
         </View>
 
+        {/* Tokens dos titulares — Pressable direto, sem PanResponder */}
         {starters.map((node) => {
           const player = playerById.get(node.playerId);
-
           if (!player) return null;
-
+          const pos = toFieldPixels(node, fieldWidth, fieldHeight, nodeSize);
           return (
-            <MemoDraggableFieldToken
+            <FieldToken
               key={`field-${node.playerId}`}
               player={player}
               label={node.label}
-              initialPosition={toFieldPixels(node, fieldWidth, fieldHeight, nodeSize)}
+              left={pos.left}
+              top={pos.top}
               nodeSize={nodeSize}
-              containerSize={rootSize}
               editable={editable}
-              selected={
-                pendingSwap?.playerId === node.playerId && pendingSwap?.type === 'field'
-              }
-              onMove={updateStarterPosition}
-              onPress={handleFieldPlayerPress}
-              onDragStateChange={onDragStateChange}
+              onPress={handleStarterPress}
             />
           );
         })}
+
+        {/* Botão "Adicionar" visível quando há espaço e há reservas */}
+        {editable && canAdd ? (
+          <Pressable
+            style={[
+              styles.addSlotBtn,
+              { backgroundColor: `${theme.colors.primary}DD`, borderColor: theme.colors.accent },
+            ]}
+            onPress={handleAddSlotPress}
+          >
+            <Text style={[styles.addSlotText, { color: theme.colors.accent }]}>
+              + Adicionar jogador
+            </Text>
+          </Pressable>
+        ) : null}
       </LinearGradient>
 
-      {/* Banco de reservas — fluxo normal abaixo do campo */}
+      {/* ── Banco de reservas ── */}
       <View
         style={[
-          styles.benchPanel,
-          {
-            backgroundColor: theme.colors.backgroundElevated,
-            borderColor: `${theme.colors.primary}33`,
-          },
+          styles.bench,
+          { backgroundColor: theme.colors.backgroundElevated, borderColor: `${theme.colors.primary}33` },
         ]}
       >
         <Text style={[styles.benchTitle, { color: theme.colors.text }]}>
           Banco de {teamName}
         </Text>
-
         <Text style={[styles.benchHint, { color: theme.colors.textMuted }]}>
           {editable
-            ? pendingSwap
-              ? 'Toque em outro jogador para completar a troca.'
-              : 'Toque num reserva para adicionar ou trocar com titular.'
+            ? 'Toque num reserva para colocá-lo no campo ou trocar.'
             : 'Escalação em modo visualização.'}
         </Text>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.benchScrollContent}
-        >
+        {/* Uso de layout em colunas para evitar conflito de gesture do ScrollView horizontal */}
+        <View style={styles.benchGrid}>
           {benchPlayerIds.length === 0 ? (
-            <View style={styles.emptyBench}>
-              <Text style={[styles.emptyBenchText, { color: theme.colors.textMuted }]}>
-                Sem reservas nesta escalação.
-              </Text>
-            </View>
+            <Text style={[styles.emptyBenchText, { color: theme.colors.textMuted }]}>
+              Sem reservas nesta escalação.
+            </Text>
           ) : (
             benchPlayerIds.map((playerId) => {
               const player = playerById.get(playerId);
-
               if (!player) return null;
-
               return (
-                <BenchPlayerCard
+                <BenchCard
                   key={`bench-${playerId}`}
                   player={player}
-                  nodeSize={benchNodeSize}
                   editable={editable}
-                  selected={
-                    pendingSwap?.playerId === playerId && pendingSwap?.type === 'bench'
-                  }
-                  onPress={() => handleBenchPlayerPress(playerId)}
+                  onPress={handleBenchPress}
                 />
               );
             })
           )}
-        </ScrollView>
+        </View>
       </View>
+
+      {/* ── Modal de ações ── */}
+      <Modal
+        visible={actionTarget !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeAction}
+      >
+        <Pressable style={styles.backdrop} onPress={closeAction}>
+          {/* Pressable interno consome o toque para não fechar o modal */}
+          <Pressable
+            style={[
+              styles.actionCard,
+              { backgroundColor: theme.colors.surface, borderColor: `${theme.colors.accent}44` },
+            ]}
+          >
+            {actionPlayer ? (
+              <>
+                <Text style={[styles.actionTitle, { color: theme.colors.text }]}>
+                  {actionPlayer.nickname} #{actionPlayer.jerseyNumber}
+                </Text>
+                <Text style={[styles.actionSub, { color: theme.colors.textMuted }]}>
+                  {actionPlayer.fullName}
+                </Text>
+              </>
+            ) : null}
+
+            {actionTarget?.type === 'starter' ? (
+              <>
+                <Pressable
+                  style={[styles.actionBtn, { backgroundColor: theme.colors.primarySoft }]}
+                  onPress={handleStarterTrocar}
+                >
+                  <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>
+                    Trocar com jogador
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.actionBtnOutline, { borderColor: `${theme.colors.danger}55` }]}
+                  onPress={handleMoveToBench}
+                >
+                  <Text style={[styles.actionBtnText, { color: theme.colors.danger }]}>
+                    Mover para banco
+                  </Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Pressable
+                  style={[styles.actionBtn, { backgroundColor: theme.colors.primarySoft }]}
+                  onPress={handleBenchAddToField}
+                >
+                  <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>
+                    Colocar como titular
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.actionBtn, { backgroundColor: theme.colors.primarySoft }]}
+                  onPress={handleBenchTrocar}
+                >
+                  <Text style={[styles.actionBtnText, { color: theme.colors.text }]}>
+                    Trocar com titular
+                  </Text>
+                </Pressable>
+              </>
+            )}
+
+            <Pressable style={styles.actionCancelBtn} onPress={closeAction}>
+              <Text style={[styles.actionCancelText, { color: theme.colors.textMuted }]}>
+                Fechar
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ── Modal picker de jogadores ── */}
+      <Modal
+        visible={pickerConfig !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={closePicker}
+      >
+        <View style={styles.pickerBackdrop}>
+          <View
+            style={[
+              styles.pickerCard,
+              { backgroundColor: theme.colors.surface, borderColor: `${theme.colors.accent}44` },
+            ]}
+          >
+            <Text style={[styles.pickerTitle, { color: theme.colors.text }]}>
+              {pickerConfig?.title}
+            </Text>
+            {pickerConfig?.hint ? (
+              <Text style={[styles.pickerHint, { color: theme.colors.textMuted }]}>
+                {pickerConfig.hint}
+              </Text>
+            ) : null}
+
+            <ScrollView
+              style={styles.pickerScroll}
+              contentContainerStyle={styles.pickerScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {pickerConfig?.candidateIds.map((id) => {
+                const player = playerById.get(id);
+                if (!player) return null;
+                const isField = starters.some((n) => n.playerId === id);
+                return (
+                  <Pressable
+                    key={id}
+                    style={[
+                      styles.pickerRow,
+                      { borderBottomColor: `${theme.colors.border ?? theme.colors.accent}33` },
+                    ]}
+                    onPress={() => {
+                      pickerConfig.onSelect(id);
+                      closePicker();
+                    }}
+                  >
+                    <Avatar
+                      name={player.nickname}
+                      photoUrl={player.photoUrl}
+                      size={40}
+                      accent={`${theme.colors.primary}22`}
+                    />
+                    <View style={styles.pickerRowText}>
+                      <Text style={[styles.pickerRowName, { color: theme.colors.text }]}>
+                        {player.nickname}
+                        {' '}
+                        <Text style={[styles.pickerRowNumber, { color: theme.colors.textMuted }]}>
+                          #{player.jerseyNumber}
+                        </Text>
+                      </Text>
+                      <Text style={[styles.pickerRowSub, { color: theme.colors.textMuted }]}>
+                        {player.fullName} · {isField ? 'titular' : 'reserva'}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <Pressable
+              style={[styles.pickerCancelBtn, { borderColor: `${theme.colors.accent}33` }]}
+              onPress={closePicker}
+            >
+              <Text style={[styles.pickerCancelText, { color: theme.colors.textMuted }]}>
+                Cancelar
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-function DraggableFieldToken({
+// ---------------------------------------------------------------------------
+// FieldToken — Pressable simples, sem PanResponder
+// ---------------------------------------------------------------------------
+
+function FieldToken({
   player,
   label,
-  initialPosition,
+  left,
+  top,
   nodeSize,
-  containerSize,
-  editable = true,
-  selected = false,
-  onMove,
+  editable,
   onPress,
-  onDragStateChange,
 }: {
   player: Player;
   label?: string | null;
-  initialPosition: PixelPosition;
+  left: number;
+  top: number;
   nodeSize: number;
-  containerSize: { width: number; height: number };
-  editable?: boolean;
-  selected?: boolean;
-  onMove: (playerId: string, center: { x: number; y: number }) => void;
+  editable: boolean;
   onPress: (playerId: string) => void;
-  onDragStateChange?: (dragging: boolean) => void;
 }) {
   const theme = useAppTheme();
-
-  const [position, setPosition] = useState(initialPosition);
-  const [dragging, setDragging] = useState(false);
-
-  const draggingRef = useRef(false);
-  const startRef = useRef(initialPosition);
-  const initialPositionRef = useRef(initialPosition);
-  const latestPositionRef = useRef(initialPosition);
-  const movedRef = useRef(false);
-
-  const moveRef = useLatestRef(onMove);
-  const pressRef = useLatestRef(onPress);
-  const dragStateRef = useLatestRef(onDragStateChange);
-  const nodeSizeRef = useLatestRef(nodeSize);
-  const containerRef = useLatestRef(containerSize);
-  const playerIdRef = useLatestRef(player.id);
-  const editableRef = useLatestRef(editable);
-
-  useEffect(() => {
-    latestPositionRef.current = position;
-  }, [position]);
-
-  useEffect(() => {
-    initialPositionRef.current = initialPosition;
-
-    if (!draggingRef.current) {
-      startRef.current = initialPosition;
-      latestPositionRef.current = initialPosition;
-      setPosition(initialPosition);
-    }
-  }, [initialPosition]);
-
-  const finishDrag = useCallback(
-    (gesture: PanResponderGestureState) => {
-      if (!editableRef.current) return;
-
-      const currentNodeSize = nodeSizeRef.current;
-      const currentContainer = containerRef.current;
-
-      const left = clamp(
-        startRef.current.left + gesture.dx,
-        0,
-        currentContainer.width - currentNodeSize,
-      );
-
-      const top = clamp(
-        startRef.current.top + gesture.dy,
-        0,
-        currentContainer.height - currentNodeSize,
-      );
-
-      const finalPosition = { left, top };
-
-      draggingRef.current = false;
-      dragStateRef.current?.(false);
-      setDragging(false);
-
-      setPosition(finalPosition);
-      startRef.current = finalPosition;
-      latestPositionRef.current = finalPosition;
-      initialPositionRef.current = finalPosition;
-
-      if (!movedRef.current) {
-        pressRef.current(playerIdRef.current);
-        return;
-      }
-
-      moveRef.current(playerIdRef.current, {
-        x: left + currentNodeSize / 2,
-        y: top + currentNodeSize / 2,
-      });
-    },
-    [containerRef, dragStateRef, editableRef, moveRef, nodeSizeRef, playerIdRef, pressRef],
-  );
-
-  const responder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => Boolean(editableRef.current),
-        onMoveShouldSetPanResponder: (_, gesture) =>
-          Boolean(editableRef.current) &&
-          (Math.abs(gesture.dx) > 2 || Math.abs(gesture.dy) > 2),
-        onPanResponderTerminationRequest: () => false,
-        onPanResponderGrant: () => {
-          if (!editableRef.current) return;
-          draggingRef.current = true;
-          movedRef.current = false;
-          setDragging(true);
-          startRef.current = latestPositionRef.current;
-          dragStateRef.current?.(true);
-        },
-        onPanResponderMove: (_, gesture) => {
-          if (!editableRef.current) return;
-
-          const currentNodeSize = nodeSizeRef.current;
-          const currentContainer = containerRef.current;
-
-          const nextLeft = clamp(
-            startRef.current.left + gesture.dx,
-            0,
-            currentContainer.width - currentNodeSize,
-          );
-
-          const nextTop = clamp(
-            startRef.current.top + gesture.dy,
-            0,
-            currentContainer.height - currentNodeSize,
-          );
-
-          if (Math.abs(gesture.dx) > 4 || Math.abs(gesture.dy) > 4) {
-            movedRef.current = true;
-          }
-
-          setPosition({ left: nextLeft, top: nextTop });
-        },
-        onPanResponderRelease: (_, gesture) => finishDrag(gesture),
-        onPanResponderTerminate: (_, gesture) => finishDrag(gesture),
-      }),
-    [containerRef, dragStateRef, editableRef, finishDrag, nodeSizeRef],
-  );
-
-  const accentColor = pickContrastText(theme.colors.accent);
   const hasPhoto = Boolean(player.photoUrl);
-
-  const borderColor = selected
-    ? theme.colors.warning
-    : dragging
-      ? theme.colors.accent
-      : `${theme.colors.secondary}AA`;
+  const accentColor = pickContrastText(theme.colors.accent);
 
   return (
-    <View
-      {...responder.panHandlers}
+    <Pressable
       style={[
-        styles.fieldNode,
+        styles.fieldToken,
         {
-          left: position.left,
-          top: position.top,
+          left,
+          top,
           width: nodeSize,
           minHeight: nodeSize,
           backgroundColor: theme.colors.primary,
-          borderColor,
-          borderWidth: selected ? 3 : 2,
-          shadowColor: selected ? theme.colors.warning : theme.colors.accent,
-          shadowOpacity: dragging ? 0.38 : selected ? 0.5 : 0.18,
-          shadowRadius: dragging ? 14 : selected ? 12 : 8,
-          shadowOffset: { width: 0, height: dragging ? 10 : 4 },
-          elevation: dragging ? 10 : selected ? 8 : 4,
-          transform: [{ scale: dragging ? 1.04 : selected ? 1.06 : 1 }],
-          zIndex: dragging ? 30 : selected ? 20 : 10,
-          opacity: editable ? 1 : 0.96,
+          borderColor: `${theme.colors.secondary}AA`,
+          shadowColor: theme.colors.accent,
+          shadowOpacity: 0.2,
+          shadowRadius: 8,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 4,
         },
       ]}
+      onPress={() => {
+        if (__DEV__) console.log('[lineup-ui] starter pressed', { playerId: player.id });
+        if (editable) onPress(player.id);
+      }}
     >
       {hasPhoto ? (
-        <Image source={{ uri: player.photoUrl ?? undefined }} style={styles.fieldNodePhoto} />
+        <Image source={{ uri: player.photoUrl ?? undefined }} style={styles.tokenPhoto} />
       ) : (
         <LinearGradient
           colors={[theme.colors.primary, theme.colors.secondary]}
@@ -685,12 +616,8 @@ function DraggableFieldToken({
       <LinearGradient
         colors={
           hasPhoto
-            ? ['rgba(6,10,8,0.02)', 'rgba(6,10,8,0.16)', 'rgba(6,10,8,0.92)']
-            : [
-                `${theme.colors.primary}00`,
-                `${theme.colors.primary}CC`,
-                `${theme.colors.primary}F2`,
-              ]
+            ? ['rgba(6,10,8,0.02)', 'rgba(6,10,8,0.18)', 'rgba(6,10,8,0.9)']
+            : [`${theme.colors.primary}00`, `${theme.colors.primary}CC`, `${theme.colors.primary}F2`]
         }
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
@@ -698,7 +625,7 @@ function DraggableFieldToken({
       />
 
       {!hasPhoto ? (
-        <View style={styles.fieldFallback}>
+        <View style={styles.tokenFallback}>
           <Avatar
             name={player.nickname}
             photoUrl={player.photoUrl}
@@ -710,107 +637,67 @@ function DraggableFieldToken({
 
       <View
         style={[
-          styles.numberBadge,
-          styles.fieldBadge,
-          {
-            backgroundColor: selected ? theme.colors.warning : theme.colors.accent,
-            borderColor: 'rgba(255,255,255,0.2)',
-          },
+          styles.tokenBadge,
+          { backgroundColor: theme.colors.accent, borderColor: 'rgba(255,255,255,0.2)' },
         ]}
       >
-        <Text style={[styles.numberText, { color: selected ? '#102118' : accentColor }]}>
+        <Text style={[styles.tokenBadgeText, { color: accentColor }]}>
           {player.jerseyNumber}
         </Text>
       </View>
 
-      <View style={styles.nodeNameWrap}>
-        <Text numberOfLines={1} style={styles.nodeName}>
+      <View style={styles.tokenNameWrap}>
+        <Text numberOfLines={1} style={styles.tokenName}>
           {label?.trim() || player.nickname}
         </Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
-const MemoDraggableFieldToken = memo(
-  DraggableFieldToken,
-  (prev, next) =>
-    prev.player.id === next.player.id &&
-    prev.player.nickname === next.player.nickname &&
-    prev.player.photoUrl === next.player.photoUrl &&
-    prev.player.jerseyNumber === next.player.jerseyNumber &&
-    prev.label === next.label &&
-    prev.nodeSize === next.nodeSize &&
-    prev.editable === next.editable &&
-    prev.selected === next.selected &&
-    prev.containerSize.width === next.containerSize.width &&
-    prev.containerSize.height === next.containerSize.height &&
-    prev.initialPosition.left === next.initialPosition.left &&
-    prev.initialPosition.top === next.initialPosition.top,
-);
+// ---------------------------------------------------------------------------
+// BenchCard — sem ScrollView wrapper próprio, usa grid direto
+// ---------------------------------------------------------------------------
 
-function BenchPlayerCard({
+function BenchCard({
   player,
-  nodeSize,
   editable,
-  selected = false,
   onPress,
 }: {
   player: Player;
-  nodeSize: number;
   editable: boolean;
-  selected?: boolean;
-  onPress: () => void;
+  onPress: (playerId: string) => void;
 }) {
   const theme = useAppTheme();
-  const labelColor = theme.colors.text;
 
   return (
     <Pressable
-      disabled={!editable}
-      onPress={onPress}
       style={[
         styles.benchCard,
         {
-          width: Math.max(nodeSize + 30, 124),
           backgroundColor: theme.colors.surface,
-          borderColor: selected
-            ? theme.colors.warning
-            : `${theme.colors.secondary}55`,
-          borderWidth: selected ? 2 : 1,
-          opacity: editable ? 1 : 0.88,
+          borderColor: `${theme.colors.secondary}44`,
         },
       ]}
+      onPress={() => {
+        if (__DEV__) console.log('[lineup-ui] bench player pressed', { playerId: player.id });
+        if (editable) onPress(player.id);
+      }}
     >
       <LinearGradient
-        colors={
-          selected
-            ? [`${theme.colors.warning}22`, `${theme.colors.warning}08`, 'transparent']
-            : [`${theme.colors.primary}1F`, `${theme.colors.secondary}12`, 'transparent']
-        }
+        colors={[`${theme.colors.primary}1F`, `${theme.colors.secondary}12`, 'transparent']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={styles.benchGlow}
+        style={StyleSheet.absoluteFillObject}
       />
 
       <View
         style={[
-          styles.numberBadge,
-          styles.benchBadge,
-          {
-            backgroundColor: selected ? theme.colors.warning : theme.colors.primary,
-            borderColor: selected
-              ? `${theme.colors.warning}66`
-              : `${theme.colors.primary}66`,
-          },
+          styles.benchCardBadge,
+          { backgroundColor: theme.colors.primary, borderColor: `${theme.colors.primary}66` },
         ]}
       >
-        <Text
-          style={[
-            styles.numberText,
-            { color: selected ? '#102118' : pickContrastText(theme.colors.primary) },
-          ]}
-        >
+        <Text style={[styles.tokenBadgeText, { color: pickContrastText(theme.colors.primary) }]}>
           {player.jerseyNumber}
         </Text>
       </View>
@@ -818,34 +705,23 @@ function BenchPlayerCard({
       <Avatar
         name={player.nickname}
         photoUrl={player.photoUrl}
-        size={nodeSize < 84 ? 42 : 48}
+        size={40}
         accent={`${theme.colors.primary}22`}
       />
 
-      <Text numberOfLines={1} style={[styles.benchName, { color: labelColor }]}>
+      <Text numberOfLines={1} style={[styles.benchCardName, { color: theme.colors.text }]}>
         {player.nickname}
-      </Text>
-
-      <Text numberOfLines={1} style={[styles.benchSub, { color: `${labelColor}CC` }]}>
-        {player.fullName}
       </Text>
 
       {editable ? (
         <View
           style={[
-            styles.benchActionWrap,
-            {
-              backgroundColor: selected
-                ? `${theme.colors.warning}22`
-                : theme.colors.primarySoft,
-              borderColor: selected
-                ? `${theme.colors.warning}44`
-                : `${theme.colors.primary}22`,
-            },
+            styles.benchCardAction,
+            { backgroundColor: theme.colors.primarySoft, borderColor: `${theme.colors.primary}22` },
           ]}
         >
-          <Text style={[styles.benchAction, { color: theme.colors.text }]}>
-            {selected ? 'Selecionado' : 'Adicionar'}
+          <Text style={[styles.benchCardActionText, { color: theme.colors.text }]}>
+            Titular
           </Text>
         </View>
       ) : null}
@@ -853,83 +729,71 @@ function BenchPlayerCard({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function getNextStarterPosition(starters: LineupNode[]) {
   const candidates = [
-    { x: 50, y: 82 },
-    { x: 36, y: 76 },
-    { x: 64, y: 76 },
-    { x: 24, y: 64 },
-    { x: 50, y: 64 },
-    { x: 76, y: 64 },
-    { x: 18, y: 48 },
-    { x: 40, y: 46 },
-    { x: 60, y: 46 },
-    { x: 82, y: 48 },
-    { x: 34, y: 28 },
-    { x: 66, y: 28 },
-    { x: 50, y: 18 },
+    { x: 50, y: 82 }, { x: 36, y: 76 }, { x: 64, y: 76 },
+    { x: 24, y: 64 }, { x: 50, y: 64 }, { x: 76, y: 64 },
+    { x: 18, y: 48 }, { x: 40, y: 46 }, { x: 60, y: 46 }, { x: 82, y: 48 },
+    { x: 34, y: 28 }, { x: 66, y: 28 }, { x: 50, y: 18 },
   ];
 
-  const freeCandidate = candidates.find(
-    (candidate) =>
-      !starters.some((node) => distance(node.x, node.y, candidate.x, candidate.y) < 12),
+  const free = candidates.find(
+    (c) => !starters.some((n) => dist(n.x, n.y, c.x, c.y) < 12),
   );
+  if (free) return free;
 
-  if (freeCandidate) return freeCandidate;
-
-  const fallback = candidates[starters.length % candidates.length] ?? { x: 50, y: 82 };
-  const offset = Math.floor(starters.length / Math.max(candidates.length, 1)) * 4;
-
+  const fb = candidates[starters.length % candidates.length] ?? { x: 50, y: 82 };
+  const off = Math.floor(starters.length / Math.max(candidates.length, 1)) * 4;
   return {
-    x: clamp(fallback.x + (starters.length % 2 === 0 ? offset : -offset), 10, 90),
-    y: clamp(fallback.y - offset, 12, 88),
+    x: clamp(fb.x + (starters.length % 2 === 0 ? off : -off), 10, 90),
+    y: clamp(fb.y - off, 12, 88),
   };
 }
 
-function distance(x1: number, y1: number, x2: number, y2: number) {
+function dist(x1: number, y1: number, x2: number, y2: number) {
   return Math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2);
 }
 
-function toFieldPixels(
-  node: LineupNode,
-  fieldWidth: number,
-  fieldHeight: number,
-  nodeSize: number,
-) {
+function toFieldPixels(node: LineupNode, fw: number, fh: number, ns: number) {
   return {
-    left: clamp((node.x / 100) * fieldWidth - nodeSize / 2, 0, fieldWidth - nodeSize),
-    top: clamp((node.y / 100) * fieldHeight - nodeSize / 2, 0, fieldHeight - nodeSize),
+    left: clamp((node.x / 100) * fw - ns / 2, 0, fw - ns),
+    top: clamp((node.y / 100) * fh - ns / 2, 0, fh - ns),
   };
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
+function clamp(v: number, min: number, max: number) {
+  return Math.min(Math.max(v, min), max);
 }
 
-function resolveFieldHeight(width: number) {
-  return Math.max(520, Math.min(Math.round(width * 1.75), 760));
+function resolveFieldHeight(w: number) {
+  return Math.max(520, Math.min(Math.round(w * 1.75), 760));
 }
 
-function resolveNodeSize(width: number) {
-  if (width <= 340) return 80;
-  if (width <= 390) return 88;
+function resolveNodeSize(w: number) {
+  if (w <= 340) return 80;
+  if (w <= 390) return 88;
   return 96;
 }
 
 function pickContrastText(color: string) {
-  const normalized = color.replace('#', '');
-
-  if (normalized.length !== 6) return '#F3F7F3';
-
-  const red = Number.parseInt(normalized.slice(0, 2), 16);
-  const green = Number.parseInt(normalized.slice(2, 4), 16);
-  const blue = Number.parseInt(normalized.slice(4, 6), 16);
-  const luminance = (red * 299 + green * 587 + blue * 114) / 1000;
-
-  return luminance > 150 ? '#102118' : '#F3F7F3';
+  const n = color.replace('#', '');
+  if (n.length !== 6) return '#F3F7F3';
+  const r = parseInt(n.slice(0, 2), 16);
+  const g = parseInt(n.slice(2, 4), 16);
+  const b = parseInt(n.slice(4, 6), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? '#102118' : '#F3F7F3';
 }
 
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
 const styles = StyleSheet.create({
+  // Shell
   shell: {
     borderWidth: 1,
     borderRadius: 30,
@@ -939,28 +803,8 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     overflow: 'hidden',
   },
-  swapBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 10,
-    gap: 12,
-  },
-  swapBannerText: {
-    fontFamily: fonts.body,
-    fontSize: 13,
-    lineHeight: 18,
-    flex: 1,
-  },
-  swapBannerCancel: {
-    fontFamily: fonts.heading,
-    fontSize: 12,
-    fontWeight: '700',
-  },
+
+  // Field
   field: {
     borderRadius: 22,
     overflow: 'hidden',
@@ -974,9 +818,6 @@ const styles = StyleSheet.create({
     height: '52%',
     opacity: 0.08,
   },
-  patternWrap: {
-    ...StyleSheet.absoluteFillObject,
-  },
   stripe: {
     position: 'absolute',
     top: 0,
@@ -984,67 +825,101 @@ const styles = StyleSheet.create({
     width: '33%',
     opacity: 0.22,
   },
-  stripeLeft: {
-    left: 0,
-  },
-  stripeRight: {
-    right: 0,
-  },
-  centerLine: {
-    position: 'absolute',
-    top: '50%',
-    left: 0,
-    right: 0,
-    height: 1,
-  },
+  stripeLeft: { left: 0 },
+  stripeRight: { right: 0 },
+  centerLine: { position: 'absolute', top: '50%', left: 0, right: 0, height: 1 },
   circle: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    width: 108,
-    height: 108,
-    marginLeft: -54,
-    marginTop: -54,
-    borderRadius: 54,
-    borderWidth: 1,
+    position: 'absolute', top: '50%', left: '50%',
+    width: 108, height: 108, marginLeft: -54, marginTop: -54,
+    borderRadius: 54, borderWidth: 1,
   },
   boxTop: {
-    position: 'absolute',
-    top: 0,
-    left: '22%',
-    width: '56%',
-    height: 88,
-    borderWidth: 1,
-    borderTopWidth: 0,
+    position: 'absolute', top: 0, left: '22%',
+    width: '56%', height: 88, borderWidth: 1, borderTopWidth: 0,
   },
   boxBottom: {
-    position: 'absolute',
-    bottom: 0,
-    left: '22%',
-    width: '56%',
-    height: 88,
-    borderWidth: 1,
-    borderBottomWidth: 0,
+    position: 'absolute', bottom: 0, left: '22%',
+    width: '56%', height: 88, borderWidth: 1, borderBottomWidth: 0,
   },
   goalTop: {
-    position: 'absolute',
-    top: 0,
-    left: '39%',
-    width: '22%',
-    height: 18,
-    borderWidth: 1,
-    borderTopWidth: 0,
+    position: 'absolute', top: 0, left: '39%',
+    width: '22%', height: 18, borderWidth: 1, borderTopWidth: 0,
   },
   goalBottom: {
-    position: 'absolute',
-    bottom: 0,
-    left: '39%',
-    width: '22%',
-    height: 18,
-    borderWidth: 1,
-    borderBottomWidth: 0,
+    position: 'absolute', bottom: 0, left: '39%',
+    width: '22%', height: 18, borderWidth: 1, borderBottomWidth: 0,
   },
-  benchPanel: {
+
+  // Field token
+  fieldToken: {
+    position: 'absolute',
+    borderRadius: 24,
+    borderWidth: 2,
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  tokenPhoto: {
+    ...StyleSheet.absoluteFillObject,
+    width: undefined,
+    height: undefined,
+  },
+  tokenFallback: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 18,
+  },
+  tokenBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    minWidth: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 3,
+  },
+  tokenBadgeText: {
+    fontFamily: fonts.heading,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  tokenNameWrap: {
+    paddingHorizontal: 8,
+    paddingTop: 28,
+    paddingBottom: 8,
+  },
+  tokenName: {
+    fontFamily: fonts.heading,
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+    color: '#F7FBF8',
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+
+  // Add slot button
+  addSlotBtn: {
+    position: 'absolute',
+    bottom: 12,
+    alignSelf: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1.5,
+  },
+  addSlotText: {
+    fontFamily: fonts.heading,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  // Bench
+  bench: {
     marginTop: 18,
     borderWidth: 1,
     borderRadius: 22,
@@ -1052,7 +927,6 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 14,
     gap: 10,
-    minHeight: 140,
   },
   benchTitle: {
     fontFamily: fonts.heading,
@@ -1064,24 +938,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
   },
-  benchScrollContent: {
+  // Grid flexível — evita conflito de gestos do ScrollView horizontal
+  benchGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
-    paddingRight: 8,
+  },
+  emptyBenchText: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    paddingVertical: 16,
+  },
+
+  // Bench card
+  benchCard: {
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: 12,
     alignItems: 'center',
-  },
-  fieldNode: {
-    position: 'absolute',
-    borderRadius: 24,
-    borderWidth: 2,
+    gap: 6,
     overflow: 'hidden',
-    justifyContent: 'flex-end',
+    minWidth: 100,
   },
-  fieldNodePhoto: {
-    ...StyleSheet.absoluteFillObject,
-    width: undefined,
-    height: undefined,
-  },
-  numberBadge: {
+  benchCardBadge: {
     position: 'absolute',
     top: 6,
     right: 6,
@@ -1092,81 +971,146 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  fieldBadge: {
-    zIndex: 3,
-  },
-  benchBadge: {
-    top: 6,
-    right: 6,
-  },
-  fieldFallback: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingBottom: 18,
-  },
-  nodeNameWrap: {
-    paddingHorizontal: 8,
-    paddingTop: 28,
-    paddingBottom: 8,
-  },
-  numberText: {
-    fontFamily: fonts.heading,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  nodeName: {
-    fontFamily: fonts.heading,
-    fontSize: 12,
-    fontWeight: '800',
-    textAlign: 'center',
-    color: '#F7FBF8',
-    textShadowColor: 'rgba(0,0,0,0.45)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  benchSub: {
-    fontFamily: fonts.body,
-    fontSize: 11,
-    textAlign: 'center',
-  },
-  benchName: {
+  benchCardName: {
     fontFamily: fonts.heading,
     fontSize: 12,
     fontWeight: '800',
     textAlign: 'center',
   },
-  benchCard: {
-    borderWidth: 1,
-    borderRadius: 20,
-    padding: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    overflow: 'hidden',
-  },
-  benchGlow: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  benchActionWrap: {
-    marginTop: 2,
+  benchCardAction: {
     borderRadius: 999,
     borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
-  benchAction: {
+  benchCardActionText: {
     fontFamily: fonts.heading,
     fontSize: 11,
     fontWeight: '800',
-    textAlign: 'center',
   },
-  emptyBench: {
-    minHeight: 70,
+
+  // Action modal
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
     justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
   },
-  emptyBenchText: {
+  actionCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    gap: 12,
+  },
+  actionTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  actionSub: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  actionBtn: {
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  actionBtnOutline: {
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  actionBtnText: {
+    fontFamily: fonts.heading,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  actionCancelBtn: {
+    marginTop: 4,
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  actionCancelText: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+  },
+
+  // Picker modal
+  pickerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  pickerCard: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    padding: 24,
+    paddingBottom: 0,
+    maxHeight: '80%',
+  },
+  pickerTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  pickerHint: {
     fontFamily: fonts.body,
     fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  pickerScroll: {
+    maxHeight: 380,
+  },
+  pickerScrollContent: {
+    gap: 2,
+    paddingBottom: 8,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  pickerRowText: {
+    flex: 1,
+    gap: 2,
+  },
+  pickerRowName: {
+    fontFamily: fonts.heading,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  pickerRowNumber: {
+    fontWeight: '400',
+  },
+  pickerRowSub: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+  },
+  pickerCancelBtn: {
+    marginTop: 12,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  pickerCancelText: {
+    fontFamily: fonts.heading,
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

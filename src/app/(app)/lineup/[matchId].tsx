@@ -1,20 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useNavigation, usePreventRemove } from '@react-navigation/native';
+import * as Sharing from 'expo-sharing';
+import { captureRef } from 'react-native-view-shot';
 
 import { MetricCard } from '@/components/cards/MetricCard';
 import { LineupField } from '@/components/lineup/LineupField';
+import { LineupShareCard } from '@/components/lineup/LineupShareCard';
 import { AppButton } from '@/components/ui/AppButton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { formatMatchDateTime } from '@/lib/date';
 import {
+  areLineupStatesEqual,
   buildLineupFromPreset,
   buildLineupStateFromSource,
+  getFormationPresetByKey,
   getFormationPresets,
+  sanitizeLineupLayoutState,
 } from '@/lib/lineup';
 import { useAppStore } from '@/store/app-store';
 import {
@@ -33,39 +40,11 @@ interface LocalLineupState {
 }
 
 type SaveStatus = 'clean' | 'dirty' | 'saving' | 'saved';
+type ShareAvailability = 'unknown' | 'available' | 'unavailable';
+type ShareAction = 'idle' | 'sharing' | 'downloading';
 
-function areLineupStatesEqual(left: LocalLineupState, right: LocalLineupState) {
-  if (
-    left.formationKey !== right.formationKey ||
-    left.starters.length !== right.starters.length ||
-    left.benchPlayerIds.length !== right.benchPlayerIds.length
-  ) {
-    return false;
-  }
-
-  for (let index = 0; index < left.starters.length; index += 1) {
-    const leftNode = left.starters[index];
-    const rightNode = right.starters[index];
-
-    if (
-      leftNode.playerId !== rightNode.playerId ||
-      leftNode.x !== rightNode.x ||
-      leftNode.y !== rightNode.y ||
-      leftNode.zone !== rightNode.zone ||
-      (leftNode.label ?? null) !== (rightNode.label ?? null)
-    ) {
-      return false;
-    }
-  }
-
-  for (let index = 0; index < left.benchPlayerIds.length; index += 1) {
-    if (left.benchPlayerIds[index] !== right.benchPlayerIds[index]) {
-      return false;
-    }
-  }
-
-  return true;
-}
+const EXPORT_WIDTH = 1080;
+const EXPORT_HEIGHT = 1350;
 
 export default function LineupScreen() {
   const params = useLocalSearchParams<{ matchId?: string | string[] }>();
@@ -89,6 +68,7 @@ export default function LineupScreen() {
   );
 
   const isReadOnly = !canManage;
+  const starterLimit = currentMatch ? currentMatch.linePlayersCount + 1 : 0;
 
   const presets = useMemo(
     () =>
@@ -163,124 +143,249 @@ export default function LineupScreen() {
     [attendanceByPlayerId, players],
   );
 
+  const editablePreset = useMemo(() => {
+    if (!currentMatch || !fallbackPreset) {
+      return null;
+    }
+
+    return getFormationPresetByKey(
+      currentMatch.matchType,
+      currentMatch.linePlayersCount,
+      existingLineup?.formationKey ?? fallbackPreset.key,
+    );
+  }, [
+    currentMatch?.linePlayersCount,
+    currentMatch?.matchType,
+    existingLineup?.formationKey,
+    fallbackPreset,
+  ]);
+
+  const editableSourceLineup = useMemo<LocalLineupState | null>(() => {
+    if (!editablePreset) {
+      return null;
+    }
+
+    return buildLineupStateFromSource({
+      existingLineup,
+      preset: editablePreset,
+      players: confirmedPlayers,
+    });
+  }, [confirmedPlayers, editablePreset, existingLineup]);
+
+  const readOnlyLineup = useMemo<LocalLineupState | null>(() => {
+    if (!existingLineup || !currentMatch || !fallbackPreset) {
+      return null;
+    }
+
+    const preset = getFormationPresetByKey(
+      currentMatch.matchType,
+      currentMatch.linePlayersCount,
+      existingLineup.formationKey ?? fallbackPreset.key,
+    );
+
+    return buildLineupStateFromSource({
+      existingLineup,
+      preset,
+      players: publishedPlayers,
+    });
+  }, [
+    currentMatch?.linePlayersCount,
+    currentMatch?.matchType,
+    existingLineup,
+    fallbackPreset,
+    publishedPlayers,
+  ]);
+
   const initialDraft = useMemo<LocalLineupState>(
-    () => ({
-      formationKey: fallbackPreset?.key ?? '',
-      starters: [],
-      benchPlayerIds: [],
-    }),
-    [fallbackPreset?.key],
+    () =>
+      editableSourceLineup ?? {
+        formationKey: fallbackPreset?.key ?? '',
+        starters: [],
+        benchPlayerIds: [],
+      },
+    [editableSourceLineup, fallbackPreset?.key],
   );
 
   const [draft, setDraft] = useState<LocalLineupState>(initialDraft);
   const [isDragging, setIsDragging] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('clean');
+  const [shareAvailability, setShareAvailability] = useState<ShareAvailability>(
+    Platform.OS === 'web' ? 'unknown' : 'available',
+  );
+  const [shareAction, setShareAction] = useState<ShareAction>('idle');
+  const [shareCardReady, setShareCardReady] = useState(false);
 
   const draftRef = useRef<LocalLineupState>(initialDraft);
-  const sourceKeyRef = useRef('');
+  const sourceDraftRef = useRef<LocalLineupState>(initialDraft);
   const isDirtyRef = useRef(false);
   const isDraggingRef = useRef(false);
+  const justSavedRef = useRef(false);
+  const saveStatusRef = useRef<SaveStatus>('clean');
+  const shareCardRef = useRef<View>(null);
+
+  const setSavePhase = useCallback((next: SaveStatus) => {
+    saveStatusRef.current = next;
+    setSaveStatus(next);
+  }, []);
 
   const handleDragStateChange = useCallback((dragging: boolean) => {
     isDraggingRef.current = dragging;
     setIsDragging(dragging);
   }, []);
 
-  const applyDraft = useCallback(
-    (
-      next: LocalLineupState,
-      options?: { markDirty?: boolean; saveStatus?: SaveStatus },
-    ) => {
-      draftRef.current = next;
-      setDraft(next);
-
-      if (options?.markDirty === false) {
-        isDirtyRef.current = false;
-      } else {
-        isDirtyRef.current = true;
-        if (__DEV__) console.log('[lineup-store] save enabled');
+  const normalizeDraft = useCallback(
+    (next: LocalLineupState) => {
+      if (!currentMatch || !fallbackPreset) {
+        return next;
       }
 
-      setSaveStatus(
-        options?.saveStatus ??
-          (options?.markDirty === false ? 'clean' : 'dirty'),
+      const preset = getFormationPresetByKey(
+        currentMatch.matchType,
+        currentMatch.linePlayersCount,
+        next.formationKey || fallbackPreset.key,
       );
+
+      return sanitizeLineupLayoutState({
+        formationKey: next.formationKey || preset.key,
+        starters: next.starters,
+        benchPlayerIds: next.benchPlayerIds,
+        players: confirmedPlayers,
+        starterLimit,
+        fallbackFormationKey: preset.key,
+        fallbackCoordinates: preset.coordinates,
+      });
     },
-    [],
+    [confirmedPlayers, currentMatch, fallbackPreset, starterLimit],
+  );
+
+  const applyDraft = useCallback(
+    (next: LocalLineupState) => {
+      const previous = draftRef.current;
+      const normalized = normalizeDraft(next);
+      const draftChanged = !areLineupStatesEqual(previous, normalized);
+      const wasDirty = isDirtyRef.current;
+      const nextDirty =
+        !existingLineup ||
+        !areLineupStatesEqual(normalized, sourceDraftRef.current);
+
+      draftRef.current = normalized;
+      setDraft(normalized);
+      isDirtyRef.current = nextDirty;
+
+      if (__DEV__ && draftChanged) {
+        console.log('[lineup-ui] draft changed', {
+          formationKey: normalized.formationKey,
+          starters: normalized.starters.length,
+          bench: normalized.benchPlayerIds.length,
+          dirty: nextDirty,
+        });
+      }
+
+      if (__DEV__ && !wasDirty && nextDirty) {
+        console.log('[lineup-save] button enabled');
+      }
+
+      setSavePhase(nextDirty ? 'dirty' : 'clean');
+      return normalized;
+    },
+    [existingLineup, normalizeDraft, setSavePhase],
   );
 
   useEffect(() => {
-    if (!currentMatch || !fallbackPreset) {
+    let active = true;
+
+    if (Platform.OS !== 'web') {
+      setShareAvailability('available');
+      return () => {
+        active = false;
+      };
+    }
+
+    void Sharing.isAvailableAsync()
+      .then((available) => {
+        if (active) {
+          setShareAvailability(available ? 'available' : 'unavailable');
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setShareAvailability('unavailable');
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!editableSourceLineup || !currentMatch) {
       return;
     }
 
-    if (isDraggingRef.current || isDragging) {
+    const sourceChanged = !areLineupStatesEqual(
+      sourceDraftRef.current,
+      editableSourceLineup,
+    );
+
+    if (__DEV__) {
+      console.log('[lineup-snapshot] received', {
+        changed: sourceChanged,
+        isDirty: isDirtyRef.current,
+        justSaved: justSavedRef.current,
+      });
+    }
+
+    sourceDraftRef.current = editableSourceLineup;
+
+    if (isDraggingRef.current || isDragging || isDirtyRef.current) {
       return;
     }
 
-    const sourceKey = [
-      currentMatch.id,
-      fallbackPreset.key,
-      existingLineup?.id ?? 'no-lineup',
-      existingLineup?.updatedAt ?? 'no-lineup-update',
-      canManage ? confirmedPlayersKey : publishedPlayersKey,
-    ].join('__');
-
-    if (sourceKey === sourceKeyRef.current) {
-      return;
+    const draftChanged = !areLineupStatesEqual(draftRef.current, editableSourceLineup);
+    if (draftChanged) {
+      draftRef.current = editableSourceLineup;
+      setDraft(editableSourceLineup);
     }
 
-    if (isDirtyRef.current) {
-      sourceKeyRef.current = sourceKey;
-      return;
+    if (__DEV__) {
+      console.log('[lineup-snapshot] applied', {
+        draftChanged,
+        starters: editableSourceLineup.starters.length,
+        bench: editableSourceLineup.benchPlayerIds.length,
+        justSaved: justSavedRef.current,
+      });
     }
 
-    const nextDraft = buildLineupStateFromSource({
-      existingLineup,
-      preset: fallbackPreset,
-      players: canManage ? confirmedPlayers : publishedPlayers,
-    });
-
-    if (!areLineupStatesEqual(draftRef.current, nextDraft)) {
-      draftRef.current = nextDraft;
-      setDraft(nextDraft);
+    isDirtyRef.current = !existingLineup;
+    if (!justSavedRef.current) {
+      setSavePhase(existingLineup ? 'clean' : 'dirty');
     }
-
-    setSaveStatus('clean');
-    sourceKeyRef.current = sourceKey;
+    justSavedRef.current = false;
   }, [
-    canManage,
-    confirmedPlayers,
-    confirmedPlayersKey,
-    currentMatch,
+    currentMatch?.id,
+    editableSourceLineup,
     existingLineup,
-    fallbackPreset,
     isDragging,
-    publishedPlayers,
-    publishedPlayersKey,
+    setSavePhase,
   ]);
-
-  const readOnlyLineup = useMemo<LocalLineupState | null>(() => {
-    if (!existingLineup || !fallbackPreset) {
-      return null;
-    }
-
-    return buildLineupStateFromSource({
-      existingLineup,
-      preset: fallbackPreset,
-      players: publishedPlayers,
-    });
-  }, [existingLineup, fallbackPreset, publishedPlayers]);
 
   const lineupState = canManage ? draft : readOnlyLineup;
   const lineupPlayers = canManage ? confirmedPlayers : publishedPlayers;
   const hasUnsavedChanges =
     canManage && (saveStatus === 'dirty' || saveStatus === 'saving');
+  const hasSavedLineup = Boolean(existingLineup) || saveStatus === 'saved';
+  const canExportLineup =
+    canManage &&
+    hasSavedLineup &&
+    !hasUnsavedChanges &&
+    Boolean(lineupState?.starters.length) &&
+    shareCardReady;
 
   usePreventRemove(hasUnsavedChanges, (event) => {
     Alert.alert(
-      'Escalação não salva',
-      'Você tem alterações pendentes na escalação. Deseja sair sem salvar?',
+      'Escalacao nao salva',
+      'Voce tem alteracoes pendentes na escalacao. Deseja sair sem salvar?',
       [
         { text: 'Continuar editando', style: 'cancel' },
         {
@@ -298,13 +403,6 @@ export default function LineupScreen() {
         return;
       }
 
-      if (__DEV__) {
-        console.log('[lineup-store] lineup changed', {
-          starters: next.starters.length,
-          bench: next.benchPlayerIds.length,
-        });
-      }
-
       applyDraft({
         formationKey: draftRef.current.formationKey || fallbackPreset?.key || '',
         starters: next.starters,
@@ -316,16 +414,15 @@ export default function LineupScreen() {
 
   const handleAutoArrange = useCallback(
     (nextPresetKey?: string) => {
-      if (!canManage || !fallbackPreset) {
+      if (!canManage || !fallbackPreset || !currentMatch) {
         return;
       }
 
-      const preset =
-        presets.find(
-          (item) =>
-            item.key === (nextPresetKey ?? draftRef.current.formationKey),
-        ) ?? fallbackPreset;
-
+      const preset = getFormationPresetByKey(
+        currentMatch.matchType,
+        currentMatch.linePlayersCount,
+        nextPresetKey ?? draftRef.current.formationKey ?? fallbackPreset.key,
+      );
       const autoLineup = buildLineupFromPreset(preset, confirmedPlayers);
 
       applyDraft({
@@ -334,7 +431,7 @@ export default function LineupScreen() {
         benchPlayerIds: autoLineup.benchPlayerIds,
       });
     },
-    [applyDraft, canManage, confirmedPlayers, fallbackPreset, presets],
+    [applyDraft, canManage, confirmedPlayers, currentMatch, fallbackPreset],
   );
 
   const handleClearLineup = useCallback(() => {
@@ -350,49 +447,236 @@ export default function LineupScreen() {
   }, [applyDraft, canManage, confirmedPlayers, fallbackPreset]);
 
   const handleSave = useCallback(async () => {
-    if (!canManage || !currentMatch || !fallbackPreset) {
+    if (
+      !canManage ||
+      !currentMatch ||
+      !fallbackPreset ||
+      saveStatusRef.current !== 'dirty'
+    ) {
       return;
     }
 
-    try {
-      setSaveStatus('saving');
+    const payload = normalizeDraft({
+      formationKey: draftRef.current.formationKey || fallbackPreset.key,
+      starters: draftRef.current.starters,
+      benchPlayerIds: draftRef.current.benchPlayerIds,
+    });
 
-      if (__DEV__) console.log('[lineup-store] save start');
+    if (__DEV__) {
+      console.log('[lineup-save] start', {
+        matchId: currentMatch.id,
+        formationKey: payload.formationKey,
+      });
+      console.log('[lineup-save] draft before save', {
+        formationKey: payload.formationKey,
+        starters: payload.starters.length,
+        bench: payload.benchPlayerIds.length,
+      });
+      console.log('[lineup-save] starters', payload.starters.map((node) => node.playerId));
+      console.log('[lineup-save] bench', payload.benchPlayerIds);
+      console.log('[lineup-save] positions', payload.starters.map((node) => ({
+        id: node.playerId,
+        x: node.x,
+        y: node.y,
+        zone: node.zone,
+      })));
+      console.log('[lineup-save] payload', {
+        matchId: currentMatch.id,
+        formationKey: payload.formationKey,
+        starters: payload.starters,
+        benchPlayerIds: payload.benchPlayerIds,
+      });
+    }
+
+    try {
+      setSavePhase('saving');
 
       await saveLineup({
         matchId: currentMatch.id,
-        formationKey: draftRef.current.formationKey || fallbackPreset.key,
-        starters: draftRef.current.starters,
-        benchPlayerIds: draftRef.current.benchPlayerIds,
+        formationKey: payload.formationKey,
+        starters: payload.starters,
+        benchPlayerIds: payload.benchPlayerIds,
       });
 
+      sourceDraftRef.current = payload;
+      draftRef.current = payload;
+      setDraft(payload);
       isDirtyRef.current = false;
-      setSaveStatus('saved');
+      justSavedRef.current = true;
+      setSavePhase('saved');
 
-      if (__DEV__) console.log('[lineup-store] save success');
+      if (__DEV__) {
+        console.log('[lineup-save] success', {
+          matchId: currentMatch.id,
+          formationKey: payload.formationKey,
+        });
+      }
 
       Alert.alert(
-        'Escalação salva',
-        'A distribuição dos jogadores foi atualizada com sucesso.',
+        'Escalacao salva',
+        'A distribuicao dos jogadores foi atualizada com sucesso.',
       );
     } catch (error) {
-      setSaveStatus('dirty');
+      setSavePhase('dirty');
 
-      if (__DEV__) console.log('[lineup-store] save failed', error);
+      const errorCode = (error as { code?: string }).code ?? null;
+      const errorMessage = error instanceof Error ? error.message : 'Tente novamente.';
+
+      if (__DEV__) {
+        console.log('[lineup-save] failed', {
+          code: errorCode,
+          message: errorMessage,
+          error,
+        });
+      }
 
       Alert.alert(
-        'Não foi possível salvar',
-        error instanceof Error ? error.message : 'Tente novamente.',
+        'Nao foi possivel salvar',
+        errorCode ? `${errorMessage}\n(${errorCode})` : errorMessage,
       );
     }
-  }, [canManage, currentMatch, fallbackPreset, saveLineup]);
+  }, [canManage, currentMatch, fallbackPreset, normalizeDraft, saveLineup, setSavePhase]);
+
+  const handleShareOrDownload = useCallback(
+    async (mode: 'share' | 'download') => {
+      if (!currentMatch || !team || !lineupState || !shareCardRef.current) {
+        return;
+      }
+
+      if (!canExportLineup) {
+        if (hasUnsavedChanges) {
+          Alert.alert(
+            'Salve antes de compartilhar',
+            'A imagem da escalacao so fica disponivel depois que a versao atual for salva.',
+          );
+        }
+        return;
+      }
+
+      const action = mode === 'share' ? 'sharing' : 'downloading';
+
+      try {
+        setShareAction(action);
+
+        if (__DEV__) {
+          console.log('[lineup-share] capture start', {
+            mode,
+            matchId: currentMatch.id,
+          });
+        }
+
+        const imageResult = await captureRef(shareCardRef.current, {
+          format: 'png',
+          quality: 1,
+          result: Platform.OS === 'web' ? 'data-uri' : 'tmpfile',
+          width: EXPORT_WIDTH,
+          height: EXPORT_HEIGHT,
+        });
+
+        if (__DEV__) {
+          console.log('[lineup-share] capture success', {
+            mode,
+            kind: Platform.OS === 'web' ? 'data-uri' : 'tmpfile',
+          });
+        }
+
+        if (mode === 'download') {
+          if (Platform.OS !== 'web') {
+            throw new Error('O download direto da imagem esta disponivel apenas no navegador.');
+          }
+
+          downloadDataUri(
+            imageResult,
+            buildLineupFileName(team.name, currentMatch.opponentName, currentMatch.date),
+          );
+
+          if (__DEV__) {
+            console.log('[lineup-share] download fallback');
+          }
+
+          return;
+        }
+
+        const shareAvailable = await Sharing.isAvailableAsync();
+
+        if (Platform.OS === 'web') {
+          if (shareAvailable) {
+            try {
+              await Sharing.shareAsync(imageResult, {
+                dialogTitle: 'Compartilhar escalacao',
+              });
+            } catch (error) {
+              if (__DEV__) {
+                console.log('[lineup-share] share unavailable', { error });
+              }
+
+              downloadDataUri(
+                imageResult,
+                buildLineupFileName(team.name, currentMatch.opponentName, currentMatch.date),
+              );
+
+              if (__DEV__) {
+                console.log('[lineup-share] download fallback');
+              }
+            }
+          } else {
+            if (__DEV__) {
+              console.log('[lineup-share] share unavailable');
+            }
+
+            downloadDataUri(
+              imageResult,
+              buildLineupFileName(team.name, currentMatch.opponentName, currentMatch.date),
+            );
+
+            if (__DEV__) {
+              console.log('[lineup-share] download fallback');
+            }
+          }
+
+          return;
+        }
+
+        if (!shareAvailable) {
+          if (__DEV__) {
+            console.log('[lineup-share] share unavailable');
+          }
+
+          throw new Error('O compartilhamento nao esta disponivel neste dispositivo.');
+        }
+
+        await Sharing.shareAsync(
+          imageResult.startsWith('file://') ? imageResult : `file://${imageResult}`,
+          {
+            dialogTitle: 'Compartilhar escalacao',
+            mimeType: 'image/png',
+          },
+        );
+      } catch (error) {
+        if (__DEV__) {
+          console.log('[lineup-share] failed', {
+            mode,
+            error,
+          });
+        }
+
+        Alert.alert(
+          'Nao foi possivel gerar a imagem da escalacao.',
+          error instanceof Error ? error.message : 'Tente novamente.',
+        );
+      } finally {
+        setShareAction('idle');
+      }
+    },
+    [canExportLineup, currentMatch, hasUnsavedChanges, lineupState, team],
+  );
 
   if (!currentMatch || !team) {
     return (
       <Screen>
         <EmptyState
-          title="Escalação indisponível"
-          description="Não foi possível encontrar esta partida ou o time ativo."
+          title="Escalacao indisponivel"
+          description="Nao foi possivel encontrar esta partida ou o time ativo."
         />
       </Screen>
     );
@@ -402,8 +686,8 @@ export default function LineupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Sem formação disponível"
-          description="Ainda não encontramos uma formação compatível com este tipo de partida."
+          title="Sem formacao disponivel"
+          description="Ainda nao encontramos uma formacao compativel com este tipo de partida."
         />
       </Screen>
     );
@@ -413,8 +697,8 @@ export default function LineupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Escalação ainda não publicada"
-          description="O administrador ainda não salvou a escalação desta partida."
+          title="Escalacao ainda nao publicada"
+          description="O administrador ainda nao salvou a escalacao desta partida."
         />
       </Screen>
     );
@@ -427,8 +711,8 @@ export default function LineupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Escalação bloqueada"
-          description="A escalação pode ser ajustada apenas antes do encerramento da partida."
+          title="Escalacao bloqueada"
+          description="A escalacao pode ser ajustada apenas antes do encerramento da partida."
         />
       </Screen>
     );
@@ -439,7 +723,7 @@ export default function LineupScreen() {
       <Screen>
         <EmptyState
           title="Sem jogadores confirmados"
-          description="Confirme a presença do elenco antes de montar a escalação."
+          description="Confirme a presenca do elenco antes de montar a escalacao."
         />
       </Screen>
     );
@@ -449,26 +733,24 @@ export default function LineupScreen() {
     return (
       <Screen>
         <EmptyState
-          title="Escalação indisponível"
-          description="Não foi possível carregar a escalação desta partida."
+          title="Escalacao indisponivel"
+          description="Nao foi possivel carregar a escalacao desta partida."
         />
       </Screen>
     );
   }
 
-  const starterLimit = currentMatch.linePlayersCount + 1;
-
   return (
     <Screen keyboardAware={false} scrollEnabled={!isDragging}>
       <SectionHeader
-        title="Escalação visual"
+        title="Escalacao visual"
         subtitle={`${currentMatch.opponentName} - ${starterLimit} em campo`}
       />
 
       <Text style={[styles.helper, { color: theme.colors.textMuted }]}>
         {canManage
-          ? 'Toque num jogador para ver opções (trocar, mover para banco). Arraste para reposicionar no campo.'
-          : 'Somente visualização. Apenas administradores podem alterar a escalação.'}
+          ? 'Toque num jogador para ver opcoes, trocar ou mover para o banco. Arraste para reposicionar no campo.'
+          : 'Somente visualizacao. Apenas administradores podem alterar a escalacao.'}
       </Text>
 
       <View style={styles.metricsRow}>
@@ -483,7 +765,7 @@ export default function LineupScreen() {
           helper={
             canManage
               ? `${confirmedPlayers.length} confirmados`
-              : `${lineupPlayers.length} na escalação`
+              : `${lineupPlayers.length} na escalacao`
           }
         />
         <MetricCard
@@ -511,25 +793,25 @@ export default function LineupScreen() {
       >
         <Text style={[styles.statusTitle, { color: theme.colors.text }]}>
           {!canManage
-            ? 'Somente visualização'
+            ? 'Somente visualizacao'
             : saveStatus === 'saving'
               ? 'Salvando...'
               : saveStatus === 'saved'
-                ? 'Escalação salva'
+                ? 'Escalacao salva'
                 : saveStatus === 'dirty'
-                  ? 'Escalação não salva'
-                  : 'Escalação pronta'}
+                  ? 'Escalacao nao salva'
+                  : 'Escalacao pronta'}
         </Text>
 
         <Text style={[styles.statusText, { color: theme.colors.textMuted }]}>
           {!canManage
-            ? 'Apenas administradores podem organizar, limpar ou salvar a escalação.'
+            ? 'Apenas administradores podem organizar, limpar ou salvar a escalacao.'
             : saveStatus === 'saving'
-              ? 'Persistindo a distribuição atual no time.'
+              ? 'Persistindo a distribuicao atual no time.'
               : saveStatus === 'saved'
-                ? 'As coordenadas atuais já estão sincronizadas.'
+                ? 'As coordenadas atuais ja estao sincronizadas.'
                 : saveStatus === 'dirty'
-                  ? 'Você tem alterações pendentes. Só enviamos para o banco ao tocar em salvar.'
+                  ? 'Voce tem alteracoes pendentes. So enviamos para o banco ao tocar em salvar.'
                   : 'Mova jogadores livremente e salve apenas quando terminar.'}
         </Text>
       </View>
@@ -586,19 +868,134 @@ export default function LineupScreen() {
             onPress={() => handleAutoArrange()}
           />
           <AppButton
-            label="Limpar escalação"
+            label="Limpar escalacao"
             variant="ghost"
             onPress={handleClearLineup}
           />
           <AppButton
-            label="Salvar escalação"
+            label="Salvar escalacao"
+            disabled={saveStatus !== 'dirty'}
             loading={saveStatus === 'saving'}
             onPress={() => void handleSave()}
           />
         </View>
       ) : null}
+
+      {canManage ? (
+        <View style={styles.shareSection}>
+          <SectionHeader
+            title="Arte para compartilhar"
+            subtitle={
+              hasUnsavedChanges
+                ? 'Salve a versao atual antes de compartilhar ou baixar a imagem.'
+                : 'Geramos uma arte limpa da escalacao, separada dos botoes de edicao.'
+            }
+          />
+
+          <View
+            ref={shareCardRef}
+            collapsable={false}
+            onLayout={() => setShareCardReady(true)}
+            style={styles.shareCardWrap}
+          >
+            <LineupShareCard
+              teamName={team.name}
+              teamLogoUrl={team.logoUrl ?? null}
+              opponentName={currentMatch.opponentName}
+              matchLabel={buildMatchShareLabel(currentMatch)}
+              starters={lineupState.starters}
+              benchPlayerIds={lineupState.benchPlayerIds}
+              players={lineupPlayers}
+              colors={{
+                primary: team.primaryColor,
+                secondary: team.secondaryColor,
+                accent: team.accentColor ?? null,
+              }}
+            />
+          </View>
+
+          <Text style={[styles.shareHint, { color: theme.colors.textMuted }]}>
+            {Platform.OS === 'web'
+              ? shareAvailability === 'available'
+                ? 'No navegador compativel voce pode compartilhar ou baixar a imagem PNG.'
+                : 'Se o navegador nao oferecer compartilhamento nativo, o fluxo cai para download do PNG.'
+              : 'No celular, o botao usa o compartilhamento nativo quando ele estiver disponivel.'}
+          </Text>
+
+          <View style={styles.actionRow}>
+            {Platform.OS === 'web' && shareAvailability === 'available' ? (
+              <AppButton
+                label="Compartilhar escalacao"
+                variant="secondary"
+                disabled={!canExportLineup || shareAction !== 'idle'}
+                loading={shareAction === 'sharing'}
+                onPress={() => void handleShareOrDownload('share')}
+              />
+            ) : null}
+
+            {Platform.OS === 'web' ? (
+              <AppButton
+                label="Baixar imagem"
+                variant={shareAvailability === 'available' ? 'ghost' : 'secondary'}
+                disabled={!canExportLineup || shareAction !== 'idle'}
+                loading={shareAction === 'downloading'}
+                onPress={() => void handleShareOrDownload('download')}
+              />
+            ) : (
+              <AppButton
+                label="Compartilhar escalacao"
+                variant="secondary"
+                disabled={!canExportLineup || shareAction !== 'idle'}
+                loading={shareAction === 'sharing'}
+                onPress={() => void handleShareOrDownload('share')}
+              />
+            )}
+          </View>
+        </View>
+      ) : null}
     </Screen>
   );
+}
+
+function buildMatchShareLabel(match: { date: string; time: string; venue: string }) {
+  const dateTime = formatMatchDateTime(match);
+  const venue = match.venue?.trim();
+
+  if (dateTime && venue) {
+    return `${dateTime} - ${venue}`;
+  }
+
+  return dateTime || venue || null;
+}
+
+function buildLineupFileName(teamName: string, opponentName: string, date: string) {
+  const safeTeam = slugifyShareValue(teamName);
+  const safeOpponent = slugifyShareValue(opponentName);
+  const safeDate = slugifyShareValue(date);
+
+  return `${safeTeam || 'time'}-${safeOpponent || 'partida'}-${safeDate || 'escalacao'}.png`;
+}
+
+function slugifyShareValue(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+}
+
+function downloadDataUri(dataUri: string, fileName: string) {
+  if (typeof document === 'undefined') {
+    throw new Error('O navegador nao disponibilizou o download da imagem.');
+  }
+
+  const anchor = document.createElement('a');
+  anchor.href = dataUri;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
 }
 
 const styles = StyleSheet.create({
@@ -648,5 +1045,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
+  },
+  shareSection: {
+    gap: 12,
+  },
+  shareCardWrap: {
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
+  },
+  shareHint: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
   },
 });

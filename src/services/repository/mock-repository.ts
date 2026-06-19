@@ -54,6 +54,10 @@ import {
   createRatingsOpenedNotification,
 } from '@/lib/notifications';
 import {
+  getFormationPresetByKey,
+  sanitizeLineupLayoutState,
+} from '@/lib/lineup';
+import {
   canCreateTeamFromOwnedTeamsCount,
   createEmptyManualStats,
   createInviteCode,
@@ -2895,10 +2899,27 @@ export const mockRepository: AppRepository = {
       }
     }
 
+    const preset = getFormationPresetByKey(
+      match.matchType,
+      match.linePlayersCount,
+      input.formationKey,
+    );
+    const normalizedLineup = sanitizeLineupLayoutState({
+      formationKey: input.formationKey,
+      starters: input.starters,
+      benchPlayerIds: input.benchPlayerIds,
+      players: findTeamPlayers(activeTeamId).filter((player) =>
+        confirmedPlayerIds.has(player.id),
+      ),
+      starterLimit: match.linePlayersCount + 1,
+      fallbackFormationKey: preset.key,
+      fallbackCoordinates: preset.coordinates,
+    });
+
     if (existing) {
-      existing.formationKey = input.formationKey;
-      existing.starters = clone(input.starters);
-      existing.benchPlayerIds = [...input.benchPlayerIds];
+      existing.formationKey = normalizedLineup.formationKey;
+      existing.starters = clone(normalizedLineup.starters);
+      existing.benchPlayerIds = [...normalizedLineup.benchPlayerIds];
       existing.updatedAt = now;
       const notificationId = buildNotificationId('lineup-published', match.id);
       const existingNotification = findNotificationByIdForTeam(match.teamId, notificationId);
@@ -2919,9 +2940,9 @@ export const mockRepository: AppRepository = {
       id: createId('lineup'),
       teamId: match.teamId,
       matchId: input.matchId,
-      formationKey: input.formationKey,
-      starters: clone(input.starters),
-      benchPlayerIds: [...input.benchPlayerIds],
+      formationKey: normalizedLineup.formationKey,
+      starters: clone(normalizedLineup.starters),
+      benchPlayerIds: [...normalizedLineup.benchPlayerIds],
       createdAt: now,
       updatedAt: now,
     };

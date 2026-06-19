@@ -36,6 +36,11 @@ import {
   splitCriteriaSummaryEntries,
 } from '@/lib/stats';
 import {
+  buildLineupStateFromSource,
+  getFormationPresetByKey,
+  sanitizeLineupLayoutState,
+} from '@/lib/lineup';
+import {
   findPlayerById,
   selectCanManageTeam,
   selectCurrentPlayer,
@@ -2405,6 +2410,252 @@ const testCases: TestCase[] = [
       assert.equal('nickname' in selfInput, true, 'nickname deve ser editável pelo próprio jogador');
       assert.equal('bio' in selfInput, true, 'bio deve ser editável pelo próprio jogador');
       assert.equal('photoUrl' in selfInput, true, 'photoUrl deve ser editável pelo próprio jogador');
+    },
+  },
+  {
+    name: 'sanitizeLineupLayoutState remove duplicados, normaliza coordenadas e recoloca faltantes no banco',
+    run() {
+      const players = [
+        createPlayer({ id: 'player-lineup-1' }),
+        createPlayer({ id: 'player-lineup-2' }),
+        createPlayer({ id: 'player-lineup-3' }),
+        createPlayer({ id: 'player-lineup-4' }),
+      ];
+
+      const sanitized = sanitizeLineupLayoutState({
+        formationKey: 'society-3-2-1',
+        starters: [
+          { playerId: 'player-lineup-1', x: 140, y: -8, zone: 'goalkeeper', label: ' Capita ' },
+          { playerId: 'player-lineup-1', x: 22, y: 68, zone: 'defense', label: null },
+          { playerId: 'player-lineup-4', x: 50, y: 66, zone: 'defense', label: null },
+          { playerId: 'player-lineup-3', x: 78, y: 68, zone: 'defense', label: null },
+        ],
+        benchPlayerIds: ['player-lineup-4', 'player-lineup-2', 'player-lineup-2', 'ghost'],
+        players,
+        starterLimit: 3,
+        fallbackFormationKey: 'society-3-2-1',
+        fallbackCoordinates: [
+          { x: 50, y: 90, zone: 'goalkeeper' },
+          { x: 22, y: 68, zone: 'defense' },
+          { x: 78, y: 68, zone: 'defense' },
+        ],
+      });
+
+      assert.deepEqual(
+        sanitized.starters.map((node) => node.playerId),
+        ['player-lineup-1', 'player-lineup-4', 'player-lineup-3'],
+      );
+      assert.deepEqual(sanitized.benchPlayerIds, ['player-lineup-2']);
+      assert.equal(sanitized.starters[0]?.x, 100);
+      assert.equal(sanitized.starters[0]?.y, 0);
+      assert.equal(sanitized.starters[0]?.label, 'Capita');
+    },
+  },
+  {
+    name: 'saveLineup no mock persiste mover titular para o banco e recarrega a nova versao',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const match = before.matches.find((item) => item.id === 'match-3');
+      const current = before.lineups.find((lineup) => lineup.matchId === 'match-3');
+      assert.ok(match, 'partida match-3 deve existir no seed');
+      assert.ok(current, 'lineup de match-3 deve existir no seed');
+      const confirmedPlayerIds = new Set(
+        before.attendance
+          .filter((item) => item.matchId === 'match-3' && item.status === 'confirmed')
+          .map((item) => item.playerId),
+      );
+      const preset = getFormationPresetByKey(
+        match!.matchType,
+        match!.linePlayersCount,
+        current!.formationKey,
+      );
+      const currentDraft = buildLineupStateFromSource({
+        existingLineup: current!,
+        preset,
+        players: before.players.filter((player) => confirmedPlayerIds.has(player.id)),
+      });
+
+      await mockRepository.saveLineup(
+        {
+          matchId: 'match-3',
+          formationKey: currentDraft.formationKey,
+          starters: currentDraft.starters.filter((node) => node.playerId !== 'player-7'),
+          benchPlayerIds: [...currentDraft.benchPlayerIds, 'player-7'],
+        },
+        'user-admin',
+      );
+
+      const after = await mockRepository.getSnapshot();
+      const saved = after.lineups.find((lineup) => lineup.matchId === 'match-3');
+      assert.ok(saved, 'lineup atualizada deve continuar acessivel');
+      assert.equal(
+        saved?.starters.some((node) => node.playerId === 'player-7'),
+        false,
+        'player-7 nao deve continuar entre os titulares',
+      );
+      assert.equal(
+        saved?.benchPlayerIds.includes('player-7'),
+        true,
+        'player-7 deve aparecer no banco apos salvar',
+      );
+    },
+  },
+  {
+    name: 'saveLineup no mock persiste troca entre titular e reserva sem duplicar jogador',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const match = before.matches.find((item) => item.id === 'match-3');
+      const current = before.lineups.find((lineup) => lineup.matchId === 'match-3');
+      assert.ok(match, 'partida match-3 deve existir no seed');
+      assert.ok(current, 'lineup de match-3 deve existir no seed');
+      const confirmedPlayerIds = new Set(
+        before.attendance
+          .filter((item) => item.matchId === 'match-3' && item.status === 'confirmed')
+          .map((item) => item.playerId),
+      );
+      const preset = getFormationPresetByKey(
+        match!.matchType,
+        match!.linePlayersCount,
+        current!.formationKey,
+      );
+      const currentDraft = buildLineupStateFromSource({
+        existingLineup: current!,
+        preset,
+        players: before.players.filter((player) => confirmedPlayerIds.has(player.id)),
+      });
+      const targetSlot = currentDraft.starters.find((node) => node.playerId === 'player-7');
+      assert.ok(targetSlot, 'player-7 deve existir entre os titulares');
+
+      await mockRepository.saveLineup(
+        {
+          matchId: 'match-3',
+          formationKey: currentDraft.formationKey,
+          starters: currentDraft.starters.map((node) =>
+            node.playerId === 'player-7'
+              ? { ...targetSlot!, playerId: 'player-11' }
+              : node,
+          ),
+          benchPlayerIds: currentDraft.benchPlayerIds.map((playerId) =>
+            playerId === 'player-11' ? 'player-7' : playerId,
+          ),
+        },
+        'user-admin',
+      );
+
+      const after = await mockRepository.getSnapshot();
+      const saved = after.lineups.find((lineup) => lineup.matchId === 'match-3');
+      assert.ok(saved, 'lineup atualizada deve continuar acessivel');
+      assert.equal(
+        saved?.starters.some((node) => node.playerId === 'player-11'),
+        true,
+        'player-11 deve entrar como titular depois do swap',
+      );
+      assert.equal(
+        saved?.benchPlayerIds.includes('player-7'),
+        true,
+        'player-7 deve ir para o banco depois do swap',
+      );
+      const allIds = [
+        ...(saved?.starters.map((node) => node.playerId) ?? []),
+        ...(saved?.benchPlayerIds ?? []),
+      ];
+      assert.equal(allIds.length, new Set(allIds).size, 'nenhum jogador deve duplicar na lineup salva');
+    },
+  },
+  {
+    name: 'saveLineup no mock persiste posicao de drag apos recarregar o snapshot',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const match = before.matches.find((item) => item.id === 'match-3');
+      const current = before.lineups.find((lineup) => lineup.matchId === 'match-3');
+      assert.ok(match, 'partida match-3 deve existir no seed');
+      assert.ok(current, 'lineup de match-3 deve existir no seed');
+      const confirmedPlayerIds = new Set(
+        before.attendance
+          .filter((item) => item.matchId === 'match-3' && item.status === 'confirmed')
+          .map((item) => item.playerId),
+      );
+      const preset = getFormationPresetByKey(
+        match!.matchType,
+        match!.linePlayersCount,
+        current!.formationKey,
+      );
+      const currentDraft = buildLineupStateFromSource({
+        existingLineup: current!,
+        preset,
+        players: before.players.filter((player) => confirmedPlayerIds.has(player.id)),
+      });
+
+      await mockRepository.saveLineup(
+        {
+          matchId: 'match-3',
+          formationKey: currentDraft.formationKey,
+          starters: currentDraft.starters.map((node) =>
+            node.playerId === 'player-9'
+              ? { ...node, x: 12.4, y: 27.8, zone: 'attack' }
+              : node,
+          ),
+          benchPlayerIds: currentDraft.benchPlayerIds,
+        },
+        'user-admin',
+      );
+
+      const after = await mockRepository.getSnapshot();
+      const saved = after.lineups.find((lineup) => lineup.matchId === 'match-3');
+      const moved = saved?.starters.find((node) => node.playerId === 'player-9');
+      assert.ok(moved, 'player-9 deve continuar entre os titulares');
+      assert.equal(moved?.x, 12.4);
+      assert.equal(moved?.y, 27.8);
+      assert.equal(moved?.zone, 'attack');
+    },
+  },
+  {
+    name: 'saveLineup no mock bloqueia jogador repetido entre titulares e banco',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const match = before.matches.find((item) => item.id === 'match-3');
+      const current = before.lineups.find((lineup) => lineup.matchId === 'match-3');
+      assert.ok(match, 'partida match-3 deve existir no seed');
+      assert.ok(current, 'lineup de match-3 deve existir no seed');
+      const confirmedPlayerIds = new Set(
+        before.attendance
+          .filter((item) => item.matchId === 'match-3' && item.status === 'confirmed')
+          .map((item) => item.playerId),
+      );
+      const preset = getFormationPresetByKey(
+        match!.matchType,
+        match!.linePlayersCount,
+        current!.formationKey,
+      );
+      const currentDraft = buildLineupStateFromSource({
+        existingLineup: current!,
+        preset,
+        players: before.players.filter((player) => confirmedPlayerIds.has(player.id)),
+      });
+
+      await assert.rejects(
+        () =>
+          mockRepository.saveLineup(
+            {
+              matchId: 'match-3',
+              formationKey: currentDraft.formationKey,
+              starters: currentDraft.starters,
+              benchPlayerIds: [...currentDraft.benchPlayerIds, currentDraft.starters[0]!.playerId],
+            },
+            'user-admin',
+          ),
+        (error) =>
+          error instanceof Error &&
+          error.message.toLowerCase().includes('repetidos'),
+      );
     },
   },
   {

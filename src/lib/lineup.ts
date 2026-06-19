@@ -181,14 +181,27 @@ export function getFormationPresets(matchType: MatchType, linePlayersCount: numb
   return [buildAdaptiveFormationPreset(matchType, linePlayersCount)];
 }
 
+export function getFormationPresetByKey(
+  matchType: MatchType,
+  linePlayersCount: number,
+  formationKey?: string | null,
+) {
+  const presets = getFormationPresets(matchType, linePlayersCount);
+
+  return presets.find((preset) => preset.key === formationKey) ?? presets[0];
+}
+
+function resolveFormationCoordinates(preset: FormationPreset) {
+  return preset.coordinates.length >= preset.starterCount
+    ? preset.coordinates
+    : fallbackCoordinates(preset.starterCount);
+}
+
 export function buildLineupFromPreset(
   preset: FormationPreset,
   players: Player[],
 ): { starters: LineupNode[]; benchPlayerIds: string[] } {
-  const coordinates =
-    preset.coordinates.length >= preset.starterCount
-      ? preset.coordinates
-      : fallbackCoordinates(preset.starterCount);
+  const coordinates = resolveFormationCoordinates(preset);
 
   return {
     starters: players.slice(0, preset.starterCount).map((player, index) => ({
@@ -226,6 +239,136 @@ export function inferLineupZone(y: number): LineupZone {
   return 'attack';
 }
 
+function normalizeLineupNode(
+  node: LineupNode,
+  fallback: { x: number; y: number; zone: LineupZone },
+): LineupNode {
+  const y = clampPercent(node.y, fallback.y);
+
+  return {
+    playerId: node.playerId,
+    x: clampPercent(node.x, fallback.x),
+    y,
+    zone: node.zone ?? inferLineupZone(y),
+    label: node.label?.trim() || null,
+  };
+}
+
+function fallbackCoordinatesForLimit(starterLimit: number) {
+  return fallbackCoordinates(Math.max(starterLimit, 1));
+}
+
+export function sanitizeLineupLayoutState(params: {
+  formationKey?: string | null;
+  starters?: LineupNode[];
+  benchPlayerIds?: string[];
+  players: Player[];
+  starterLimit: number;
+  fallbackFormationKey: string;
+  fallbackCoordinates?: Array<{ x: number; y: number; zone: LineupZone }>;
+}): LineupLayoutState {
+  const normalizedFallbackCoordinates =
+    params.fallbackCoordinates && params.fallbackCoordinates.length > 0
+      ? params.fallbackCoordinates
+      : fallbackCoordinatesForLimit(params.starterLimit);
+  const starterLimit = Math.max(params.starterLimit, 0);
+  const availablePlayerIds = new Set(params.players.map((player) => player.id));
+  const uniqueStarterEntries: Array<{ playerId: string; node: LineupNode }> = [];
+  const starterSeen = new Set<string>();
+
+  for (const node of params.starters ?? []) {
+    if (!availablePlayerIds.has(node.playerId) || starterSeen.has(node.playerId)) {
+      continue;
+    }
+
+    starterSeen.add(node.playerId);
+    uniqueStarterEntries.push({ playerId: node.playerId, node });
+  }
+
+  const starters = uniqueStarterEntries
+    .slice(0, starterLimit)
+    .map((entry, index) =>
+      normalizeLineupNode(
+        entry.node,
+        normalizedFallbackCoordinates[index] ?? {
+          x: 50,
+          y: 50,
+          zone: 'midfield',
+        },
+      ),
+    );
+  const starterIds = new Set(starters.map((node) => node.playerId));
+  const overflowStarterIds = uniqueStarterEntries
+    .slice(starterLimit)
+    .map((entry) => entry.playerId);
+  const benchPlayerIds: string[] = [];
+  const benchSeen = new Set<string>();
+
+  function pushBench(playerId: string) {
+    if (
+      !availablePlayerIds.has(playerId) ||
+      starterIds.has(playerId) ||
+      benchSeen.has(playerId)
+    ) {
+      return;
+    }
+
+    benchSeen.add(playerId);
+    benchPlayerIds.push(playerId);
+  }
+
+  for (const playerId of overflowStarterIds) {
+    pushBench(playerId);
+  }
+
+  for (const playerId of params.benchPlayerIds ?? []) {
+    pushBench(playerId);
+  }
+
+  for (const player of params.players) {
+    pushBench(player.id);
+  }
+
+  return {
+    formationKey: params.formationKey?.trim() || params.fallbackFormationKey,
+    starters,
+    benchPlayerIds,
+  };
+}
+
+export function areLineupStatesEqual(left: LineupLayoutState, right: LineupLayoutState) {
+  if (
+    left.formationKey !== right.formationKey ||
+    left.starters.length !== right.starters.length ||
+    left.benchPlayerIds.length !== right.benchPlayerIds.length
+  ) {
+    return false;
+  }
+
+  for (let index = 0; index < left.starters.length; index += 1) {
+    const leftNode = left.starters[index];
+    const rightNode = right.starters[index];
+
+    if (
+      leftNode.playerId !== rightNode.playerId ||
+      leftNode.x !== rightNode.x ||
+      leftNode.y !== rightNode.y ||
+      leftNode.zone !== rightNode.zone ||
+      (leftNode.label ?? null) !== (rightNode.label ?? null)
+    ) {
+      return false;
+    }
+  }
+
+  for (let index = 0; index < left.benchPlayerIds.length; index += 1) {
+    if (left.benchPlayerIds[index] !== right.benchPlayerIds[index]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function buildLineupStateFromSource(params: {
   existingLineup?: Pick<Lineup, 'formationKey' | 'starters' | 'benchPlayerIds'> | null;
   preset: FormationPreset;
@@ -240,59 +383,13 @@ export function buildLineupStateFromSource(params: {
     };
   }
 
-  const availablePlayerIds = new Set(params.players.map((player) => player.id));
-  const normalizedFallbackCoordinates =
-    params.preset.coordinates.length >= params.preset.starterCount
-      ? params.preset.coordinates
-      : fallbackCoordinates(params.preset.starterCount);
-  const usedPlayerIds = new Set<string>();
-  const starters = params.existingLineup.starters
-    .flatMap((node, index) => {
-      if (!availablePlayerIds.has(node.playerId) || usedPlayerIds.has(node.playerId)) {
-        return [];
-      }
-
-      usedPlayerIds.add(node.playerId);
-      const fallback = normalizedFallbackCoordinates[index] ?? {
-        x: 50,
-        y: 50,
-        zone: 'midfield' as const,
-      };
-
-      return [{
-        playerId: node.playerId,
-        x: clampPercent(node.x, fallback.x),
-        y: clampPercent(node.y, fallback.y),
-        zone: node.zone ?? inferLineupZone(clampPercent(node.y, fallback.y)),
-        label: node.label?.trim() || null,
-      } satisfies LineupNode];
-    })
-    .slice(0, params.preset.starterCount);
-
-  const benchSet = new Set<string>();
-  const benchPlayerIds: string[] = [];
-
-  for (const playerId of params.existingLineup.benchPlayerIds ?? []) {
-    if (
-      availablePlayerIds.has(playerId) &&
-      !usedPlayerIds.has(playerId) &&
-      !benchSet.has(playerId)
-    ) {
-      benchSet.add(playerId);
-      benchPlayerIds.push(playerId);
-    }
-  }
-
-  for (const player of params.players) {
-    if (!usedPlayerIds.has(player.id) && !benchSet.has(player.id)) {
-      benchSet.add(player.id);
-      benchPlayerIds.push(player.id);
-    }
-  }
-
-  return {
+  return sanitizeLineupLayoutState({
     formationKey: params.existingLineup.formationKey || params.preset.key,
-    starters,
-    benchPlayerIds,
-  };
+    starters: params.existingLineup.starters,
+    benchPlayerIds: params.existingLineup.benchPlayerIds,
+    players: params.players,
+    starterLimit: params.preset.starterCount,
+    fallbackFormationKey: params.preset.key,
+    fallbackCoordinates: resolveFormationCoordinates(params.preset),
+  });
 }

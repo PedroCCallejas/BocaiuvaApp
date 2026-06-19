@@ -37,6 +37,7 @@
     "expo-linking": "~55.0.15",
     "expo-notifications": "~55.0.23",
     "expo-router": "~55.0.16",
+    "expo-sharing": "~55.0.20",
     "expo-splash-screen": "~55.0.21",
     "expo-status-bar": "~55.0.6",
     "expo-web-browser": "~55.0.16",
@@ -50,6 +51,7 @@
     "react-native-google-mobile-ads": "^16.3.3",
     "react-native-safe-area-context": "~5.6.2",
     "react-native-screens": "~4.23.0",
+    "react-native-view-shot": "4.0.3",
     "react-native-web": "~0.21.0",
     "zod": "^4.1.5",
     "zustand": "^5.0.8"

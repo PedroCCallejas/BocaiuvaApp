@@ -104,6 +104,7 @@ export default (): ExpoConfig => ({
       },
     ],
     'expo-web-browser',
+    'expo-sharing',
     ...(googleMobileAdsPlugin ? [googleMobileAdsPlugin] : []),
     [
       'expo-build-properties',

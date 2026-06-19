@@ -88,6 +88,10 @@ import {
   createRatingsOpenedNotification,
 } from '@/lib/notifications';
 import {
+  getFormationPresetByKey,
+  sanitizeLineupLayoutState,
+} from '@/lib/lineup';
+import {
   canCreateTeamFromOwnedTeamsCount,
   createEmptyManualStats,
   createInviteCode,
@@ -6495,18 +6499,35 @@ export const firebaseRepository: AppRepository = {
         }
       }
 
+      const preset = getFormationPresetByKey(
+        match.matchType,
+        match.linePlayersCount,
+        input.formationKey,
+      );
+      const confirmedPlayers = (await fetchPlayersByTeamId(activeTeamId)).filter((player) =>
+        confirmedPlayerIds.has(player.id),
+      );
       const existingLineup = await fetchLineupByMatchIdForTeam(activeTeamId, match.id);
       const lineupRef = existingLineup
         ? doc(firestore, FIRESTORE_COLLECTIONS.lineups, existingLineup.id)
         : doc(collection(firestore, FIRESTORE_COLLECTIONS.lineups));
       const updatedAt = nowIso();
+      const normalizedLineup = sanitizeLineupLayoutState({
+        formationKey: input.formationKey,
+        starters: input.starters,
+        benchPlayerIds: input.benchPlayerIds,
+        players: confirmedPlayers,
+        starterLimit: match.linePlayersCount + 1,
+        fallbackFormationKey: preset.key,
+        fallbackCoordinates: preset.coordinates,
+      });
       const lineup = normalizeLineupDocument({
         id: lineupRef.id,
         teamId: match.teamId,
         matchId: match.id,
-        formationKey: input.formationKey,
-        starters: input.starters,
-        benchPlayerIds: input.benchPlayerIds,
+        formationKey: normalizedLineup.formationKey,
+        starters: normalizedLineup.starters,
+        benchPlayerIds: normalizedLineup.benchPlayerIds,
         createdAt: existingLineup?.createdAt ?? updatedAt,
         updatedAt,
       });

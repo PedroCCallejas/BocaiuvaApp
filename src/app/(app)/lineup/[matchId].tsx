@@ -568,7 +568,17 @@ export default function LineupScreen() {
 
   const handleShareOrDownload = useCallback(
     async (mode: 'share' | 'download') => {
-      if (!currentMatch || !team || !lineupState || !shareCardRef.current) {
+      if (__DEV__) {
+        const label =
+          mode === 'download' ? '[lineup-share] download pressed' : '[lineup-share] button pressed';
+        console.log(label, {
+          platform: Platform.OS,
+          canExport: canExportLineup,
+          refExists: Boolean(shareCardRef.current),
+        });
+      }
+
+      if (!currentMatch || !team || !lineupState) {
         return;
       }
 
@@ -578,114 +588,175 @@ export default function LineupScreen() {
             'Salve antes de compartilhar',
             'A imagem da escalação só fica disponível depois que a versão atual for salva.',
           );
+        } else {
+          Alert.alert(
+            'Arte não disponível',
+            'Aguarde o carregamento da arte ou salve a escalação antes de gerar a imagem.',
+          );
         }
         return;
       }
 
+      const fileName = buildLineupFileName(
+        team.name,
+        currentMatch.opponentName,
+        currentMatch.date,
+      );
       const action = mode === 'share' ? 'sharing' : 'downloading';
 
       try {
         setShareAction(action);
 
-        if (__DEV__) {
-          console.log('[lineup-share] capture start', {
-            mode,
-            matchId: currentMatch.id,
+        // ── WEB: html2canvas direto no elemento DOM ──────────────────────
+        if (Platform.OS === 'web') {
+          if (__DEV__) {
+            console.log('[lineup-share] ref exists', Boolean(shareCardRef.current));
+          }
+
+          const domElement = document.getElementById('lineup-export-card');
+
+          if (__DEV__) {
+            console.log('[lineup-share] export card layout', {
+              found: Boolean(domElement),
+              width: domElement?.offsetWidth ?? 0,
+              height: domElement?.offsetHeight ?? 0,
+            });
+          }
+
+          if (!domElement) {
+            throw new Error('Arte não encontrada na página. Tente recarregar.');
+          }
+
+          if (__DEV__) {
+            console.log('[lineup-share] capture start', {
+              mode,
+              width: domElement.offsetWidth,
+              height: domElement.offsetHeight,
+            });
+          }
+
+          // Escala suficiente para atingir resolução próxima de EXPORT_WIDTH
+          const naturalWidth = domElement.offsetWidth || 360;
+          const scale = Math.max(2, Math.ceil(EXPORT_WIDTH / naturalWidth));
+
+          const html2canvas = (await import('html2canvas')).default;
+          const rawCanvas = await html2canvas(domElement, {
+            useCORS: true,
+            allowTaint: false,
+            logging: false,
+            backgroundColor: null,
+            scale,
           });
+
+          if (__DEV__) {
+            console.log('[lineup-share] capture success', {
+              canvasW: rawCanvas.width,
+              canvasH: rawCanvas.height,
+            });
+          }
+
+          // Redimensionar para EXPORT_WIDTH × EXPORT_HEIGHT exatos
+          const aspectH = Math.round(EXPORT_WIDTH * (rawCanvas.height / rawCanvas.width));
+          const exportH = Math.abs(aspectH) > 0 ? aspectH : EXPORT_HEIGHT;
+          const out = document.createElement('canvas');
+          out.width = EXPORT_WIDTH;
+          out.height = exportH;
+          const ctx = out.getContext('2d');
+          ctx?.drawImage(rawCanvas, 0, 0, EXPORT_WIDTH, exportH);
+
+          const blob = await new Promise<Blob>((resolve, reject) => {
+            out.toBlob(
+              (b) =>
+                b
+                  ? resolve(b)
+                  : reject(new Error('Falha ao converter o canvas em imagem PNG.')),
+              'image/png',
+              1,
+            );
+          });
+
+          const webDownload = () => {
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = fileName;
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+            if (__DEV__) console.log('[lineup-share] download triggered');
+          };
+
+          if (mode === 'download') {
+            webDownload();
+            return;
+          }
+
+          // Compartilhar no web: tentar Web Share API com arquivo, senão baixar
+          try {
+            const file = new File([blob], fileName, { type: 'image/png' });
+            if (
+              typeof navigator !== 'undefined' &&
+              typeof navigator.share === 'function' &&
+              navigator.canShare?.({ files: [file] })
+            ) {
+              await navigator.share({ files: [file], title: 'Escalação — Professô FC' });
+              if (__DEV__) console.log('[lineup-share] shared via Web Share API');
+            } else {
+              if (__DEV__) console.log('[lineup-share] share unavailable — fallback download');
+              Alert.alert(
+                'Compartilhamento indisponível',
+                'Compartilhamento de arquivo não disponível neste navegador. Baixando PNG...',
+              );
+              webDownload();
+            }
+          } catch {
+            if (__DEV__) console.log('[lineup-share] share failed — fallback download');
+            webDownload();
+          }
+          return;
         }
 
-        const imageResult = await captureRef(shareCardRef.current, {
+        // ── NATIVE ──────────────────────────────────────────────────────
+        if (!shareCardRef.current) {
+          throw new Error('Referência da arte não disponível. Tente novamente.');
+        }
+
+        if (__DEV__) {
+          console.log('[lineup-share] ref exists', true);
+          console.log('[lineup-share] capture start', { mode });
+        }
+
+        const imageUri = await captureRef(shareCardRef.current, {
           format: 'png',
           quality: 1,
-          result: Platform.OS === 'web' ? 'data-uri' : 'tmpfile',
+          result: 'tmpfile',
           width: EXPORT_WIDTH,
           height: EXPORT_HEIGHT,
         });
 
         if (__DEV__) {
-          console.log('[lineup-share] capture success', {
-            mode,
-            kind: Platform.OS === 'web' ? 'data-uri' : 'tmpfile',
-          });
-        }
-
-        if (mode === 'download') {
-          if (Platform.OS !== 'web') {
-            throw new Error('O download direto da imagem está disponível apenas no navegador.');
-          }
-
-          downloadDataUri(
-            imageResult,
-            buildLineupFileName(team.name, currentMatch.opponentName, currentMatch.date),
-          );
-
-          if (__DEV__) {
-            console.log('[lineup-share] download fallback');
-          }
-
-          return;
+          console.log('[lineup-share] capture success', { uri: imageUri.substring(0, 80) });
         }
 
         const shareAvailable = await Sharing.isAvailableAsync();
-
-        if (Platform.OS === 'web') {
-          if (shareAvailable) {
-            try {
-              await Sharing.shareAsync(imageResult, {
-                dialogTitle: 'Compartilhar escalação',
-              });
-            } catch (error) {
-              if (__DEV__) {
-                console.log('[lineup-share] share unavailable', { error });
-              }
-
-              downloadDataUri(
-                imageResult,
-                buildLineupFileName(team.name, currentMatch.opponentName, currentMatch.date),
-              );
-
-              if (__DEV__) {
-                console.log('[lineup-share] download fallback');
-              }
-            }
-          } else {
-            if (__DEV__) {
-              console.log('[lineup-share] share unavailable');
-            }
-
-            downloadDataUri(
-              imageResult,
-              buildLineupFileName(team.name, currentMatch.opponentName, currentMatch.date),
-            );
-
-            if (__DEV__) {
-              console.log('[lineup-share] download fallback');
-            }
-          }
-
-          return;
-        }
-
         if (!shareAvailable) {
-          if (__DEV__) {
-            console.log('[lineup-share] share unavailable');
-          }
-
-          throw new Error('O compartilhamento não está disponível neste dispositivo.');
+          throw new Error('Compartilhamento não disponível neste dispositivo.');
         }
 
         await Sharing.shareAsync(
-          imageResult.startsWith('file://') ? imageResult : `file://${imageResult}`,
-          {
-            dialogTitle: 'Compartilhar escalação',
-            mimeType: 'image/png',
-          },
+          imageUri.startsWith('file://') ? imageUri : `file://${imageUri}`,
+          { dialogTitle: 'Compartilhar escalação', mimeType: 'image/png' },
         );
       } catch (error) {
         if (__DEV__) {
           console.log('[lineup-share] failed', {
             mode,
-            error,
+            platform: Platform.OS,
+            refExists: Boolean(shareCardRef.current),
+            name: error instanceof Error ? error.name : 'unknown',
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack?.substring(0, 400) : undefined,
           });
         }
 
@@ -923,6 +994,7 @@ export default function LineupScreen() {
 
           <View
             ref={shareCardRef}
+            nativeID="lineup-export-card"
             collapsable={false}
             onLayout={() => setShareCardReady(true)}
             style={styles.shareCardWrap}
@@ -1012,19 +1084,6 @@ function slugifyShareValue(value: string) {
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .toLowerCase();
-}
-
-function downloadDataUri(dataUri: string, fileName: string) {
-  if (typeof document === 'undefined') {
-    throw new Error('O navegador não disponibilizou o download da imagem.');
-  }
-
-  const anchor = document.createElement('a');
-  anchor.href = dataUri;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
 }
 
 const styles = StyleSheet.create({

@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 
 import {
+  addPlayerToQueue,
   getQueuedTeams,
   initRodizio,
   registerRodizioWin,
+  removePlayerFromActiveTeam,
+  removePlayerFromQueue,
   sortByPots,
   sortRandomly,
 } from '@/lib/pickup-tools';
+import type { RodizioState } from '@/lib/pickup-tools';
 
 import { buildMatchFieldCost, getMatchFieldPaymentSummary } from '@/lib/field-cost';
 import {
@@ -3460,6 +3464,106 @@ const testCases: TestCase[] = [
       assert.equal(state.matchCount, 0);
     },
   },
+  // ── removePlayerFromQueue ────────────────────────────────────────────────
+  {
+    name: 'removePlayerFromQueue: remove p8 do meio da fila mantendo ordem',
+    run() {
+      const state: RodizioState = {
+        teamA: ['p1', 'p2', 'p3', 'p4', 'p5'],
+        teamB: ['p11', 'p12', 'p13', 'p14', 'p15'],
+        waitingPlayers: ['p16', 'p6', 'p7', 'p8', 'p9', 'p10'],
+      };
+      const next = removePlayerFromQueue(state, 'p8');
+      assert.deepEqual(next.waitingPlayers, ['p16', 'p6', 'p7', 'p9', 'p10'], 'ordem preservada sem p8');
+      assert.deepEqual(next.teamA, state.teamA, 'teamA não muda');
+      assert.deepEqual(next.teamB, state.teamB, 'teamB não muda');
+    },
+  },
+
+  // ── removePlayerFromActiveTeam ────────────────────────────────────────────
+  {
+    name: 'removePlayerFromActiveTeam com replaceFromQueue: p3 é substituído por p11',
+    run() {
+      const state: RodizioState = {
+        teamA: ['p1', 'p2', 'p3', 'p4', 'p5'],
+        teamB: ['p6', 'p7', 'p8', 'p9', 'p10'],
+        waitingPlayers: ['p11', 'p12'],
+      };
+      const { state: next, incomplete } = removePlayerFromActiveTeam(state, 'p3', true);
+      assert.deepEqual(next.teamA, ['p1', 'p2', 'p4', 'p5', 'p11'], 'p11 entra no lugar de p3');
+      assert.deepEqual(next.waitingPlayers, ['p12'], 'p11 saiu da fila');
+      assert.equal(incomplete, false, 'substituição bem-sucedida');
+    },
+  },
+  {
+    name: 'removePlayerFromActiveTeam sem fila: time fica incompleto',
+    run() {
+      const state: RodizioState = {
+        teamA: ['p1', 'p2', 'p3', 'p4', 'p5'],
+        teamB: ['p6', 'p7', 'p8', 'p9', 'p10'],
+        waitingPlayers: [],
+      };
+      const { state: next, incomplete } = removePlayerFromActiveTeam(state, 'p3', true);
+      assert.deepEqual(next.teamA, ['p1', 'p2', 'p4', 'p5'], 'p3 removido, time com 4 jogadores');
+      assert.equal(next.waitingPlayers.length, 0, 'fila continua vazia');
+      assert.equal(incomplete, true, 'time incompleto sinalizado');
+    },
+  },
+
+  // ── registerRodizioWin com leavingAfterMatch ──────────────────────────────
+  {
+    name: 'registerRodizioWin com leavingAfterMatch: jogador saindo não vai para a fila',
+    run() {
+      const state: RodizioState = {
+        teamA: ['p1', 'p2', 'p3'],
+        teamB: ['p4', 'p5', 'p6'],
+        waitingPlayers: ['p7', 'p8', 'p9'],
+      };
+      // p5 marcado para sair após o jogo; time A vence
+      const next = registerRodizioWin(state, 'A', 3, ['p5']);
+      assert.deepEqual(next.teamA, ['p1', 'p2', 'p3'], 'time A permanece');
+      assert.deepEqual(next.teamB, ['p7', 'p8', 'p9'], 'próximos da lista entram como time B');
+      assert.deepEqual(next.waitingPlayers, ['p4', 'p6'], 'fila tem p4 e p6, mas não p5');
+      assert.ok(!next.waitingPlayers.includes('p5'), 'p5 saiu definitivamente da pelada');
+    },
+  },
+
+  // ── addPlayerToQueue ──────────────────────────────────────────────────────
+  {
+    name: 'addPlayerToQueue: novo jogador entra no fim da lista',
+    run() {
+      const state: RodizioState = {
+        teamA: ['p1', 'p2', 'p3', 'p4', 'p5'],
+        teamB: ['p6', 'p7', 'p8', 'p9', 'p10'],
+        waitingPlayers: ['p16'],
+      };
+      const next = addPlayerToQueue(state, 'p17');
+      assert.deepEqual(next.waitingPlayers, ['p16', 'p17'], 'p17 vai para o fim da lista');
+      assert.deepEqual(next.teamA, state.teamA, 'teamA não muda');
+      assert.deepEqual(next.teamB, state.teamB, 'teamB não muda');
+    },
+  },
+
+  // ── persistência após remoção ─────────────────────────────────────────────
+  {
+    name: 'persistência após remoção: estado com jogador removido da fila serializa corretamente',
+    run() {
+      let state: RodizioState = {
+        teamA: ['p1', 'p2', 'p3', 'p4', 'p5'],
+        teamB: ['p11', 'p12', 'p13', 'p14', 'p15'],
+        waitingPlayers: ['p16', 'p6', 'p7', 'p8', 'p9', 'p10'],
+      };
+      // Remove p8 da fila
+      state = removePlayerFromQueue(state, 'p8');
+      // Simula reload: serializa e desserializa
+      const serialized = JSON.stringify(state);
+      const restored = JSON.parse(serialized) as RodizioState;
+      assert.ok(!restored.waitingPlayers.includes('p8'), 'p8 não está na fila após reload simulado');
+      assert.deepEqual(restored.waitingPlayers, ['p16', 'p6', 'p7', 'p9', 'p10'], 'ordem preservada após reload');
+      assert.deepEqual(restored.teamA, state.teamA, 'teamA preservado');
+    },
+  },
+
   {
     name: 'cenário p1-p16 completo: após 2 vitórias de A, fila e times estão corretos',
     run() {

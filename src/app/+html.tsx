@@ -88,6 +88,14 @@ export default function RootHtml({ children }: PropsWithChildren) {
               a {
                 color: inherit;
               }
+
+              ins.adsbygoogle[data-ad-status="unfilled"] {
+                display: none !important;
+              }
+
+              [data-appboca-ad-wrapper="true"][data-ad-visibility="hidden"] {
+                display: none !important;
+              }
             `,
           }}
         />

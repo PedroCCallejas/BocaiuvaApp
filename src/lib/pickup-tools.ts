@@ -20,6 +20,12 @@ export type RodizioState = {
   waitingPlayers: string[];
 };
 
+export type RemoveActiveResult = {
+  state: RodizioState;
+  // true when replaceFromQueue was requested but the queue was empty
+  incomplete: boolean;
+};
+
 function shuffle<T>(arr: T[]): T[] {
   const copy = [...arr];
   for (let i = copy.length - 1; i > 0; i--) {
@@ -93,30 +99,47 @@ export function initRodizio(players: string[], perTeam: number): RodizioState {
 }
 
 // Rodízio: register match winner.
-// Winner stays. Loser players go to END of waitingPlayers.
-// Next team = first perTeam from the updated waitingPlayers.
+// Winner stays. Loser players (except those in leavingAfterMatch) go to END of waitingPlayers.
+// Winner players in leavingAfterMatch are replaced by the first queued players.
 // If queue has fewer than perTeam, forms a partial team with whoever is there.
 export function registerRodizioWin(
   state: RodizioState,
   winner: 'A' | 'B',
   perTeam: number,
+  leavingAfterMatch: string[] = [],
 ): RodizioState {
   const winnerTeam = winner === 'A' ? state.teamA : state.teamB;
   const loserTeam = winner === 'A' ? state.teamB : state.teamA;
 
-  // Loser players join end of queue
-  const newWaiting = [...state.waitingPlayers, ...loserTeam];
+  // Loser players join end of queue (except those marked as leaving)
+  const loserToQueue = loserTeam.filter((p) => !leavingAfterMatch.includes(p));
+  let newWaiting = [...state.waitingPlayers, ...loserToQueue];
+
+  // Winner players marked as leaving are replaced by the first queued players
+  const stayingWinners = winnerTeam.filter((p) => !leavingAfterMatch.includes(p));
+  const leavingWinnerCount = winnerTeam.length - stayingWinners.length;
+  let finalWinnerTeam = [...stayingWinners];
+  for (let i = 0; i < leavingWinnerCount; i++) {
+    if (newWaiting.length > 0) {
+      finalWinnerTeam = [...finalWinnerTeam, newWaiting[0]];
+      newWaiting = newWaiting.slice(1);
+    }
+  }
 
   if (newWaiting.length === 0) {
-    // No one to challenge — loser stays as opponent
-    return { teamA: winnerTeam, teamB: loserTeam, waitingPlayers: [] };
+    // No challenger available — keep the (non-leaving) loser as opponent
+    return {
+      teamA: finalWinnerTeam,
+      teamB: loserTeam.filter((p) => !leavingAfterMatch.includes(p)),
+      waitingPlayers: [],
+    };
   }
 
   const nextTeam = newWaiting.slice(0, perTeam);
   const remainingWaiting = newWaiting.slice(perTeam);
 
   return {
-    teamA: winnerTeam,
+    teamA: finalWinnerTeam,
     teamB: nextTeam,
     waitingPlayers: remainingWaiting,
   };
@@ -130,4 +153,53 @@ export function getQueuedTeams(waitingPlayers: string[], perTeam: number): strin
     result.push(waitingPlayers.slice(i, i + perTeam));
   }
   return result;
+}
+
+// Remove a player from the waiting queue, preserving the order of remaining players
+export function removePlayerFromQueue(state: RodizioState, player: string): RodizioState {
+  return { ...state, waitingPlayers: state.waitingPlayers.filter((p) => p !== player) };
+}
+
+// Remove a player from an active team (teamA or teamB) and optionally pull the first queued
+// player as replacement. Returns incomplete: true when the queue was empty and the team is short.
+export function removePlayerFromActiveTeam(
+  rodizioState: RodizioState,
+  player: string,
+  replaceFromQueue: boolean,
+): RemoveActiveResult {
+  const inTeamA = rodizioState.teamA.includes(player);
+  const inTeamB = rodizioState.teamB.includes(player);
+
+  if (!inTeamA && !inTeamB) {
+    return { state: rodizioState, incomplete: false };
+  }
+
+  const newTeamA = inTeamA ? rodizioState.teamA.filter((p) => p !== player) : rodizioState.teamA;
+  const newTeamB = inTeamB ? rodizioState.teamB.filter((p) => p !== player) : rodizioState.teamB;
+
+  if (!replaceFromQueue || rodizioState.waitingPlayers.length === 0) {
+    return {
+      state: { ...rodizioState, teamA: newTeamA, teamB: newTeamB },
+      incomplete: replaceFromQueue,
+    };
+  }
+
+  // Pull first queued player and append to the team that lost a member
+  const replacement = rodizioState.waitingPlayers[0];
+  const newWaiting = rodizioState.waitingPlayers.slice(1);
+
+  return {
+    state: {
+      ...rodizioState,
+      teamA: inTeamA ? [...newTeamA, replacement] : newTeamA,
+      teamB: inTeamB ? [...newTeamB, replacement] : newTeamB,
+      waitingPlayers: newWaiting,
+    },
+    incomplete: false,
+  };
+}
+
+// Add a new player to the end of the waiting queue during an active session
+export function addPlayerToQueue(state: RodizioState, player: string): RodizioState {
+  return { ...state, waitingPlayers: [...state.waitingPlayers, player] };
 }

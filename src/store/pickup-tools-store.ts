@@ -2,8 +2,11 @@ import { create } from 'zustand';
 
 import {
   type RodizioState,
+  addPlayerToQueue,
   initRodizio,
   registerRodizioWin,
+  removePlayerFromActiveTeam,
+  removePlayerFromQueue,
 } from '@/lib/pickup-tools';
 
 // Timer state uses timestamps so the displayed time is always accurate
@@ -26,6 +29,8 @@ interface RodizioSlice extends RodizioState {
   playersPerTeam: number;
   phase: 'setup' | 'playing';
   matchCount: number;
+  // Players marked to leave after the current match ends (stay in team visually until then)
+  leavingAfterMatch: string[];
 }
 
 interface PickupToolsState extends TimerState, RodizioSlice {
@@ -42,6 +47,11 @@ interface PickupToolsState extends TimerState, RodizioSlice {
   startRodizio(): void;
   registerWin(winner: 'A' | 'B'): void;
   resetRodizio(): void;
+
+  // Removal during active session
+  removeFromQueue(player: string): void;
+  removeFromActiveTeam(player: string, mode: 'now' | 'afterMatch'): void;
+  addPlayerDuringActive(player: string): void;
 
   // Full reset: clears both timer and rodízio, then removes localStorage entry
   resetAll(): void;
@@ -64,6 +74,7 @@ interface PersistedState {
   waitingPlayers: string[];
   phase: 'setup' | 'playing';
   matchCount: number;
+  leavingAfterMatch: string[];
 }
 
 export const TIMER_DEFAULTS: TimerState = {
@@ -85,6 +96,7 @@ export const RODIZIO_DEFAULTS: RodizioSlice = {
   waitingPlayers: [],
   phase: 'setup',
   matchCount: 0,
+  leavingAfterMatch: [],
 };
 
 const STORAGE_KEY = 'professo-pickup-tools';
@@ -119,6 +131,7 @@ function saveStoredState(state: PickupToolsState): void {
       waitingPlayers: state.waitingPlayers,
       phase: state.phase,
       matchCount: state.matchCount,
+      leavingAfterMatch: state.leavingAfterMatch,
     };
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
@@ -229,17 +242,54 @@ export const usePickupToolsStore = create<PickupToolsState>()((set, get) => ({
   startRodizio() {
     const { players, playersPerTeam } = get();
     const state = initRodizio(players, playersPerTeam);
-    set({ ...state, phase: 'playing', matchCount: 0 });
+    set({ ...state, phase: 'playing', matchCount: 0, leavingAfterMatch: [] });
   },
 
   registerWin(winner) {
-    const { teamA, teamB, waitingPlayers, playersPerTeam, matchCount } = get();
-    const newState = registerRodizioWin({ teamA, teamB, waitingPlayers }, winner, playersPerTeam);
-    set({ ...newState, matchCount: matchCount + 1 });
+    const { teamA, teamB, waitingPlayers, playersPerTeam, matchCount, leavingAfterMatch } = get();
+    const newState = registerRodizioWin(
+      { teamA, teamB, waitingPlayers },
+      winner,
+      playersPerTeam,
+      leavingAfterMatch,
+    );
+    set({ ...newState, matchCount: matchCount + 1, leavingAfterMatch: [] });
   },
 
   resetRodizio() {
     set({ ...RODIZIO_DEFAULTS });
+  },
+
+  removeFromQueue(player) {
+    const { teamA, teamB, waitingPlayers } = get();
+    const newState = removePlayerFromQueue({ teamA, teamB, waitingPlayers }, player);
+    set({ waitingPlayers: newState.waitingPlayers });
+  },
+
+  removeFromActiveTeam(player, mode) {
+    if (mode === 'afterMatch') {
+      const { leavingAfterMatch } = get();
+      if (!leavingAfterMatch.includes(player)) {
+        set({ leavingAfterMatch: [...leavingAfterMatch, player] });
+      }
+      return;
+    }
+    // 'now': remove player immediately and pull replacement from queue if available
+    const { teamA, teamB, waitingPlayers } = get();
+    const { state: newState } = removePlayerFromActiveTeam(
+      { teamA, teamB, waitingPlayers },
+      player,
+      true,
+    );
+    set({ teamA: newState.teamA, teamB: newState.teamB, waitingPlayers: newState.waitingPlayers });
+  },
+
+  addPlayerDuringActive(player) {
+    const { teamA, teamB, waitingPlayers } = get();
+    const allPlayers = [...teamA, ...teamB, ...waitingPlayers];
+    if (allPlayers.includes(player)) return;
+    const newState = addPlayerToQueue({ teamA, teamB, waitingPlayers }, player);
+    set({ waitingPlayers: newState.waitingPlayers });
   },
 
   resetAll() {

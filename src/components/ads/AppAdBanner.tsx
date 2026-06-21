@@ -37,6 +37,7 @@ export function AppAdBanner({ placement, compact = false }: AppAdBannerProps) {
     debugWebAd('app-banner-check', {
       pathname,
       placement,
+      slot: placementConfig?.slot ?? null,
       routeAllowed,
       placementAllowed,
       adsEnabled: ADS_ENABLED,
@@ -49,6 +50,7 @@ export function AppAdBanner({ placement, compact = false }: AppAdBannerProps) {
     debugWebAd('app-banner-null', {
       pathname,
       placement,
+      slot: placementConfig?.slot ?? null,
       routeAllowed,
       placementAllowed,
       adsEnabled: ADS_ENABLED,

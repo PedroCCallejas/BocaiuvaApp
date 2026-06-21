@@ -28,6 +28,7 @@ export default function RootHtml({ children }: PropsWithChildren) {
           name="google-adsense-account"
           content="ca-pub-1836203364600133"
         />
+        <meta name="google-site-verification" content="iqs1LjYqRCmgOtKD5H7lJcWmQYE1woickTauhjOMsBs" />
         <meta name="theme-color" content={APP_THEME_COLOR} />
         <meta name="format-detection" content="telephone=no" />
         <meta name="mobile-web-app-capable" content="yes" />

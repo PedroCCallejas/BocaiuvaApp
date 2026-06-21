@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
 
+import {
+  getQueuedTeams,
+  initRodizio,
+  registerRodizioWin,
+  sortByPots,
+  sortRandomly,
+} from '@/lib/pickup-tools';
+
 import { buildMatchFieldCost, getMatchFieldPaymentSummary } from '@/lib/field-cost';
 import {
   getProfilePhotoSaveErrorMessage,
@@ -3152,6 +3160,205 @@ const testCases: TestCase[] = [
       assert.ok(notification, 'notificação deve existir');
       assert.equal(notification?.teamId, 'team-bocaiuva', 'teamId da notificação deve ser do time');
       assert.equal(notification?.actorUserId, 'user-admin', 'actorUserId deve ser o admin que confirmou');
+    },
+  },
+
+  // ── sortRandomly ──────────────────────────────────────────────────────────
+  {
+    name: 'sortRandomly: 10 jogadores, 5 por time → 2 times de 5, sem reservas',
+    run() {
+      const players = Array.from({ length: 10 }, (_, i) => `p${i + 1}`);
+      const { teams, reservas } = sortRandomly(players, 5);
+      assert.equal(teams.length, 2, 'deve ter 2 times');
+      assert.equal(teams[0].length, 5, 'time 1 deve ter 5 jogadores');
+      assert.equal(teams[1].length, 5, 'time 2 deve ter 5 jogadores');
+      assert.equal(reservas.length, 0, 'sem reservas');
+    },
+  },
+  {
+    name: 'sortRandomly: 11 jogadores, 5 por time → 2 times de 5 + 1 reserva',
+    run() {
+      const players = Array.from({ length: 11 }, (_, i) => `p${i + 1}`);
+      const { teams, reservas } = sortRandomly(players, 5);
+      assert.equal(teams.length, 2);
+      assert.equal(teams[0].length, 5);
+      assert.equal(teams[1].length, 5);
+      assert.equal(reservas.length, 1);
+    },
+  },
+  {
+    name: 'sortRandomly: 12 jogadores, 5 por time → 2 times de 5 + 2 reservas',
+    run() {
+      const players = Array.from({ length: 12 }, (_, i) => `p${i + 1}`);
+      const { teams, reservas } = sortRandomly(players, 5);
+      assert.equal(teams.length, 2);
+      assert.equal(teams[0].length, 5);
+      assert.equal(teams[1].length, 5);
+      assert.equal(reservas.length, 2);
+    },
+  },
+  {
+    name: 'sortRandomly: nunca produz times de tamanhos diferentes (6v4 impossível para 10j/5pt)',
+    run() {
+      const players = Array.from({ length: 10 }, (_, i) => `p${i + 1}`);
+      for (let trial = 0; trial < 20; trial++) {
+        const { teams } = sortRandomly(players, 5);
+        for (const team of teams) {
+          assert.equal(team.length, 5, `time com ${team.length} jogadores em vez de 5`);
+        }
+      }
+    },
+  },
+  {
+    name: 'sortRandomly: todos os jogadores aparecem exatamente uma vez',
+    run() {
+      const players = Array.from({ length: 13 }, (_, i) => `p${i + 1}`);
+      const { teams, reservas } = sortRandomly(players, 5);
+      const all = [...teams.flat(), ...reservas].sort();
+      assert.deepEqual(all, [...players].sort(), 'todos os jogadores devem aparecer uma vez');
+    },
+  },
+
+  // ── sortByPots ────────────────────────────────────────────────────────────
+  {
+    name: 'sortByPots: 10 jogadores com potes → 2 times de 5, distribuição equilibrada',
+    run() {
+      const players = [
+        { name: 'p1', pot: 1 as const },
+        { name: 'p2', pot: 1 as const },
+        { name: 'p3', pot: 2 as const },
+        { name: 'p4', pot: 2 as const },
+        { name: 'p5', pot: 3 as const },
+        { name: 'p6', pot: 3 as const },
+        { name: 'p7', pot: 3 as const },
+        { name: 'p8', pot: 3 as const },
+        { name: 'p9', pot: 4 as const },
+        { name: 'p10', pot: 4 as const },
+      ];
+      const { teams, reservas } = sortByPots(players, 5);
+      assert.equal(teams.length, 2, 'deve ter 2 times');
+      assert.equal(teams[0].length, 5, 'time 1 deve ter 5');
+      assert.equal(teams[1].length, 5, 'time 2 deve ter 5');
+      assert.equal(reservas.length, 0, 'sem reservas');
+    },
+  },
+  {
+    name: 'sortByPots: potes não sequenciais (ex: apenas P1 e P4) funcionam',
+    run() {
+      const players = [
+        { name: 'craque1', pot: 1 as const },
+        { name: 'craque2', pot: 1 as const },
+        { name: 'medio1', pot: 4 as const },
+        { name: 'medio2', pot: 4 as const },
+        { name: 'medio3', pot: 4 as const },
+        { name: 'medio4', pot: 4 as const },
+        { name: 'medio5', pot: 4 as const },
+        { name: 'medio6', pot: 4 as const },
+      ];
+      const { teams, reservas } = sortByPots(players, 4);
+      assert.equal(teams.length, 2, 'deve ter 2 times');
+      assert.equal(teams[0].length, 4);
+      assert.equal(teams[1].length, 4);
+      assert.equal(reservas.length, 0);
+    },
+  },
+  {
+    name: 'sortByPots: todos os jogadores aparecem exatamente uma vez',
+    run() {
+      const players = Array.from({ length: 11 }, (_, i) => ({
+        name: `p${i + 1}`,
+        pot: ((i % 4) + 1) as 1 | 2 | 3 | 4,
+      }));
+      const { teams, reservas } = sortByPots(players, 5);
+      const all = [...teams.flat(), ...reservas].sort();
+      assert.deepEqual(all, players.map((p) => p.name).sort());
+    },
+  },
+
+  // ── initRodizio ──────────────────────────────────────────────────────────
+  {
+    name: 'initRodizio: 16 jogadores, 5 por time → teamA=5, teamB=5, waiting=6',
+    run() {
+      const players = Array.from({ length: 16 }, (_, i) => `p${i + 1}`);
+      const state = initRodizio(players, 5);
+      assert.equal(state.teamA.length, 5, 'teamA deve ter 5');
+      assert.equal(state.teamB.length, 5, 'teamB deve ter 5');
+      assert.equal(state.waitingPlayers.length, 6, 'waiting deve ter 6');
+      assert.deepEqual(state.teamA, ['p1', 'p2', 'p3', 'p4', 'p5']);
+      assert.deepEqual(state.teamB, ['p6', 'p7', 'p8', 'p9', 'p10']);
+      assert.deepEqual(state.waitingPlayers, ['p11', 'p12', 'p13', 'p14', 'p15', 'p16']);
+    },
+  },
+
+  // ── registerRodizioWin ───────────────────────────────────────────────────
+  {
+    name: 'registerRodizioWin: winner A → A fica, B vai para fila, próximos 5 da fila entram',
+    run() {
+      const players = Array.from({ length: 16 }, (_, i) => `p${i + 1}`);
+      const state = initRodizio(players, 5);
+      // teamA=p1-5, teamB=p6-10, waiting=p11-16
+      const next = registerRodizioWin(state, 'A', 5);
+      // Expected: teamA=p1-5 (same), teamB=p11-15 (first 5 from waiting), waiting=p16,p6-10
+      assert.deepEqual(next.teamA, ['p1', 'p2', 'p3', 'p4', 'p5'], 'vencedor A deve permanecer');
+      assert.deepEqual(next.teamB, ['p11', 'p12', 'p13', 'p14', 'p15'], 'próximos 5 da fila entram como time B');
+      assert.deepEqual(next.waitingPlayers, ['p16', 'p6', 'p7', 'p8', 'p9', 'p10'], 'p16 fica na frente dos perdedores');
+    },
+  },
+  {
+    name: 'registerRodizioWin: winner B → B fica, A vai para fila',
+    run() {
+      const players = Array.from({ length: 16 }, (_, i) => `p${i + 1}`);
+      const state = initRodizio(players, 5);
+      const next = registerRodizioWin(state, 'B', 5);
+      assert.deepEqual(next.teamA, ['p6', 'p7', 'p8', 'p9', 'p10'], 'vencedor B deve permanecer como teamA');
+      assert.deepEqual(next.teamB, ['p11', 'p12', 'p13', 'p14', 'p15'], 'próximos da fila entram');
+      assert.deepEqual(next.waitingPlayers, ['p16', 'p1', 'p2', 'p3', 'p4', 'p5'], 'perdedores (A) vão para o fim');
+    },
+  },
+  {
+    name: 'registerRodizioWin: fila vazia → jogo se repete com os mesmos times',
+    run() {
+      const state = {
+        teamA: ['p1', 'p2', 'p3'],
+        teamB: ['p4', 'p5', 'p6'],
+        waitingPlayers: [],
+      };
+      const next = registerRodizioWin(state, 'A', 3);
+      assert.deepEqual(next.teamA, ['p1', 'p2', 'p3']);
+      assert.deepEqual(next.teamB, ['p4', 'p5', 'p6']);
+      assert.deepEqual(next.waitingPlayers, []);
+    },
+  },
+  {
+    name: 'registerRodizioWin: fila incompleta (< perTeam) forma time parcial',
+    run() {
+      const state = {
+        teamA: ['p1', 'p2', 'p3', 'p4', 'p5'],
+        teamB: ['p6', 'p7', 'p8', 'p9', 'p10'],
+        waitingPlayers: ['p11', 'p12'],
+      };
+      const next = registerRodizioWin(state, 'A', 5);
+      // waiting=p11,p12 + loser p6-p10 → nextTeam=p11,p12,p6,p7,p8; remaining=p9,p10
+      assert.deepEqual(next.teamB, ['p11', 'p12', 'p6', 'p7', 'p8']);
+      assert.deepEqual(next.waitingPlayers, ['p9', 'p10']);
+    },
+  },
+
+  // ── getQueuedTeams ───────────────────────────────────────────────────────
+  {
+    name: 'getQueuedTeams: 6 jogadores, 5 por time → [[5], [1]]',
+    run() {
+      const waiting = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'];
+      const groups = getQueuedTeams(waiting, 5);
+      assert.equal(groups.length, 2);
+      assert.deepEqual(groups[0], ['p1', 'p2', 'p3', 'p4', 'p5']);
+      assert.deepEqual(groups[1], ['p6']);
+    },
+  },
+  {
+    name: 'getQueuedTeams: fila vazia → []',
+    run() {
+      assert.deepEqual(getQueuedTeams([], 5), []);
     },
   },
 ];

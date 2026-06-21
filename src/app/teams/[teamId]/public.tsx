@@ -2,14 +2,12 @@ import { useEffect, useState } from 'react';
 import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
-import { AdSlot } from '@/components/ads/AdSlot';
 import { PublicPageShell } from '@/components/public/PublicPageShell';
 import { TeamHeroCard } from '@/components/cards/TeamHeroCard';
 import { AppButton } from '@/components/ui/AppButton';
 import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PresentationVideoCard } from '@/components/video/PresentationVideoCard';
-import { AD_PLACEMENTS } from '@/constants/ads';
 import { POSITION_LABELS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -280,8 +278,6 @@ export default function PublicTeamProfileScreen() {
             <ProfileStat label="Gols sofridos" value={String(profile.stats.goalsAgainst)} />
             <ProfileStat label="Aproveitamento" value={`${profile.stats.pointsRate}%`} />
           </View>
-
-          <AdSlot placement={AD_PLACEMENTS.PUBLIC_TEAM_AFTER_STATS} />
 
           <View style={styles.section}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>

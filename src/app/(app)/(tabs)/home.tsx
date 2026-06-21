@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
-import { AdSlot } from '@/components/ads/AdSlot';
 import { MatchCard } from '@/components/cards/MatchCard';
 import { MetricCard } from '@/components/cards/MetricCard';
 import { NotificationCard } from '@/components/cards/NotificationCard';
@@ -15,7 +14,6 @@ import { AppButton } from '@/components/ui/AppButton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
-import { AD_PLACEMENTS } from '@/constants/ads';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { buildProfessoHomeTip } from '@/lib/professo-tips';
@@ -198,8 +196,6 @@ export default function HomeScreen() {
           onAction={canCreateMatches ? () => router.push('/matches/create') : undefined}
         />
       )}
-
-      <AdSlot placement={AD_PLACEMENTS.HOME_AFTER_NEXT_MATCH} />
 
       <SectionHeader
         title="Última resenha"

@@ -22,6 +22,7 @@ type PublicNavItem = {
 const PUBLIC_NAV_ITEMS: PublicNavItem[] = [
   { label: 'Início', href: '/' },
   { label: 'Galeria pública', href: '/teams-gallery' },
+  { label: 'Ferramentas', href: '/ferramentas' },
   { label: 'Entrar', href: '/login' },
   { label: 'Criar conta', href: '/register' },
   { label: 'Privacidade', href: '/privacidade' },
@@ -140,7 +141,7 @@ export function PublicPageShell({
         </Text>
         <View style={styles.footerLinks}>
           {PUBLIC_NAV_ITEMS.filter((item) =>
-            ['/teams-gallery', '/login', '/register', '/privacidade', '/termos', '/suporte'].includes(
+            ['/teams-gallery', '/ferramentas', '/login', '/register', '/privacidade', '/termos', '/suporte'].includes(
               item.href,
             ),
           ).map((item) => (

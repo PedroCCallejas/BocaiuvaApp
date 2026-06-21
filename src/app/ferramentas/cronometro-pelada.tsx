@@ -10,7 +10,9 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   TIMER_DEFAULTS,
   computeRemainingMs,
+  hasActiveRodizio,
   hasActiveSession,
+  rehydratePickupToolsState,
   usePickupToolsStore,
 } from '@/store/pickup-tools-store';
 
@@ -68,6 +70,11 @@ export default function CronometroScreen() {
   const gameStarted = sessionActive && (isRunning || winner !== null || store.remainingMsWhenPaused < durationMs);
   const gameOver = winner !== null;
   const hasResult = gameOver;
+
+  useEffect(() => {
+    rehydratePickupToolsState();
+    setDisplayMs(computeRemainingMs(usePickupToolsStore.getState()));
+  }, []);
 
   // On mount: resolve timer state that may have changed while page was closed/refreshed.
   // If timer was running and time already expired, end the game now.
@@ -153,7 +160,11 @@ export default function CronometroScreen() {
           ? 'Empate!'
           : null;
 
-  const showRodizio = rodizioPhase === 'playing' && rodizioA.length > 0;
+  const showRodizio = hasActiveRodizio({
+    phase: rodizioPhase,
+    teamA: rodizioA,
+    teamB: rodizioB,
+  });
 
   return (
     <PublicPageShell

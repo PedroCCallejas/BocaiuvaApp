@@ -92,6 +92,11 @@ import {
 } from '@/services/repository/mock-repository';
 import { normalizeTeamMemberStatus } from '@/lib/team-membership';
 import {
+  PICKUP_TOOLS_STORAGE_KEY,
+  hasActiveRodizio,
+  loadStoredState,
+} from '@/store/pickup-tools-store';
+import {
   LOST_TEAM_ACCESS_MESSAGE,
   TEAM_ACCESS_PERMISSION_MESSAGE,
   USER_ACCOUNT_PERMISSION_MESSAGE,
@@ -3590,6 +3595,56 @@ const testCases: TestCase[] = [
         state.waitingPlayers,
         ['p10', 'p11', 'p12', 'p13', 'p14', 'p15'],
         'restante da fila correto',
+      );
+    },
+  },
+  {
+    name: 'loadStoredState restaura o rodizio salvo do localStorage',
+    run() {
+      const storedSnapshot = {
+        durationMs: 600000,
+        remainingMsWhenPaused: 600000,
+        startedAt: 1782030828981,
+        isRunning: true,
+        teamAScore: 0,
+        teamBScore: 0,
+        goalLimit: 2,
+        winner: null,
+        players: ['1', '2', '3', '4', '5', '6', '7', '8', '9'],
+        playersPerTeam: 4,
+        teamA: ['1', '2', '3', '4'],
+        teamB: ['8', '9', '5', '6'],
+        waitingPlayers: ['7'],
+        phase: 'playing' as const,
+        matchCount: 2,
+        leavingAfterMatch: [],
+      };
+
+      const loaded = loadStoredState({
+        getItem(key) {
+          assert.equal(key, PICKUP_TOOLS_STORAGE_KEY);
+          return JSON.stringify(storedSnapshot);
+        },
+      });
+
+      assert.equal(loaded.storageWasRead, true);
+      assert.equal(loaded.state.phase, 'playing');
+      assert.deepEqual(loaded.state.teamA, ['1', '2', '3', '4']);
+      assert.deepEqual(loaded.state.teamB, ['8', '9', '5', '6']);
+      assert.deepEqual(loaded.state.waitingPlayers, ['7']);
+      assert.equal(loaded.state.matchCount, 2);
+    },
+  },
+  {
+    name: 'hasActiveRodizio retorna true quando phase esta playing e os dois times existem',
+    run() {
+      assert.equal(
+        hasActiveRodizio({
+          phase: 'playing',
+          teamA: ['1', '2', '3', '4'],
+          teamB: ['8', '9', '5', '6'],
+        }),
+        true,
       );
     },
   },

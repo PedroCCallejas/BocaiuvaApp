@@ -34,6 +34,8 @@ interface RodizioSlice extends RodizioState {
 }
 
 interface PickupToolsState extends TimerState, RodizioSlice {
+  storageWasRead: boolean;
+
   // Timer actions
   configureTimer(durationMs: number, goalLimit: number): void;
   startTimer(): void;
@@ -58,7 +60,7 @@ interface PickupToolsState extends TimerState, RodizioSlice {
 }
 
 // Only data fields are persisted (no functions)
-interface PersistedState {
+export interface PersistedState {
   durationMs: number;
   remainingMsWhenPaused: number;
   startedAt: number | null;
@@ -99,61 +101,242 @@ export const RODIZIO_DEFAULTS: RodizioSlice = {
   leavingAfterMatch: [],
 };
 
-const STORAGE_KEY = 'professo-pickup-tools';
+export const PICKUP_TOOLS_STORAGE_KEY = 'professo-pickup-tools';
 
-function loadStoredState(): Partial<PersistedState> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as Partial<PersistedState>;
-  } catch {
+type StorageReader = Pick<Storage, 'getItem'>;
+type StorageWriter = Pick<Storage, 'setItem' | 'removeItem'>;
+type StorageLike = StorageReader & StorageWriter;
+
+export interface LoadStoredStateResult {
+  state: Partial<PersistedState>;
+  storageWasRead: boolean;
+}
+
+function getBrowserStorage(): StorageLike | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return window.localStorage;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function sanitizeStoredState(raw: unknown): Partial<PersistedState> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return {};
+  }
+
+  const value = raw as Record<string, unknown>;
+  const sanitized: Partial<PersistedState> = {};
+
+  if (isFiniteNumber(value.durationMs) && value.durationMs > 0) {
+    sanitized.durationMs = value.durationMs;
+  }
+
+  if (isFiniteNumber(value.remainingMsWhenPaused) && value.remainingMsWhenPaused >= 0) {
+    sanitized.remainingMsWhenPaused = value.remainingMsWhenPaused;
+  }
+
+  if (value.startedAt === null || isFiniteNumber(value.startedAt)) {
+    sanitized.startedAt = value.startedAt as number | null;
+  }
+
+  if (typeof value.isRunning === 'boolean') {
+    sanitized.isRunning = value.isRunning;
+  }
+
+  if (isFiniteNumber(value.teamAScore) && value.teamAScore >= 0) {
+    sanitized.teamAScore = value.teamAScore;
+  }
+
+  if (isFiniteNumber(value.teamBScore) && value.teamBScore >= 0) {
+    sanitized.teamBScore = value.teamBScore;
+  }
+
+  if (isFiniteNumber(value.goalLimit) && value.goalLimit >= 0) {
+    sanitized.goalLimit = value.goalLimit;
+  }
+
+  if (value.winner === null || value.winner === 'A' || value.winner === 'B' || value.winner === 'draw') {
+    sanitized.winner = value.winner as PersistedState['winner'];
+  }
+
+  if (isStringArray(value.players)) {
+    sanitized.players = value.players;
+  }
+
+  if (isFiniteNumber(value.playersPerTeam) && value.playersPerTeam >= 1) {
+    sanitized.playersPerTeam = value.playersPerTeam;
+  }
+
+  if (isStringArray(value.teamA)) {
+    sanitized.teamA = value.teamA;
+  }
+
+  if (isStringArray(value.teamB)) {
+    sanitized.teamB = value.teamB;
+  }
+
+  if (isStringArray(value.waitingPlayers)) {
+    sanitized.waitingPlayers = value.waitingPlayers;
+  }
+
+  if (value.phase === 'setup' || value.phase === 'playing') {
+    sanitized.phase = value.phase;
+  }
+
+  if (isFiniteNumber(value.matchCount) && value.matchCount >= 0) {
+    sanitized.matchCount = value.matchCount;
+  }
+
+  if (isStringArray(value.leavingAfterMatch)) {
+    sanitized.leavingAfterMatch = value.leavingAfterMatch;
+  }
+
+  return sanitized;
+}
+
+function buildDefaultPersistedState(): PersistedState {
+  return {
+    ...TIMER_DEFAULTS,
+    ...RODIZIO_DEFAULTS,
+  };
+}
+
+function pickPersistedState(
+  state: Pick<
+    PickupToolsState,
+    | 'durationMs'
+    | 'remainingMsWhenPaused'
+    | 'startedAt'
+    | 'isRunning'
+    | 'teamAScore'
+    | 'teamBScore'
+    | 'goalLimit'
+    | 'winner'
+    | 'players'
+    | 'playersPerTeam'
+    | 'teamA'
+    | 'teamB'
+    | 'waitingPlayers'
+    | 'phase'
+    | 'matchCount'
+    | 'leavingAfterMatch'
+  >,
+): PersistedState {
+  return {
+    durationMs: state.durationMs,
+    remainingMsWhenPaused: state.remainingMsWhenPaused,
+    startedAt: state.startedAt,
+    isRunning: state.isRunning,
+    teamAScore: state.teamAScore,
+    teamBScore: state.teamBScore,
+    goalLimit: state.goalLimit,
+    winner: state.winner,
+    players: state.players,
+    playersPerTeam: state.playersPerTeam,
+    teamA: state.teamA,
+    teamB: state.teamB,
+    waitingPlayers: state.waitingPlayers,
+    phase: state.phase,
+    matchCount: state.matchCount,
+    leavingAfterMatch: state.leavingAfterMatch,
+  };
+}
+
+function arraysEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function persistedStatesEqual(left: PersistedState, right: PersistedState): boolean {
+  return (
+    left.durationMs === right.durationMs &&
+    left.remainingMsWhenPaused === right.remainingMsWhenPaused &&
+    left.startedAt === right.startedAt &&
+    left.isRunning === right.isRunning &&
+    left.teamAScore === right.teamAScore &&
+    left.teamBScore === right.teamBScore &&
+    left.goalLimit === right.goalLimit &&
+    left.winner === right.winner &&
+    left.playersPerTeam === right.playersPerTeam &&
+    left.phase === right.phase &&
+    left.matchCount === right.matchCount &&
+    arraysEqual(left.players, right.players) &&
+    arraysEqual(left.teamA, right.teamA) &&
+    arraysEqual(left.teamB, right.teamB) &&
+    arraysEqual(left.waitingPlayers, right.waitingPlayers) &&
+    arraysEqual(left.leavingAfterMatch, right.leavingAfterMatch)
+  );
+}
+
+export function loadStoredState(storage: StorageReader | null = getBrowserStorage()): LoadStoredStateResult {
+  if (!storage) {
+    return {
+      state: {},
+      storageWasRead: false,
+    };
+  }
+
+  try {
+    const raw = storage.getItem(PICKUP_TOOLS_STORAGE_KEY);
+
+    if (!raw) {
+      return {
+        state: {},
+        storageWasRead: true,
+      };
+    }
+
+    return {
+      state: sanitizeStoredState(JSON.parse(raw)),
+      storageWasRead: true,
+    };
+  } catch {
+    return {
+      state: {},
+      storageWasRead: true,
+    };
   }
 }
 
 function saveStoredState(state: PickupToolsState): void {
-  if (typeof window === 'undefined') return;
+  const storage = getBrowserStorage();
+  if (!storage) return;
+
   try {
-    const data: PersistedState = {
-      durationMs: state.durationMs,
-      remainingMsWhenPaused: state.remainingMsWhenPaused,
-      startedAt: state.startedAt,
-      isRunning: state.isRunning,
-      teamAScore: state.teamAScore,
-      teamBScore: state.teamBScore,
-      goalLimit: state.goalLimit,
-      winner: state.winner,
-      players: state.players,
-      playersPerTeam: state.playersPerTeam,
-      teamA: state.teamA,
-      teamB: state.teamB,
-      waitingPlayers: state.waitingPlayers,
-      phase: state.phase,
-      matchCount: state.matchCount,
-      leavingAfterMatch: state.leavingAfterMatch,
-    };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    storage.setItem(PICKUP_TOOLS_STORAGE_KEY, JSON.stringify(pickPersistedState(state)));
   } catch {
     // ignore write errors (private/incognito mode, quota exceeded)
   }
 }
 
 function clearStoredState(): void {
-  if (typeof window === 'undefined') return;
+  const storage = getBrowserStorage();
+  if (!storage) return;
+
   try {
-    window.localStorage.removeItem(STORAGE_KEY);
+    storage.removeItem(PICKUP_TOOLS_STORAGE_KEY);
   } catch {
     // ignore
   }
 }
 
-const savedState = loadStoredState();
+const initialStoredSnapshot = loadStoredState();
+const initialPersistedState = {
+  ...buildDefaultPersistedState(),
+  ...initialStoredSnapshot.state,
+};
 
 export const usePickupToolsStore = create<PickupToolsState>()((set, get) => ({
-  ...TIMER_DEFAULTS,
-  ...RODIZIO_DEFAULTS,
-  ...savedState,
+  ...initialPersistedState,
+  storageWasRead: initialStoredSnapshot.storageWasRead,
 
   configureTimer(durationMs, goalLimit) {
     set({
@@ -298,6 +481,39 @@ export const usePickupToolsStore = create<PickupToolsState>()((set, get) => ({
   },
 }));
 
+export function rehydratePickupToolsState(
+  storage: StorageReader | null = getBrowserStorage(),
+): LoadStoredStateResult & { restored: boolean } {
+  const loaded = loadStoredState(storage);
+  const hasStoredData = Object.keys(loaded.state).length > 0;
+  const nextPersistedState = {
+    ...buildDefaultPersistedState(),
+    ...loaded.state,
+  };
+
+  usePickupToolsStore.setState((currentState) => {
+    const currentPersistedState = pickPersistedState(currentState);
+    const shouldRestore =
+      hasStoredData && !persistedStatesEqual(currentPersistedState, nextPersistedState);
+    const shouldMarkRead = currentState.storageWasRead !== loaded.storageWasRead;
+
+    if (!shouldRestore && !shouldMarkRead) {
+      return currentState;
+    }
+
+    return {
+      ...currentState,
+      ...(shouldRestore ? nextPersistedState : {}),
+      storageWasRead: loaded.storageWasRead,
+    };
+  });
+
+  return {
+    ...loaded,
+    restored: hasStoredData,
+  };
+}
+
 // Persist every state change to localStorage
 usePickupToolsStore.subscribe((state) => saveStoredState(state));
 
@@ -310,12 +526,18 @@ export function computeRemainingMs(
   return Math.max(0, state.remainingMsWhenPaused - (Date.now() - state.startedAt));
 }
 
+export function hasActiveRodizio(
+  state: Pick<RodizioSlice, 'phase' | 'teamA' | 'teamB'>,
+): boolean {
+  return state.phase === 'playing' && state.teamA.length > 0 && state.teamB.length > 0;
+}
+
 // True if there is any active session that was persisted (timer or rodízio in progress)
 export function hasActiveSession(
   state: Pick<TimerState, 'isRunning' | 'remainingMsWhenPaused' | 'durationMs' | 'winner'> &
-    Pick<RodizioSlice, 'phase'>,
+    Pick<RodizioSlice, 'phase' | 'teamA' | 'teamB'>,
 ): boolean {
-  if (state.phase === 'playing') return true;
+  if (hasActiveRodizio(state)) return true;
   if (state.winner !== null) return true;
   if (state.isRunning) return true;
   if (state.remainingMsWhenPaused < state.durationMs) return true;

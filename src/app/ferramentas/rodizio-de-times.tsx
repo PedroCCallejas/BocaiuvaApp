@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 import { SafeAd } from '@/components/ads/SafeAd';
 import { PublicPageShell } from '@/components/public/PublicPageShell';
@@ -8,7 +8,12 @@ import { AD_PLACEMENTS } from '@/constants/ads';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { getQueuedTeams } from '@/lib/pickup-tools';
-import { hasActiveSession, usePickupToolsStore } from '@/store/pickup-tools-store';
+import {
+  hasActiveRodizio,
+  hasActiveSession,
+  rehydratePickupToolsState,
+  usePickupToolsStore,
+} from '@/store/pickup-tools-store';
 
 const PER_TEAM_OPTIONS = [3, 4, 5, 6, 7];
 
@@ -41,6 +46,7 @@ const FAQ = [
 
 export default function RodizioScreen() {
   const theme = useAppTheme();
+  const { debugPickup } = useLocalSearchParams<{ debugPickup?: string | string[] }>();
 
   const store = usePickupToolsStore();
   const {
@@ -52,12 +58,17 @@ export default function RodizioScreen() {
     leavingAfterMatch,
     phase,
     matchCount,
+    storageWasRead,
   } = store;
 
   const [inputValue, setInputValue] = useState('');
   const [pendingRemove, setPendingRemove] = useState<PendingRemove | null>(null);
   const [addDuringValue, setAddDuringValue] = useState('');
   const [addDuringError, setAddDuringError] = useState('');
+
+  useEffect(() => {
+    rehydratePickupToolsState();
+  }, []);
 
   function addPlayer() {
     const name = inputValue.trim();
@@ -110,12 +121,16 @@ export default function RodizioScreen() {
     setPendingRemove(null);
   }
 
+  const showDebugPickup = Array.isArray(debugPickup)
+    ? debugPickup.includes('1')
+    : debugPickup === '1';
   const queuedTeams = getQueuedTeams(waitingPlayers, playersPerTeam);
   const canStart = players.length >= playersPerTeam * 2;
+  const hasActiveRodizioState = hasActiveRodizio({ phase, teamA, teamB });
   const hasResult = matchCount > 0;
   const sessionActive = hasActiveSession(store);
   const incompleteTeam =
-    phase === 'playing' &&
+    hasActiveRodizioState &&
     (teamA.length < playersPerTeam || teamB.length < playersPerTeam);
 
   return (
@@ -143,7 +158,20 @@ export default function RodizioScreen() {
         </View>
       )}
 
-      {phase === 'setup' ? (
+      {showDebugPickup ? (
+        <View style={[styles.debugCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <Text style={[styles.debugTitle, { color: theme.colors.text }]}>Debug do rodizio</Text>
+          <Text style={[styles.debugLine, { color: theme.colors.textMuted }]}>phase: {phase}</Text>
+          <Text style={[styles.debugLine, { color: theme.colors.textMuted }]}>teamA.length: {teamA.length}</Text>
+          <Text style={[styles.debugLine, { color: theme.colors.textMuted }]}>teamB.length: {teamB.length}</Text>
+          <Text style={[styles.debugLine, { color: theme.colors.textMuted }]}>waitingPlayers.length: {waitingPlayers.length}</Text>
+          <Text style={[styles.debugLine, { color: theme.colors.textMuted }]}>matchCount: {matchCount}</Text>
+          <Text style={[styles.debugLine, { color: theme.colors.textMuted }]}>storageWasRead: {storageWasRead ? 'true' : 'false'}</Text>
+          <Text style={[styles.debugLine, { color: theme.colors.textMuted }]}>hasActiveRodizio: {hasActiveRodizioState ? 'true' : 'false'}</Text>
+        </View>
+      ) : null}
+
+      {!hasActiveRodizioState ? (
         <>
           {/* Players per team */}
           <View style={styles.section}>
@@ -247,7 +275,7 @@ export default function RodizioScreen() {
         </>
       ) : null}
 
-      {phase === 'playing' ? (
+      {hasActiveRodizioState ? (
         <>
           {/* Match count */}
           {matchCount > 0 ? (
@@ -528,6 +556,9 @@ export default function RodizioScreen() {
 const styles = StyleSheet.create({
   sessionBanner: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
   sessionBannerText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '600' },
+  debugCard: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 6 },
+  debugTitle: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800' },
+  debugLine: { fontFamily: fonts.body, fontSize: 12, lineHeight: 18 },
   section: { gap: 12 },
   sectionLabel: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
   sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800' },

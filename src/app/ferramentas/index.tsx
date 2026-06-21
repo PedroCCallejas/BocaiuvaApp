@@ -3,6 +3,12 @@ import { router } from 'expo-router';
 
 import { SafeAd } from '@/components/ads/SafeAd';
 import { PublicPageShell } from '@/components/public/PublicPageShell';
+import { ToolBadge } from '@/components/tools/ToolBadge';
+import { ToolCard } from '@/components/tools/ToolCard';
+import { ToolPageShell } from '@/components/tools/ToolPageShell';
+import { ToolPrimaryButton } from '@/components/tools/ToolPrimaryButton';
+import { ToolSection } from '@/components/tools/ToolSection';
+import { TOOL_COLORS } from '@/components/tools/tool-theme';
 import { AD_PLACEMENTS } from '@/constants/ads';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -57,7 +63,7 @@ const FAQ = [
   },
 ];
 
-export default function ToolsHubScreen() {
+function LegacyToolsHubScreen() {
   const theme = useAppTheme();
 
   return (
@@ -142,6 +148,122 @@ export default function ToolsHubScreen() {
   );
 }
 
+const HUB_TOOLS = [
+  {
+    label: 'Sorteador de Times',
+    href: '/ferramentas/sorteador-de-times',
+    tag: 'Futebol · Society · Futsal',
+    description:
+      'Monte times aleatorios ou equilibrados por potes. Ideal para deixar a pelada mais justa.',
+    action: 'Sortear times',
+  },
+  {
+    label: 'Cronometro da Pelada',
+    href: '/ferramentas/cronometro-pelada',
+    tag: 'Tempo · Placar · Gols',
+    description: 'Controle o tempo, o placar e o limite de gols da partida.',
+    action: 'Abrir cronometro',
+  },
+  {
+    label: 'Lista da Pelada',
+    href: '/ferramentas/rodizio-de-times',
+    tag: 'Fila · Rachao · Rotacao',
+    description: 'Rode a fila de quem entra e sai respeitando a ordem de chegada.',
+    action: 'Rodar lista',
+  },
+  {
+    label: 'Campeonato Rapido',
+    href: '/ferramentas/campeonato-rapido',
+    tag: 'Mata-mata · Grupo · Final',
+    description: 'Crie confrontos simples para mata-mata ou disputa rapida entre times.',
+    action: 'Criar campeonato',
+  },
+];
+
+const HUB_FAQ = [
+  {
+    q: 'Preciso criar conta para usar as ferramentas?',
+    a: 'Nao. Todas as ferramentas desta area funcionam sem login e direto pelo navegador.',
+  },
+  {
+    q: 'Serve so para futebol de campo?',
+    a: 'Nao. A area foi pensada para futebol, society, futsal e qualquer rachao que precise organizar times, fila e tempo de jogo.',
+  },
+  {
+    q: 'Funciona bem no celular?',
+    a: 'Sim. A prioridade aqui e mobile, mas as ferramentas tambem ficam boas em tablet e desktop.',
+  },
+  {
+    q: 'Os dados ficam salvos?',
+    a: 'As ferramentas usam armazenamento local do navegador quando faz sentido, sem depender de conta nem enviar dados para o app interno.',
+  },
+];
+
+export default function ToolsHubScreen() {
+  return (
+    <ToolPageShell
+      title="Ferramentas da Pelada"
+      subtitle="Organize seu rachao em poucos segundos."
+      description="Monte times equilibrados, rode a lista de quem entra e sai, controle o tempo da partida e crie campeonatos rapidos para sua turma. Tudo gratis, direto pelo navegador e sem precisar criar conta."
+      actions={[
+        { label: 'Sortear times', href: '/ferramentas/sorteador-de-times' },
+        { label: 'Abrir cronometro', href: '/ferramentas/cronometro-pelada', variant: 'secondary' },
+      ]}>
+      <ToolSection
+        kicker="Escolha a ferramenta"
+        title="Tudo o que a turma precisa antes da bola rolar"
+        description="Cada ferramenta resolve uma parte da organizacao da pelada. Use separadamente ou combine sorteio, cronometro, lista e campeonato no mesmo dia.">
+        <View style={styles.toolsGrid}>
+          {HUB_TOOLS.map((tool, index) => (
+            <ToolCard key={tool.href} tone={index === 1 ? 'field' : 'default'} style={styles.toolCard}>
+              <ToolBadge label={tool.tag} tone={index === 3 ? 'highlight' : 'accent'} />
+              <Text style={styles.toolLabelAlt}>{tool.label}</Text>
+              <Text style={styles.toolDescriptionAlt}>{tool.description}</Text>
+              <ToolPrimaryButton
+                label={tool.action}
+                variant={index === 0 ? 'primary' : 'secondary'}
+                onPress={() => router.push(tool.href as never)}
+              />
+            </ToolCard>
+          ))}
+        </View>
+      </ToolSection>
+
+      <SafeAd placement={AD_PLACEMENTS.TOOLS_HUB_AFTER_CARDS} hasContent />
+
+      <ToolSection
+        kicker="Para qualquer grupo"
+        title="Area publica, util e sem enrolacao"
+        description="Essa area foi desenhada para o organizador da turma que quer resolver rapido: montar times, tocar a fila, marcar tempo e criar confrontos sem planilha.">
+        <View style={styles.reasonGrid}>
+          {[
+            'Sem cadastro para comecar.',
+            'Pensado para quadra, society e campo.',
+            'Bom para pelada casual ou mais competitiva.',
+          ].map((item) => (
+            <ToolCard key={item} tone="field" style={styles.reasonCard}>
+              <Text style={styles.reasonText}>{item}</Text>
+            </ToolCard>
+          ))}
+        </View>
+      </ToolSection>
+
+      <ToolSection
+        kicker="Perguntas rapidas"
+        title="O que o pessoal sempre quer saber">
+        <View style={styles.faqList}>
+          {HUB_FAQ.map((item) => (
+            <ToolCard key={item.q} style={styles.faqCardAlt}>
+              <Text style={styles.faqQAlt}>{item.q}</Text>
+              <Text style={styles.faqAAlt}>{item.a}</Text>
+            </ToolCard>
+          ))}
+        </View>
+      </ToolSection>
+    </ToolPageShell>
+  );
+}
+
 const styles = StyleSheet.create({
   intro: {
     gap: 12,
@@ -186,6 +308,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 21,
   },
+  toolLabelAlt: {
+    fontFamily: fonts.display,
+    fontSize: 24,
+    fontWeight: '900',
+    lineHeight: 26,
+    color: TOOL_COLORS.text,
+  },
+  toolDescriptionAlt: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 22,
+    color: TOOL_COLORS.textMuted,
+  },
   section: {
     gap: 12,
   },
@@ -208,14 +344,46 @@ const styles = StyleSheet.create({
     padding: 18,
     gap: 8,
   },
+  faqCardAlt: {
+    gap: 10,
+  },
   faqQ: {
     fontFamily: fonts.heading,
     fontSize: 16,
     fontWeight: '800',
   },
+  faqQAlt: {
+    fontFamily: fonts.heading,
+    fontSize: 16,
+    fontWeight: '800',
+    color: TOOL_COLORS.text,
+  },
   faqA: {
     fontFamily: fonts.body,
     fontSize: 14,
     lineHeight: 21,
+  },
+  faqAAlt: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 22,
+    color: TOOL_COLORS.textMuted,
+  },
+  reasonGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  reasonCard: {
+    flexGrow: 1,
+    flexBasis: 220,
+    minHeight: 96,
+    justifyContent: 'center',
+  },
+  reasonText: {
+    fontFamily: fonts.heading,
+    fontSize: 16,
+    fontWeight: '700',
+    color: TOOL_COLORS.text,
   },
 });

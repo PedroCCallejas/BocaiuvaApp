@@ -8,7 +8,7 @@ import { AD_PLACEMENTS } from '@/constants/ads';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { getQueuedTeams } from '@/lib/pickup-tools';
-import { usePickupToolsStore } from '@/store/pickup-tools-store';
+import { hasActiveSession, usePickupToolsStore } from '@/store/pickup-tools-store';
 
 const PER_TEAM_OPTIONS = [3, 4, 5, 6, 7];
 
@@ -69,7 +69,8 @@ export default function RodizioScreen() {
 
   const queuedTeams = getQueuedTeams(waitingPlayers, playersPerTeam);
   const canStart = players.length >= playersPerTeam * 2;
-  const hasContent = phase === 'playing';
+  const hasResult = matchCount > 0;
+  const sessionActive = hasActiveSession(store);
 
   return (
     <PublicPageShell
@@ -80,6 +81,21 @@ export default function RodizioScreen() {
         { label: 'Cronômetro', href: '/ferramentas/cronometro-pelada', variant: 'secondary' },
         { label: 'Sorteador', href: '/ferramentas/sorteador-de-times', variant: 'ghost' },
       ]}>
+
+      {/* Session banner */}
+      {sessionActive ? (
+        <View style={[styles.sessionBanner, { backgroundColor: 'rgba(22,163,74,0.09)', borderColor: 'rgba(22,163,74,0.3)' }]}>
+          <Text style={[styles.sessionBannerText, { color: '#15803D' }]}>
+            Continuando pelada salva neste dispositivo.
+          </Text>
+        </View>
+      ) : (
+        <View style={[styles.sessionBanner, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <Text style={[styles.sessionBannerText, { color: theme.colors.textMuted }]}>
+            Sessão salva neste dispositivo.
+          </Text>
+        </View>
+      )}
 
       {phase === 'setup' ? (
         <>
@@ -288,7 +304,7 @@ export default function RodizioScreen() {
           )}
 
           <Pressable
-            onPress={() => store.resetRodizio()}
+            onPress={() => store.resetAll()}
             style={[styles.resetButton, { borderColor: theme.colors.border }]}>
             <Text style={[styles.resetButtonText, { color: theme.colors.textMuted }]}>
               Resetar pelada
@@ -297,7 +313,7 @@ export default function RodizioScreen() {
         </>
       ) : null}
 
-      <SafeAd placement={AD_PLACEMENTS.TOOLS_AFTER_RESULT} hasContent={hasContent} />
+      <SafeAd placement={AD_PLACEMENTS.TOOLS_AFTER_RESULT} hasContent={hasResult} />
 
       <View style={styles.editorial}>
         <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
@@ -348,6 +364,8 @@ export default function RodizioScreen() {
 }
 
 const styles = StyleSheet.create({
+  sessionBanner: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
+  sessionBannerText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '600' },
   section: { gap: 12 },
   sectionLabel: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
   sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800' },

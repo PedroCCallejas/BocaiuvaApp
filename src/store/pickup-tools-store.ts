@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 import {
   type RodizioState,
@@ -7,7 +8,7 @@ import {
 } from '@/lib/pickup-tools';
 
 // Timer state uses timestamps so the displayed time is always accurate
-// even when the user navigates away and comes back (no setInterval drift).
+// even when the user navigates away, refreshes, or returns after a while.
 interface TimerState {
   durationMs: number;
   // Ms remaining at the moment the timer was last paused (or at start)
@@ -42,9 +43,12 @@ interface PickupToolsState extends TimerState, RodizioSlice {
   startRodizio(): void;
   registerWin(winner: 'A' | 'B'): void;
   resetRodizio(): void;
+
+  // Full reset: clears both timer and rodízio, then removes localStorage entry
+  resetAll(): void;
 }
 
-const TIMER_DEFAULTS: TimerState = {
+export const TIMER_DEFAULTS: TimerState = {
   durationMs: 10 * 60 * 1000,
   remainingMsWhenPaused: 10 * 60 * 1000,
   startedAt: null,
@@ -55,7 +59,7 @@ const TIMER_DEFAULTS: TimerState = {
   winner: null,
 };
 
-const RODIZIO_DEFAULTS: RodizioSlice = {
+export const RODIZIO_DEFAULTS: RodizioSlice = {
   players: [],
   playersPerTeam: 5,
   teamA: [],
@@ -65,114 +69,158 @@ const RODIZIO_DEFAULTS: RodizioSlice = {
   matchCount: 0,
 };
 
-export const usePickupToolsStore = create<PickupToolsState>()((set, get) => ({
-  ...TIMER_DEFAULTS,
-  ...RODIZIO_DEFAULTS,
+// Forward ref so resetAll can call clearStorage after the store is created
+let _clearStorage: () => void = () => {};
 
-  configureTimer(durationMs, goalLimit) {
-    set({
-      durationMs,
-      remainingMsWhenPaused: durationMs,
-      goalLimit,
-      startedAt: null,
-      isRunning: false,
-      teamAScore: 0,
-      teamBScore: 0,
-      winner: null,
-    });
-  },
-
-  startTimer() {
-    const { winner, isRunning } = get();
-    if (winner !== null || isRunning) return;
-    set({ isRunning: true, startedAt: Date.now() });
-  },
-
-  pauseTimer() {
-    const { isRunning, startedAt, remainingMsWhenPaused } = get();
-    if (!isRunning || startedAt === null) return;
-    const elapsed = Date.now() - startedAt;
-    set({
-      isRunning: false,
-      startedAt: null,
-      remainingMsWhenPaused: Math.max(0, remainingMsWhenPaused - elapsed),
-    });
-  },
-
-  resetTimer() {
-    const { durationMs, goalLimit } = get();
-    set({
+export const usePickupToolsStore = create<PickupToolsState>()(
+  persist(
+    (set, get) => ({
       ...TIMER_DEFAULTS,
-      durationMs,
-      remainingMsWhenPaused: durationMs,
-      goalLimit,
-    });
-  },
+      ...RODIZIO_DEFAULTS,
 
-  addGoal(team) {
-    const { winner, teamAScore, teamBScore, goalLimit, remainingMsWhenPaused, startedAt, isRunning } = get();
-    if (winner !== null) return;
+      configureTimer(durationMs, goalLimit) {
+        set({
+          durationMs,
+          remainingMsWhenPaused: durationMs,
+          goalLimit,
+          startedAt: null,
+          isRunning: false,
+          teamAScore: 0,
+          teamBScore: 0,
+          winner: null,
+        });
+      },
 
-    const nextA = team === 'A' ? teamAScore + 1 : teamAScore;
-    const nextB = team === 'B' ? teamBScore + 1 : teamBScore;
+      startTimer() {
+        const { winner, isRunning } = get();
+        if (winner !== null || isRunning) return;
+        set({ isRunning: true, startedAt: Date.now() });
+      },
 
-    // Freeze remaining time if game ends by goal
-    let frozenRemaining = remainingMsWhenPaused;
-    if (isRunning && startedAt !== null) {
-      frozenRemaining = Math.max(0, remainingMsWhenPaused - (Date.now() - startedAt));
-    }
+      pauseTimer() {
+        const { isRunning, startedAt, remainingMsWhenPaused } = get();
+        if (!isRunning || startedAt === null) return;
+        const elapsed = Date.now() - startedAt;
+        set({
+          isRunning: false,
+          startedAt: null,
+          remainingMsWhenPaused: Math.max(0, remainingMsWhenPaused - elapsed),
+        });
+      },
 
-    const hitLimit = goalLimit > 0 && (nextA >= goalLimit || nextB >= goalLimit);
-    const gameWinner = hitLimit
-      ? nextA > nextB
-        ? 'A'
-        : nextB > nextA
-          ? 'B'
-          : 'draw'
-      : null;
+      resetTimer() {
+        const { durationMs, goalLimit } = get();
+        set({
+          ...TIMER_DEFAULTS,
+          durationMs,
+          remainingMsWhenPaused: durationMs,
+          goalLimit,
+        });
+      },
 
-    set({
-      teamAScore: nextA,
-      teamBScore: nextB,
-      ...(hitLimit
-        ? {
-            winner: gameWinner,
-            isRunning: false,
-            startedAt: null,
-            remainingMsWhenPaused: frozenRemaining,
-          }
-        : {}),
-    });
-  },
+      addGoal(team) {
+        const { winner, teamAScore, teamBScore, goalLimit, remainingMsWhenPaused, startedAt, isRunning } = get();
+        if (winner !== null) return;
 
-  setRodizioPlayers(players) {
-    set({ players, phase: 'setup' });
-  },
+        const nextA = team === 'A' ? teamAScore + 1 : teamAScore;
+        const nextB = team === 'B' ? teamBScore + 1 : teamBScore;
 
-  setRodizioPlayersPerTeam(n) {
-    set({ playersPerTeam: n });
-  },
+        // Freeze remaining time if game ends by goal
+        let frozenRemaining = remainingMsWhenPaused;
+        if (isRunning && startedAt !== null) {
+          frozenRemaining = Math.max(0, remainingMsWhenPaused - (Date.now() - startedAt));
+        }
 
-  startRodizio() {
-    const { players, playersPerTeam } = get();
-    const state = initRodizio(players, playersPerTeam);
-    set({ ...state, phase: 'playing', matchCount: 0 });
-  },
+        const hitLimit = goalLimit > 0 && (nextA >= goalLimit || nextB >= goalLimit);
+        const gameWinner = hitLimit
+          ? nextA > nextB
+            ? 'A'
+            : nextB > nextA
+              ? 'B'
+              : 'draw'
+          : null;
 
-  registerWin(winner) {
-    const { teamA, teamB, waitingPlayers, playersPerTeam, matchCount } = get();
-    const newState = registerRodizioWin({ teamA, teamB, waitingPlayers }, winner, playersPerTeam);
-    set({ ...newState, matchCount: matchCount + 1 });
-  },
+        set({
+          teamAScore: nextA,
+          teamBScore: nextB,
+          ...(hitLimit
+            ? {
+                winner: gameWinner,
+                isRunning: false,
+                startedAt: null,
+                remainingMsWhenPaused: frozenRemaining,
+              }
+            : {}),
+        });
+      },
 
-  resetRodizio() {
-    set({ ...RODIZIO_DEFAULTS });
-  },
-}));
+      setRodizioPlayers(players) {
+        set({ players, phase: 'setup' });
+      },
 
-// Helper to compute current remaining ms from store state (call in component render)
-export function computeRemainingMs(state: Pick<TimerState, 'isRunning' | 'startedAt' | 'remainingMsWhenPaused' | 'winner'>): number {
+      setRodizioPlayersPerTeam(n) {
+        set({ playersPerTeam: n });
+      },
+
+      startRodizio() {
+        const { players, playersPerTeam } = get();
+        const state = initRodizio(players, playersPerTeam);
+        set({ ...state, phase: 'playing', matchCount: 0 });
+      },
+
+      registerWin(winner) {
+        const { teamA, teamB, waitingPlayers, playersPerTeam, matchCount } = get();
+        const newState = registerRodizioWin({ teamA, teamB, waitingPlayers }, winner, playersPerTeam);
+        set({ ...newState, matchCount: matchCount + 1 });
+      },
+
+      resetRodizio() {
+        set({ ...RODIZIO_DEFAULTS });
+      },
+
+      resetAll() {
+        set({ ...TIMER_DEFAULTS, ...RODIZIO_DEFAULTS });
+        // Also remove the localStorage entry so next load starts fresh
+        _clearStorage();
+      },
+    }),
+    {
+      name: 'professo-pickup-tools',
+      storage: createJSONStorage(() => {
+        // localStorage is not available in SSR or native — return noop
+        if (typeof window === 'undefined') {
+          return {
+            getItem: () => null,
+            setItem: () => {},
+            removeItem: () => {},
+          };
+        }
+        return window.localStorage;
+      }),
+    },
+  ),
+);
+
+// Wire the forward ref after store creation
+_clearStorage = () => usePickupToolsStore.persist.clearStorage();
+
+// Helper to compute current remaining ms from store state (call in component render/effect)
+export function computeRemainingMs(
+  state: Pick<TimerState, 'isRunning' | 'startedAt' | 'remainingMsWhenPaused' | 'winner'>,
+): number {
   if (state.winner !== null) return 0;
   if (!state.isRunning || state.startedAt === null) return state.remainingMsWhenPaused;
   return Math.max(0, state.remainingMsWhenPaused - (Date.now() - state.startedAt));
+}
+
+// True if there is any active session that was persisted (timer or rodízio in progress)
+export function hasActiveSession(
+  state: Pick<TimerState, 'isRunning' | 'remainingMsWhenPaused' | 'durationMs' | 'winner'> &
+    Pick<RodizioSlice, 'phase'>,
+): boolean {
+  if (state.phase === 'playing') return true;
+  if (state.winner !== null) return true;
+  if (state.isRunning) return true;
+  if (state.remainingMsWhenPaused < state.durationMs) return true;
+  return false;
 }

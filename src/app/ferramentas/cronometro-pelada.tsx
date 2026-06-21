@@ -8,11 +8,11 @@ import { AD_PLACEMENTS } from '@/constants/ads';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import {
+  TIMER_DEFAULTS,
   computeRemainingMs,
+  hasActiveSession,
   usePickupToolsStore,
 } from '@/store/pickup-tools-store';
-
-const PER_TEAM_OPTIONS = [3, 4, 5, 6, 7];
 
 function formatMs(ms: number) {
   const totalSeconds = Math.ceil(ms / 1000);
@@ -23,8 +23,8 @@ function formatMs(ms: number) {
 
 const FAQ = [
   {
-    q: 'O cronômetro zera ao trocar de tela?',
-    a: 'Não. O estado do jogo — tempo, placar e configuração — fica salvo enquanto o aplicativo estiver aberto. Volte a qualquer hora.',
+    q: 'O cronômetro zera ao atualizar a página?',
+    a: 'Não. O estado da pelada — tempo, placar e configuração — fica salvo no dispositivo. Ao recarregar, a sessão é restaurada automaticamente.',
   },
   {
     q: 'Posso configurar qualquer tempo, por exemplo 7 minutos?',
@@ -56,31 +56,48 @@ export default function CronometroScreen() {
     phase: rodizioPhase,
   } = store;
 
-  // Local display state — refreshed by interval
-  const [displayMs, setDisplayMs] = useState(() =>
-    computeRemainingMs(store),
-  );
+  // Local display state — refreshed by interval while running
+  const [displayMs, setDisplayMs] = useState(() => computeRemainingMs(store));
 
-  // Config inputs (local only, applied on "Iniciar pelada")
+  // Inputs for the config form (before game starts)
   const [minutesInput, setMinutesInput] = useState(String(Math.round(durationMs / 60000)));
   const [goalLimitInput, setGoalLimitInput] = useState(String(goalLimit));
   const [inputError, setInputError] = useState<string | null>(null);
 
-  const gameStarted = !!(winner !== null || isRunning || (durationMs > 0 && computeRemainingMs(store) < durationMs));
+  const sessionActive = hasActiveSession(store);
+  const gameStarted = sessionActive && (isRunning || winner !== null || store.remainingMsWhenPaused < durationMs);
   const gameOver = winner !== null;
   const hasResult = gameOver;
 
-  // Tick every 200ms when running
+  // On mount: resolve timer state that may have changed while page was closed/refreshed.
+  // If timer was running and time already expired, end the game now.
+  useEffect(() => {
+    const s = usePickupToolsStore.getState();
+    if (s.isRunning && s.winner === null) {
+      const remaining = computeRemainingMs(s);
+      if (remaining <= 0) {
+        const { teamAScore: a, teamBScore: b } = s;
+        usePickupToolsStore.setState({
+          isRunning: false,
+          startedAt: null,
+          remainingMsWhenPaused: 0,
+          winner: a > b ? 'A' : b > a ? 'B' : 'draw',
+        });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Tick every 200ms when running to keep display updated
   useEffect(() => {
     if (!isRunning) {
       setDisplayMs(computeRemainingMs(store));
       return;
     }
     const id = setInterval(() => {
-      const remaining = computeRemainingMs(store);
+      const remaining = computeRemainingMs(usePickupToolsStore.getState());
       setDisplayMs(remaining);
       if (remaining <= 0) {
-        // Time expired — resolve winner
         const { teamAScore: a, teamBScore: b } = usePickupToolsStore.getState();
         usePickupToolsStore.setState({
           isRunning: false,
@@ -106,9 +123,9 @@ export default function CronometroScreen() {
       return;
     }
     setInputError(null);
-    store.configureTimer(mins * 60 * 1000, limit);
-    // Small timeout so store updates before startTimer reads it
-    setTimeout(() => usePickupToolsStore.getState().startTimer(), 0);
+    // configureTimer is synchronous; startTimer reads get() directly — no setTimeout needed
+    usePickupToolsStore.getState().configureTimer(mins * 60 * 1000, limit);
+    usePickupToolsStore.getState().startTimer();
   }
 
   function handleToggle() {
@@ -120,11 +137,11 @@ export default function CronometroScreen() {
   }
 
   function handleReset() {
-    store.resetTimer();
-    setMinutesInput(String(Math.round(store.durationMs / 60000)));
-    setGoalLimitInput(String(store.goalLimit));
+    store.resetAll();
+    setMinutesInput('10');
+    setGoalLimitInput('2');
     setInputError(null);
-    setDisplayMs(store.durationMs);
+    setDisplayMs(TIMER_DEFAULTS.durationMs);
   }
 
   const winnerLabel =
@@ -142,11 +159,26 @@ export default function CronometroScreen() {
     <PublicPageShell
       eyebrow="Ferramenta gratuita"
       title="Cronômetro de Pelada"
-      description="Controle o tempo de cada partida e registre gols. Configure qualquer duração e o limite de gols do seu grupo. O estado persiste ao trocar de tela."
+      description="Controle o tempo de cada partida e registre gols. Configure qualquer duração e o limite de gols do seu grupo. Estado salvo no dispositivo — sobrevive a recarregamentos."
       actions={[
         { label: 'Sorteador', href: '/ferramentas/sorteador-de-times', variant: 'secondary' },
         { label: 'Rodízio', href: '/ferramentas/rodizio-de-times', variant: 'ghost' },
       ]}>
+
+      {/* Session banner */}
+      {sessionActive ? (
+        <View style={[styles.sessionBanner, { backgroundColor: 'rgba(22,163,74,0.09)', borderColor: 'rgba(22,163,74,0.3)' }]}>
+          <Text style={[styles.sessionBannerText, { color: '#15803D' }]}>
+            Continuando pelada salva neste dispositivo.
+          </Text>
+        </View>
+      ) : (
+        <View style={[styles.sessionBanner, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <Text style={[styles.sessionBannerText, { color: theme.colors.textMuted }]}>
+            Sessão salva neste dispositivo.
+          </Text>
+        </View>
+      )}
 
       {/* Config panel — only when game hasn't started */}
       {!gameStarted ? (
@@ -230,9 +262,7 @@ export default function CronometroScreen() {
 
         <View style={styles.scoreRow}>
           <View style={styles.teamBlock}>
-            <Text style={[styles.teamName, { color: theme.colors.textMuted }]}>
-              {showRodizio ? 'Time A' : 'Time A'}
-            </Text>
+            <Text style={[styles.teamName, { color: theme.colors.textMuted }]}>Time A</Text>
             <Text style={[styles.score, { color: theme.colors.text }]}>{teamAScore}</Text>
             <Pressable
               onPress={() => store.addGoal('A')}
@@ -283,7 +313,14 @@ export default function CronometroScreen() {
             ) : null}
             <Pressable
               onPress={handleReset}
-              style={[styles.controlButton, { backgroundColor: theme.colors.backgroundElevated, borderColor: theme.colors.border, borderWidth: 1 }]}>
+              style={[
+                styles.controlButton,
+                {
+                  backgroundColor: theme.colors.backgroundElevated,
+                  borderColor: theme.colors.border,
+                  borderWidth: 1,
+                },
+              ]}>
               <Text style={[styles.controlButtonText, { color: theme.colors.textMuted }]}>
                 Resetar pelada
               </Text>
@@ -342,7 +379,9 @@ export default function CronometroScreen() {
 
       <View style={styles.faqList}>
         {FAQ.map((item) => (
-          <View key={item.q} style={[styles.faqCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <View
+            key={item.q}
+            style={[styles.faqCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
             <Text style={[styles.faqQ, { color: theme.colors.text }]}>{item.q}</Text>
             <Text style={[styles.faqA, { color: theme.colors.textMuted }]}>{item.a}</Text>
           </View>
@@ -362,7 +401,10 @@ export default function CronometroScreen() {
             <Pressable
               key={link.href}
               onPress={() => router.push(link.href as never)}
-              style={[styles.relatedChip, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+              style={[
+                styles.relatedChip,
+                { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
+              ]}>
               <Text style={[styles.relatedChipText, { color: theme.colors.secondary }]}>
                 {link.label}
               </Text>
@@ -375,6 +417,13 @@ export default function CronometroScreen() {
 }
 
 const styles = StyleSheet.create({
+  sessionBanner: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  sessionBannerText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '600' },
   card: { borderWidth: 1, borderRadius: 24, padding: 20, gap: 16 },
   cardTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800' },
   configRow: { flexDirection: 'row', gap: 12 },
@@ -390,17 +439,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   errorText: { fontFamily: fonts.body, fontSize: 13 },
-  primaryButton: {
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
+  primaryButton: { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  primaryButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
   secondaryButton: {
     borderWidth: 1,
     borderRadius: 12,
@@ -410,13 +450,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   secondaryButtonText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700' },
-  scoreboard: {
-    borderWidth: 1,
-    borderRadius: 28,
-    padding: 24,
-    gap: 20,
-    alignItems: 'center',
-  },
+  scoreboard: { borderWidth: 1, borderRadius: 28, padding: 24, gap: 20, alignItems: 'center' },
   timerRow: { alignItems: 'center', gap: 4 },
   timer: { fontFamily: fonts.display, fontSize: 64, fontWeight: '900', letterSpacing: -2 },
   goalLimitLabel: { fontFamily: fonts.body, fontSize: 12 },
@@ -448,18 +482,8 @@ const styles = StyleSheet.create({
     minWidth: 120,
     alignItems: 'center',
   },
-  controlButtonText: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  rodizioInfo: {
-    borderWidth: 1.5,
-    borderRadius: 20,
-    padding: 16,
-    gap: 12,
-  },
+  controlButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
+  rodizioInfo: { borderWidth: 1.5, borderRadius: 20, padding: 16, gap: 12 },
   rodizioTitle: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800' },
   rodizioTeams: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
   rodizioTeam: { flex: 1, gap: 4 },

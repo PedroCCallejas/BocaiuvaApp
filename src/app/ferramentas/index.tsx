@@ -107,8 +107,6 @@ export default function ToolsHubScreen() {
         ))}
       </View>
 
-      <SafeAd placement={AD_PLACEMENTS.TOOLS_HUB_AFTER_CARDS} hasContent />
-
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
           Para quem são essas ferramentas?
@@ -138,6 +136,8 @@ export default function ToolsHubScreen() {
           </View>
         ))}
       </View>
+
+      <SafeAd placement={AD_PLACEMENTS.TOOLS_HUB_AFTER_CARDS} hasContent />
     </PublicPageShell>
   );
 }

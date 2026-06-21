@@ -257,7 +257,9 @@ export default function CampeonatoScreen() {
     ? buildStandings(teams, leagueMatches)
     : [];
 
-  const hasResult = phase === 'playing';
+  const hasResult =
+    phase === 'playing' &&
+    (format === 'league' ? leagueMatches.length > 0 : knockoutRounds.length > 0);
 
   return (
     <PublicPageShell

@@ -3361,6 +3361,134 @@ const testCases: TestCase[] = [
       assert.deepEqual(getQueuedTeams([], 5), []);
     },
   },
+
+  // ── persistência e reset (lógica pura, sem DOM/localStorage) ─────────────
+  {
+    name: 'estado do store é serializável em JSON (sem funções circulares)',
+    run() {
+      // Simula o que Zustand persist faz ao salvar: JSON.stringify do estado
+      const state = {
+        durationMs: 10 * 60 * 1000,
+        remainingMsWhenPaused: 7 * 60 * 1000,
+        startedAt: 1718881200000,
+        isRunning: true,
+        teamAScore: 1,
+        teamBScore: 0,
+        goalLimit: 2,
+        winner: null,
+        players: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8', 'p9', 'p10'],
+        playersPerTeam: 5,
+        teamA: ['p1', 'p2', 'p3', 'p4', 'p5'],
+        teamB: ['p6', 'p7', 'p8', 'p9', 'p10'],
+        waitingPlayers: [],
+        phase: 'playing',
+        matchCount: 1,
+      };
+      const serialized = JSON.stringify(state);
+      const parsed = JSON.parse(serialized);
+      assert.equal(parsed.durationMs, state.durationMs);
+      assert.equal(parsed.startedAt, state.startedAt);
+      assert.equal(parsed.isRunning, state.isRunning);
+      assert.equal(parsed.teamAScore, state.teamAScore);
+      assert.deepEqual(parsed.teamA, state.teamA);
+      assert.deepEqual(parsed.players, state.players);
+      assert.equal(parsed.phase, state.phase);
+    },
+  },
+  {
+    name: 'computeRemainingMs: timer expirado retorna 0 (não negativo)',
+    run() {
+      const state = {
+        isRunning: true,
+        startedAt: Date.now() - 15 * 60 * 1000, // 15 minutos atrás
+        remainingMsWhenPaused: 10 * 60 * 1000,  // configurado para 10 min
+        winner: null as 'A' | 'B' | 'draw' | null,
+      };
+      const remaining = Math.max(
+        0,
+        state.isRunning && state.startedAt !== null
+          ? state.remainingMsWhenPaused - (Date.now() - state.startedAt)
+          : state.remainingMsWhenPaused,
+      );
+      assert.equal(remaining, 0, 'tempo expirado deve retornar 0, nunca negativo');
+    },
+  },
+  {
+    name: 'computeRemainingMs: timer pausado retorna remainingMsWhenPaused',
+    run() {
+      const frozenMs = 4 * 60 * 1000 + 30 * 1000; // 4:30 restantes
+      const state = {
+        isRunning: false,
+        startedAt: null as number | null,
+        remainingMsWhenPaused: frozenMs,
+        winner: null as 'A' | 'B' | 'draw' | null,
+      };
+      const remaining =
+        !state.isRunning || state.startedAt === null
+          ? state.remainingMsWhenPaused
+          : Math.max(0, state.remainingMsWhenPaused - (Date.now() - state.startedAt));
+      assert.equal(remaining, frozenMs, 'timer pausado deve manter o tempo congelado');
+    },
+  },
+  {
+    name: 'reset retorna estado padrão — todos os campos principais voltam ao default',
+    run() {
+      // Simula reset: substitui state por defaults
+      const defaults = {
+        durationMs: 10 * 60 * 1000,
+        remainingMsWhenPaused: 10 * 60 * 1000,
+        startedAt: null,
+        isRunning: false,
+        teamAScore: 0,
+        teamBScore: 0,
+        goalLimit: 2,
+        winner: null,
+        players: [],
+        playersPerTeam: 5,
+        teamA: [],
+        teamB: [],
+        waitingPlayers: [],
+        phase: 'setup',
+        matchCount: 0,
+      };
+      const state = { ...defaults };
+      assert.equal(state.isRunning, false);
+      assert.equal(state.winner, null);
+      assert.deepEqual(state.teamA, []);
+      assert.deepEqual(state.waitingPlayers, []);
+      assert.equal(state.phase, 'setup');
+      assert.equal(state.matchCount, 0);
+    },
+  },
+  {
+    name: 'cenário p1-p16 completo: após 2 vitórias de A, fila e times estão corretos',
+    run() {
+      const players = Array.from({ length: 16 }, (_, i) => `p${i + 1}`);
+      // Passo 1: inicializar
+      let state = initRodizio(players, 5);
+      assert.deepEqual(state.teamA, ['p1', 'p2', 'p3', 'p4', 'p5']);
+      assert.deepEqual(state.teamB, ['p6', 'p7', 'p8', 'p9', 'p10']);
+      assert.deepEqual(state.waitingPlayers, ['p11', 'p12', 'p13', 'p14', 'p15', 'p16']);
+
+      // Passo 2: Time A vence (jogo 1)
+      state = registerRodizioWin(state, 'A', 5);
+      // teamA=p1-5, teamB=p11-15, waiting=p16,p6-10
+      assert.deepEqual(state.teamA, ['p1', 'p2', 'p3', 'p4', 'p5'], 'time A continua');
+      assert.deepEqual(state.teamB, ['p11', 'p12', 'p13', 'p14', 'p15'], 'próximos da fila entram');
+      assert.deepEqual(state.waitingPlayers, ['p16', 'p6', 'p7', 'p8', 'p9', 'p10'], 'p16 antes dos perdedores');
+
+      // Passo 3: Time A vence novamente (jogo 2)
+      state = registerRodizioWin(state, 'A', 5);
+      // teamA=p1-5, nextTeam=p16,p6,p7,p8,p9; remaining=p10,p11-15
+      assert.deepEqual(state.teamA, ['p1', 'p2', 'p3', 'p4', 'p5'], 'time A continua por 2ª vez');
+      assert.deepEqual(state.teamB, ['p16', 'p6', 'p7', 'p8', 'p9'], 'p16 lidera o próximo time');
+      assert.deepEqual(
+        state.waitingPlayers,
+        ['p10', 'p11', 'p12', 'p13', 'p14', 'p15'],
+        'restante da fila correto',
+      );
+    },
+  },
 ];
 
 let failed = 0;

@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
 
 import {
   type RodizioState,
@@ -48,6 +47,25 @@ interface PickupToolsState extends TimerState, RodizioSlice {
   resetAll(): void;
 }
 
+// Only data fields are persisted (no functions)
+interface PersistedState {
+  durationMs: number;
+  remainingMsWhenPaused: number;
+  startedAt: number | null;
+  isRunning: boolean;
+  teamAScore: number;
+  teamBScore: number;
+  goalLimit: number;
+  winner: 'A' | 'B' | 'draw' | null;
+  players: string[];
+  playersPerTeam: number;
+  teamA: string[];
+  teamB: string[];
+  waitingPlayers: string[];
+  phase: 'setup' | 'playing';
+  matchCount: number;
+}
+
 export const TIMER_DEFAULTS: TimerState = {
   durationMs: 10 * 60 * 1000,
   remainingMsWhenPaused: 10 * 60 * 1000,
@@ -69,140 +87,169 @@ export const RODIZIO_DEFAULTS: RodizioSlice = {
   matchCount: 0,
 };
 
-// Forward ref so resetAll can call clearStorage after the store is created
-let _clearStorage: () => void = () => {};
+const STORAGE_KEY = 'professo-pickup-tools';
 
-export const usePickupToolsStore = create<PickupToolsState>()(
-  persist(
-    (set, get) => ({
+function loadStoredState(): Partial<PersistedState> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as Partial<PersistedState>;
+  } catch {
+    return {};
+  }
+}
+
+function saveStoredState(state: PickupToolsState): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const data: PersistedState = {
+      durationMs: state.durationMs,
+      remainingMsWhenPaused: state.remainingMsWhenPaused,
+      startedAt: state.startedAt,
+      isRunning: state.isRunning,
+      teamAScore: state.teamAScore,
+      teamBScore: state.teamBScore,
+      goalLimit: state.goalLimit,
+      winner: state.winner,
+      players: state.players,
+      playersPerTeam: state.playersPerTeam,
+      teamA: state.teamA,
+      teamB: state.teamB,
+      waitingPlayers: state.waitingPlayers,
+      phase: state.phase,
+      matchCount: state.matchCount,
+    };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    // ignore write errors (private/incognito mode, quota exceeded)
+  }
+}
+
+function clearStoredState(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+const savedState = loadStoredState();
+
+export const usePickupToolsStore = create<PickupToolsState>()((set, get) => ({
+  ...TIMER_DEFAULTS,
+  ...RODIZIO_DEFAULTS,
+  ...savedState,
+
+  configureTimer(durationMs, goalLimit) {
+    set({
+      durationMs,
+      remainingMsWhenPaused: durationMs,
+      goalLimit,
+      startedAt: null,
+      isRunning: false,
+      teamAScore: 0,
+      teamBScore: 0,
+      winner: null,
+    });
+  },
+
+  startTimer() {
+    const { winner, isRunning } = get();
+    if (winner !== null || isRunning) return;
+    set({ isRunning: true, startedAt: Date.now() });
+  },
+
+  pauseTimer() {
+    const { isRunning, startedAt, remainingMsWhenPaused } = get();
+    if (!isRunning || startedAt === null) return;
+    const elapsed = Date.now() - startedAt;
+    set({
+      isRunning: false,
+      startedAt: null,
+      remainingMsWhenPaused: Math.max(0, remainingMsWhenPaused - elapsed),
+    });
+  },
+
+  resetTimer() {
+    const { durationMs, goalLimit } = get();
+    set({
       ...TIMER_DEFAULTS,
-      ...RODIZIO_DEFAULTS,
+      durationMs,
+      remainingMsWhenPaused: durationMs,
+      goalLimit,
+    });
+  },
 
-      configureTimer(durationMs, goalLimit) {
-        set({
-          durationMs,
-          remainingMsWhenPaused: durationMs,
-          goalLimit,
-          startedAt: null,
-          isRunning: false,
-          teamAScore: 0,
-          teamBScore: 0,
-          winner: null,
-        });
-      },
+  addGoal(team) {
+    const { winner, teamAScore, teamBScore, goalLimit, remainingMsWhenPaused, startedAt, isRunning } = get();
+    if (winner !== null) return;
 
-      startTimer() {
-        const { winner, isRunning } = get();
-        if (winner !== null || isRunning) return;
-        set({ isRunning: true, startedAt: Date.now() });
-      },
+    const nextA = team === 'A' ? teamAScore + 1 : teamAScore;
+    const nextB = team === 'B' ? teamBScore + 1 : teamBScore;
 
-      pauseTimer() {
-        const { isRunning, startedAt, remainingMsWhenPaused } = get();
-        if (!isRunning || startedAt === null) return;
-        const elapsed = Date.now() - startedAt;
-        set({
-          isRunning: false,
-          startedAt: null,
-          remainingMsWhenPaused: Math.max(0, remainingMsWhenPaused - elapsed),
-        });
-      },
+    // Freeze remaining time if game ends by goal
+    let frozenRemaining = remainingMsWhenPaused;
+    if (isRunning && startedAt !== null) {
+      frozenRemaining = Math.max(0, remainingMsWhenPaused - (Date.now() - startedAt));
+    }
 
-      resetTimer() {
-        const { durationMs, goalLimit } = get();
-        set({
-          ...TIMER_DEFAULTS,
-          durationMs,
-          remainingMsWhenPaused: durationMs,
-          goalLimit,
-        });
-      },
+    const hitLimit = goalLimit > 0 && (nextA >= goalLimit || nextB >= goalLimit);
+    const gameWinner = hitLimit
+      ? nextA > nextB
+        ? 'A'
+        : nextB > nextA
+          ? 'B'
+          : 'draw'
+      : null;
 
-      addGoal(team) {
-        const { winner, teamAScore, teamBScore, goalLimit, remainingMsWhenPaused, startedAt, isRunning } = get();
-        if (winner !== null) return;
+    set({
+      teamAScore: nextA,
+      teamBScore: nextB,
+      ...(hitLimit
+        ? {
+            winner: gameWinner,
+            isRunning: false,
+            startedAt: null,
+            remainingMsWhenPaused: frozenRemaining,
+          }
+        : {}),
+    });
+  },
 
-        const nextA = team === 'A' ? teamAScore + 1 : teamAScore;
-        const nextB = team === 'B' ? teamBScore + 1 : teamBScore;
+  setRodizioPlayers(players) {
+    set({ players, phase: 'setup' });
+  },
 
-        // Freeze remaining time if game ends by goal
-        let frozenRemaining = remainingMsWhenPaused;
-        if (isRunning && startedAt !== null) {
-          frozenRemaining = Math.max(0, remainingMsWhenPaused - (Date.now() - startedAt));
-        }
+  setRodizioPlayersPerTeam(n) {
+    set({ playersPerTeam: n });
+  },
 
-        const hitLimit = goalLimit > 0 && (nextA >= goalLimit || nextB >= goalLimit);
-        const gameWinner = hitLimit
-          ? nextA > nextB
-            ? 'A'
-            : nextB > nextA
-              ? 'B'
-              : 'draw'
-          : null;
+  startRodizio() {
+    const { players, playersPerTeam } = get();
+    const state = initRodizio(players, playersPerTeam);
+    set({ ...state, phase: 'playing', matchCount: 0 });
+  },
 
-        set({
-          teamAScore: nextA,
-          teamBScore: nextB,
-          ...(hitLimit
-            ? {
-                winner: gameWinner,
-                isRunning: false,
-                startedAt: null,
-                remainingMsWhenPaused: frozenRemaining,
-              }
-            : {}),
-        });
-      },
+  registerWin(winner) {
+    const { teamA, teamB, waitingPlayers, playersPerTeam, matchCount } = get();
+    const newState = registerRodizioWin({ teamA, teamB, waitingPlayers }, winner, playersPerTeam);
+    set({ ...newState, matchCount: matchCount + 1 });
+  },
 
-      setRodizioPlayers(players) {
-        set({ players, phase: 'setup' });
-      },
+  resetRodizio() {
+    set({ ...RODIZIO_DEFAULTS });
+  },
 
-      setRodizioPlayersPerTeam(n) {
-        set({ playersPerTeam: n });
-      },
+  resetAll() {
+    set({ ...TIMER_DEFAULTS, ...RODIZIO_DEFAULTS });
+    clearStoredState();
+  },
+}));
 
-      startRodizio() {
-        const { players, playersPerTeam } = get();
-        const state = initRodizio(players, playersPerTeam);
-        set({ ...state, phase: 'playing', matchCount: 0 });
-      },
-
-      registerWin(winner) {
-        const { teamA, teamB, waitingPlayers, playersPerTeam, matchCount } = get();
-        const newState = registerRodizioWin({ teamA, teamB, waitingPlayers }, winner, playersPerTeam);
-        set({ ...newState, matchCount: matchCount + 1 });
-      },
-
-      resetRodizio() {
-        set({ ...RODIZIO_DEFAULTS });
-      },
-
-      resetAll() {
-        set({ ...TIMER_DEFAULTS, ...RODIZIO_DEFAULTS });
-        // Also remove the localStorage entry so next load starts fresh
-        _clearStorage();
-      },
-    }),
-    {
-      name: 'professo-pickup-tools',
-      storage: createJSONStorage(() => {
-        // localStorage is not available in SSR or native — return noop
-        if (typeof window === 'undefined') {
-          return {
-            getItem: () => null,
-            setItem: () => {},
-            removeItem: () => {},
-          };
-        }
-        return window.localStorage;
-      }),
-    },
-  ),
-);
-
-// Wire the forward ref after store creation
-_clearStorage = () => usePickupToolsStore.persist.clearStorage();
+// Persist every state change to localStorage
+usePickupToolsStore.subscribe((state) => saveStoredState(state));
 
 // Helper to compute current remaining ms from store state (call in component render/effect)
 export function computeRemainingMs(

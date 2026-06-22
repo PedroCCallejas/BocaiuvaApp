@@ -3,10 +3,10 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 
 import { SafeAd } from '@/components/ads/SafeAd';
-import { PublicPageShell } from '@/components/public/PublicPageShell';
+import { ToolPageShell } from '@/components/tools/ToolPageShell';
+import { TOOL_COLORS } from '@/components/tools/tool-theme';
 import { AD_PLACEMENTS } from '@/constants/ads';
 import { fonts } from '@/constants/theme';
-import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   type PlayerWithPot,
   type PotNumber,
@@ -14,6 +14,8 @@ import {
   sortByPots,
   sortRandomly,
 } from '@/lib/pickup-tools';
+
+const C = TOOL_COLORS;
 
 type SortMode = 'random' | 'potes';
 
@@ -46,8 +48,6 @@ const FAQ = [
 ];
 
 export default function SorteadorScreen() {
-  const theme = useAppTheme();
-
   const [mode, setMode] = useState<SortMode>('random');
   const [perTeam, setPerTeam] = useState(5);
   const [inputValue, setInputValue] = useState('');
@@ -95,14 +95,10 @@ export default function SorteadorScreen() {
   const hasResult = result !== null && result.teams.length > 0;
 
   return (
-    <PublicPageShell
-      eyebrow="Ferramenta gratuita"
-      title="Sorteador de Times"
-      description="Divida jogadores em times equilibrados para peladas e rachões. Escolha o modo aleatório ou use potes para equilibrar os níveis entre os times."
-      actions={[
-        { label: 'Cronômetro', href: '/ferramentas/cronometro-pelada', variant: 'secondary' },
-        { label: 'Rodízio', href: '/ferramentas/rodizio-de-times', variant: 'ghost' },
-      ]}>
+    <ToolPageShell
+      title="Sortear Times"
+      subtitle="Escolha os jogadores e deixa o app dividir."
+      compactHero>
 
       {/* Mode selector */}
       <View style={styles.modeRow}>
@@ -113,11 +109,11 @@ export default function SorteadorScreen() {
             style={[
               styles.modeChip,
               {
-                backgroundColor: mode === m ? '#16A34A' : theme.colors.backgroundElevated,
-                borderColor: mode === m ? '#16A34A' : theme.colors.border,
+                backgroundColor: mode === m ? '#16A34A' : C.cardMuted,
+                borderColor: mode === m ? '#16A34A' : C.border,
               },
             ]}>
-            <Text style={[styles.modeChipText, { color: mode === m ? '#FFF' : theme.colors.textMuted }]}>
+            <Text style={[styles.modeChipText, { color: mode === m ? '#FFF' : C.textMuted }]}>
               {m === 'random' ? 'Aleatório' : 'Por potes'}
             </Text>
           </Pressable>
@@ -125,8 +121,8 @@ export default function SorteadorScreen() {
       </View>
 
       {mode === 'potes' ? (
-        <View style={[styles.infoBox, { backgroundColor: 'rgba(22,163,74,0.08)', borderColor: 'rgba(22,163,74,0.3)' }]}>
-          <Text style={[styles.infoText, { color: theme.colors.textMuted }]}>
+        <View style={styles.infoBox}>
+          <Text style={styles.infoText}>
             Pote 1 = melhores jogadores. Distribui proporcionalmente para equilibrar os times.
             Use os botões P1–P4 ao lado de cada nome.
           </Text>
@@ -135,9 +131,7 @@ export default function SorteadorScreen() {
 
       {/* Players per team */}
       <View style={styles.section}>
-        <Text style={[styles.sectionLabel, { color: theme.colors.textMuted }]}>
-          Jogadores por time
-        </Text>
+        <Text style={styles.sectionLabel}>Jogadores por time</Text>
         <View style={styles.optionsRow}>
           {PER_TEAM_OPTIONS.map((n) => (
             <Pressable
@@ -146,11 +140,11 @@ export default function SorteadorScreen() {
               style={[
                 styles.optionChip,
                 {
-                  backgroundColor: perTeam === n ? '#16A34A' : theme.colors.backgroundElevated,
-                  borderColor: perTeam === n ? '#16A34A' : theme.colors.border,
+                  backgroundColor: perTeam === n ? '#16A34A' : C.cardMuted,
+                  borderColor: perTeam === n ? '#16A34A' : C.border,
                 },
               ]}>
-              <Text style={[styles.optionChipText, { color: perTeam === n ? '#FFF' : theme.colors.textMuted }]}>
+              <Text style={[styles.optionChipText, { color: perTeam === n ? '#FFF' : C.textMuted }]}>
                 {n}v{n}
               </Text>
             </Pressable>
@@ -160,25 +154,18 @@ export default function SorteadorScreen() {
 
       {/* Add players */}
       <View style={styles.section}>
-        <Text style={[styles.sectionLabel, { color: theme.colors.textMuted }]}>
-          Adicionar jogador
-        </Text>
+        <Text style={styles.sectionLabel}>Adicionar jogador</Text>
         <View style={styles.inputRow}>
           <TextInput
             value={inputValue}
             onChangeText={setInputValue}
             onSubmitEditing={addPlayer}
             placeholder="Nome do jogador"
-            placeholderTextColor={theme.colors.textMuted}
-            style={[
-              styles.textInput,
-              { color: theme.colors.text, backgroundColor: theme.colors.backgroundElevated, borderColor: theme.colors.border },
-            ]}
+            placeholderTextColor={C.textMuted}
+            style={styles.textInput}
             returnKeyType="done"
           />
-          <Pressable
-            onPress={addPlayer}
-            style={[styles.addButton, { backgroundColor: '#16A34A' }]}>
+          <Pressable onPress={addPlayer} style={styles.addButton}>
             <Text style={styles.addButtonText}>+</Text>
           </Pressable>
         </View>
@@ -187,18 +174,14 @@ export default function SorteadorScreen() {
       {/* Player list */}
       {players.length > 0 ? (
         <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: theme.colors.textMuted }]}>
+          <Text style={styles.sectionLabel}>
             {players.length} jogador{players.length > 1 ? 'es' : ''} · {Math.floor(players.length / perTeam)} time{Math.floor(players.length / perTeam) > 1 ? 's' : ''}{players.length % perTeam > 0 ? ` + ${players.length % perTeam} reserva${players.length % perTeam > 1 ? 's' : ''}` : ''}
           </Text>
           <View style={styles.playerList}>
             {players.map((name, idx) => (
-              <View
-                key={name}
-                style={[styles.playerRow, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                <Text style={[styles.playerIndex, { color: theme.colors.textMuted }]}>{idx + 1}</Text>
-                <Text style={[styles.playerName, { color: theme.colors.text }]} numberOfLines={1}>
-                  {name}
-                </Text>
+              <View key={name} style={styles.playerRow}>
+                <Text style={styles.playerIndex}>{idx + 1}</Text>
+                <Text style={styles.playerName} numberOfLines={1}>{name}</Text>
 
                 {mode === 'potes' ? (
                   <View style={styles.potSelector}>
@@ -210,18 +193,12 @@ export default function SorteadorScreen() {
                           styles.potChip,
                           {
                             backgroundColor:
-                              playerPots[name] === pot
-                                ? POT_COLORS[pot]
-                                : theme.colors.backgroundElevated,
+                              playerPots[name] === pot ? POT_COLORS[pot] : C.cardMuted,
                             borderColor:
-                              playerPots[name] === pot ? POT_COLORS[pot] : theme.colors.border,
+                              playerPots[name] === pot ? POT_COLORS[pot] : C.border,
                           },
                         ]}>
-                        <Text
-                          style={[
-                            styles.potChipText,
-                            { color: playerPots[name] === pot ? '#FFF' : theme.colors.textMuted },
-                          ]}>
+                        <Text style={[styles.potChipText, { color: playerPots[name] === pot ? '#FFF' : C.textMuted }]}>
                           P{pot}
                         </Text>
                       </Pressable>
@@ -230,7 +207,7 @@ export default function SorteadorScreen() {
                 ) : null}
 
                 <Pressable onPress={() => removePlayer(name)} style={styles.removeButton}>
-                  <Text style={[styles.removeButtonText, { color: theme.colors.textMuted }]}>✕</Text>
+                  <Text style={styles.removeButtonText}>✕</Text>
                 </Pressable>
               </View>
             ))}
@@ -241,12 +218,10 @@ export default function SorteadorScreen() {
             disabled={players.length < 2}
             style={[
               styles.sortButton,
-              {
-                backgroundColor: players.length < 2 ? theme.colors.backgroundElevated : '#16A34A',
-              },
+              { backgroundColor: players.length < 2 ? C.cardMuted : '#16A34A' },
             ]}>
-            <Text style={[styles.sortButtonText, { color: players.length < 2 ? theme.colors.textMuted : '#FFF' }]}>
-              Sortear times
+            <Text style={[styles.sortButtonText, { color: players.length < 2 ? C.textMuted : '#FFF' }]}>
+              Sortear agora
             </Text>
           </Pressable>
         </View>
@@ -255,28 +230,24 @@ export default function SorteadorScreen() {
       {/* Result */}
       {result ? (
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Resultado do sorteio</Text>
+          <Text style={styles.sectionTitle}>Resultado do sorteio</Text>
           {result.teams.map((team, ti) => (
-            <View
-              key={ti}
-              style={[styles.teamCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <View style={[styles.teamHeader, { borderBottomColor: theme.colors.border }]}>
-                <View style={[styles.teamBadge, { backgroundColor: '#16A34A' }]}>
+            <View key={ti} style={styles.teamCard}>
+              <View style={styles.teamHeader}>
+                <View style={styles.teamBadge}>
                   <Text style={styles.teamBadgeText}>Time {ti + 1}</Text>
                 </View>
-                <Text style={[styles.teamCount, { color: theme.colors.textMuted }]}>
+                <Text style={styles.teamCount}>
                   {team.length} jogador{team.length > 1 ? 'es' : ''}
                 </Text>
               </View>
               <View style={styles.teamPlayers}>
                 {team.map((name, pi) => (
-                  <View key={name} style={[styles.playerChip, { backgroundColor: theme.colors.backgroundElevated, borderColor: theme.colors.border }]}>
+                  <View key={name} style={styles.playerChip}>
                     {mode === 'potes' ? (
                       <View style={[styles.potDot, { backgroundColor: POT_COLORS[playerPots[name] ?? 1] }]} />
                     ) : null}
-                    <Text style={[styles.playerChipText, { color: theme.colors.text }]}>
-                      {pi + 1}. {name}
-                    </Text>
+                    <Text style={styles.playerChipText}>{pi + 1}. {name}</Text>
                   </View>
                 ))}
               </View>
@@ -284,20 +255,14 @@ export default function SorteadorScreen() {
           ))}
 
           {result.reservas.length > 0 ? (
-            <View style={[styles.reservasCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <Text style={[styles.reservasTitle, { color: theme.colors.textMuted }]}>
-                Reservas ({result.reservas.length})
-              </Text>
-              <Text style={[styles.reservasNames, { color: theme.colors.text }]}>
-                {result.reservas.join(', ')}
-              </Text>
+            <View style={styles.reservasCard}>
+              <Text style={styles.reservasTitle}>Reservas ({result.reservas.length})</Text>
+              <Text style={styles.reservasNames}>{result.reservas.join(', ')}</Text>
             </View>
           ) : null}
 
-          <Pressable
-            onPress={sort}
-            style={[styles.resortButton, { borderColor: '#16A34A' }]}>
-            <Text style={[styles.resortButtonText, { color: '#16A34A' }]}>Sortear novamente</Text>
+          <Pressable onPress={sort} style={styles.resortButton}>
+            <Text style={styles.resortButtonText}>Sortear novamente</Text>
           </Pressable>
         </View>
       ) : null}
@@ -305,10 +270,8 @@ export default function SorteadorScreen() {
       <SafeAd placement={AD_PLACEMENTS.TOOLS_AFTER_RESULT} hasContent={hasResult} />
 
       <View style={styles.editorial}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-          Como montar times equilibrados
-        </Text>
-        <Text style={[styles.editorialText, { color: theme.colors.textMuted }]}>
+        <Text style={styles.sectionTitle}>Como montar times equilibrados</Text>
+        <Text style={styles.editorialText}>
           A divisão por potes é a forma mais justa de equilibrar times em peladas. Classifique
           cada jogador de 1 a 4 conforme o nível técnico e o sorteador distribui proporcionalmente,
           garantindo que cada time tenha a mesma quantidade de jogadores de cada faixa de nível.
@@ -318,11 +281,9 @@ export default function SorteadorScreen() {
 
       <View style={styles.faqList}>
         {FAQ.map((item) => (
-          <View
-            key={item.q}
-            style={[styles.faqCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <Text style={[styles.faqQ, { color: theme.colors.text }]}>{item.q}</Text>
-            <Text style={[styles.faqA, { color: theme.colors.textMuted }]}>{item.a}</Text>
+          <View key={item.q} style={styles.faqCard}>
+            <Text style={styles.faqQ}>{item.q}</Text>
+            <Text style={styles.faqA}>{item.a}</Text>
           </View>
         ))}
       </View>
@@ -330,7 +291,7 @@ export default function SorteadorScreen() {
       <SafeAd placement={AD_PLACEMENTS.TOOLS_HUB_AFTER_CARDS} hasContent />
 
       <View style={styles.relatedLinks}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Outras ferramentas</Text>
+        <Text style={styles.sectionTitle}>Outras ferramentas</Text>
         <View style={styles.relatedRow}>
           {[
             { label: 'Cronômetro de Pelada', href: '/ferramentas/cronometro-pelada' },
@@ -340,15 +301,13 @@ export default function SorteadorScreen() {
             <Pressable
               key={link.href}
               onPress={() => router.push(link.href as never)}
-              style={[styles.relatedChip, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <Text style={[styles.relatedChipText, { color: theme.colors.secondary }]}>
-                {link.label}
-              </Text>
+              style={styles.relatedChip}>
+              <Text style={styles.relatedChipText}>{link.label}</Text>
             </Pressable>
           ))}
         </View>
       </View>
-    </PublicPageShell>
+    </ToolPageShell>
   );
 }
 
@@ -356,11 +315,11 @@ const styles = StyleSheet.create({
   modeRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   modeChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 10 },
   modeChipText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800' },
-  infoBox: { borderWidth: 1, borderRadius: 14, padding: 14 },
-  infoText: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20 },
+  infoBox: { borderWidth: 1, borderRadius: 14, padding: 14, backgroundColor: 'rgba(22,163,74,0.08)', borderColor: 'rgba(22,163,74,0.3)' },
+  infoText: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20, color: C.textMuted },
   section: { gap: 12 },
-  sectionLabel: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
-  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800' },
+  sectionLabel: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
+  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800', color: C.text },
   optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   optionChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 },
   optionChipText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800' },
@@ -373,6 +332,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontFamily: fonts.body,
     fontSize: 15,
+    color: C.text,
+    backgroundColor: C.cardMuted,
+    borderColor: C.border,
   },
   addButton: {
     width: 48,
@@ -380,6 +342,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#16A34A',
   },
   addButtonText: { fontFamily: fonts.heading, fontSize: 24, fontWeight: '800', color: '#FFF' },
   playerList: { gap: 8 },
@@ -391,17 +354,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    backgroundColor: C.card,
+    borderColor: C.border,
   },
-  playerIndex: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '700', width: 20 },
-  playerName: { flex: 1, fontFamily: fonts.body, fontSize: 14 },
+  playerIndex: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '700', width: 20, color: C.textMuted },
+  playerName: { flex: 1, fontFamily: fonts.body, fontSize: 14, color: C.text },
   potSelector: { flexDirection: 'row', gap: 4 },
   potChip: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 4 },
   potChipText: { fontFamily: fonts.heading, fontSize: 11, fontWeight: '800' },
   removeButton: { padding: 4 },
-  removeButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '700' },
-  sortButton: { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  removeButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '700', color: C.textMuted },
+  sortButton: { borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   sortButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800' },
-  teamCard: { borderWidth: 1, borderRadius: 20, overflow: 'hidden' },
+  teamCard: { borderWidth: 1, borderRadius: 20, overflow: 'hidden', borderColor: C.borderStrong, backgroundColor: C.card },
   teamHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -409,10 +374,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
+    borderBottomColor: C.border,
   },
-  teamBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  teamBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#16A34A' },
   teamBadgeText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '800', color: '#FFF' },
-  teamCount: { fontFamily: fonts.body, fontSize: 13 },
+  teamCount: { fontFamily: fonts.body, fontSize: 13, color: C.textMuted },
   teamPlayers: { padding: 12, gap: 8 },
   playerChip: {
     flexDirection: 'row',
@@ -422,22 +388,24 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
+    backgroundColor: C.cardMuted,
+    borderColor: C.border,
   },
   potDot: { width: 8, height: 8, borderRadius: 4 },
-  playerChipText: { fontFamily: fonts.body, fontSize: 14 },
-  reservasCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 6 },
-  reservasTitle: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
-  reservasNames: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20 },
-  resortButton: { borderWidth: 1.5, borderRadius: 14, paddingVertical: 12, alignItems: 'center' },
-  resortButtonText: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800' },
+  playerChipText: { fontFamily: fonts.body, fontSize: 14, color: C.text },
+  reservasCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 6, backgroundColor: C.card, borderColor: C.border },
+  reservasTitle: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
+  reservasNames: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: C.text },
+  resortButton: { borderWidth: 1.5, borderRadius: 14, paddingVertical: 12, alignItems: 'center', borderColor: '#16A34A' },
+  resortButtonText: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800', color: '#16A34A' },
   editorial: { gap: 10 },
-  editorialText: { fontFamily: fonts.body, fontSize: 14, lineHeight: 22 },
+  editorialText: { fontFamily: fonts.body, fontSize: 14, lineHeight: 22, color: C.textMuted },
   faqList: { gap: 12 },
-  faqCard: { borderWidth: 1, borderRadius: 20, padding: 18, gap: 8 },
-  faqQ: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800' },
-  faqA: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
+  faqCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 8, backgroundColor: C.card, borderColor: C.border },
+  faqQ: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800', color: C.text },
+  faqA: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: C.textMuted },
   relatedLinks: { gap: 12 },
   relatedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  relatedChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
-  relatedChipText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
+  relatedChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: C.card, borderColor: C.border },
+  relatedChipText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.accentLight },
 });

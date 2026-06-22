@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 
 import { SafeAd } from '@/components/ads/SafeAd';
-import { PublicPageShell } from '@/components/public/PublicPageShell';
+import { ToolPageShell } from '@/components/tools/ToolPageShell';
+import { TOOL_COLORS } from '@/components/tools/tool-theme';
 import { AD_PLACEMENTS } from '@/constants/ads';
 import { fonts } from '@/constants/theme';
-import { useAppTheme } from '@/hooks/use-app-theme';
 import { getQueuedTeams } from '@/lib/pickup-tools';
 import {
   hasActiveRodizio,
@@ -14,6 +15,8 @@ import {
   rehydratePickupToolsState,
   usePickupToolsStore,
 } from '@/store/pickup-tools-store';
+
+const C = TOOL_COLORS;
 
 const PER_TEAM_OPTIONS = [3, 4, 5, 6, 7];
 
@@ -45,7 +48,6 @@ const FAQ = [
 ];
 
 export default function RodizioScreen() {
-  const theme = useAppTheme();
   const { debugPickup } = useLocalSearchParams<{ debugPickup?: string | string[] }>();
 
   const store = usePickupToolsStore();
@@ -134,14 +136,10 @@ export default function RodizioScreen() {
     (teamA.length < playersPerTeam || teamB.length < playersPerTeam);
 
   return (
-    <PublicPageShell
-      eyebrow="Ferramenta gratuita"
-      title="Lista da Pelada"
-      description="Organize quem entra, quem sai e quem fica na quadra. O vencedor fica em campo e a lista roda na ordem de chegada."
-      actions={[
-        { label: 'Cronômetro', href: '/ferramentas/cronometro-pelada', variant: 'secondary' },
-        { label: 'Sorteador', href: '/ferramentas/sorteador-de-times', variant: 'ghost' },
-      ]}>
+    <ToolPageShell
+      title="Rodar Lista"
+      subtitle="Quem ganha fica. A fila anda."
+      compactHero>
 
       {/* Session banner */}
       {sessionActive ? (
@@ -151,23 +149,23 @@ export default function RodizioScreen() {
           </Text>
         </View>
       ) : (
-        <View style={[styles.sessionBanner, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-          <Text style={[styles.sessionBannerText, { color: theme.colors.textMuted }]}>
+        <View style={[styles.sessionBanner, { backgroundColor: C.card, borderColor: C.border }]}>
+          <Text style={[styles.sessionBannerText, { color: C.textMuted }]}>
             Sessão salva neste dispositivo.
           </Text>
         </View>
       )}
 
       {showDebugPickup ? (
-        <View style={[styles.debugCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-          <Text style={[styles.debugTitle, { color: theme.colors.text }]}>Debug do rodizio</Text>
-          <Text style={[styles.debugLine, { color: theme.colors.textMuted }]}>phase: {phase}</Text>
-          <Text style={[styles.debugLine, { color: theme.colors.textMuted }]}>teamA.length: {teamA.length}</Text>
-          <Text style={[styles.debugLine, { color: theme.colors.textMuted }]}>teamB.length: {teamB.length}</Text>
-          <Text style={[styles.debugLine, { color: theme.colors.textMuted }]}>waitingPlayers.length: {waitingPlayers.length}</Text>
-          <Text style={[styles.debugLine, { color: theme.colors.textMuted }]}>matchCount: {matchCount}</Text>
-          <Text style={[styles.debugLine, { color: theme.colors.textMuted }]}>storageWasRead: {storageWasRead ? 'true' : 'false'}</Text>
-          <Text style={[styles.debugLine, { color: theme.colors.textMuted }]}>hasActiveRodizio: {hasActiveRodizioState ? 'true' : 'false'}</Text>
+        <View style={styles.debugCard}>
+          <Text style={styles.debugTitle}>Debug do rodizio</Text>
+          <Text style={styles.debugLine}>phase: {phase}</Text>
+          <Text style={styles.debugLine}>teamA.length: {teamA.length}</Text>
+          <Text style={styles.debugLine}>teamB.length: {teamB.length}</Text>
+          <Text style={styles.debugLine}>waitingPlayers.length: {waitingPlayers.length}</Text>
+          <Text style={styles.debugLine}>matchCount: {matchCount}</Text>
+          <Text style={styles.debugLine}>storageWasRead: {storageWasRead ? 'true' : 'false'}</Text>
+          <Text style={styles.debugLine}>hasActiveRodizio: {hasActiveRodizioState ? 'true' : 'false'}</Text>
         </View>
       ) : null}
 
@@ -175,9 +173,7 @@ export default function RodizioScreen() {
         <>
           {/* Players per team */}
           <View style={styles.section}>
-            <Text style={[styles.sectionLabel, { color: theme.colors.textMuted }]}>
-              Jogadores por time
-            </Text>
+            <Text style={styles.sectionLabel}>Jogadores por time</Text>
             <View style={styles.optionsRow}>
               {PER_TEAM_OPTIONS.map((n) => (
                 <Pressable
@@ -186,11 +182,11 @@ export default function RodizioScreen() {
                   style={[
                     styles.optionChip,
                     {
-                      backgroundColor: playersPerTeam === n ? '#16A34A' : theme.colors.backgroundElevated,
-                      borderColor: playersPerTeam === n ? '#16A34A' : theme.colors.border,
+                      backgroundColor: playersPerTeam === n ? '#16A34A' : C.cardMuted,
+                      borderColor: playersPerTeam === n ? '#16A34A' : C.border,
                     },
                   ]}>
-                  <Text style={[styles.optionChipText, { color: playersPerTeam === n ? '#FFF' : theme.colors.textMuted }]}>
+                  <Text style={[styles.optionChipText, { color: playersPerTeam === n ? '#FFF' : C.textMuted }]}>
                     {n}v{n}
                   </Text>
                 </Pressable>
@@ -200,7 +196,7 @@ export default function RodizioScreen() {
 
           {/* Add players */}
           <View style={styles.section}>
-            <Text style={[styles.sectionLabel, { color: theme.colors.textMuted }]}>
+            <Text style={styles.sectionLabel}>
               Adicionar jogadores (na ordem de chegada)
             </Text>
             <View style={styles.inputRow}>
@@ -209,18 +205,11 @@ export default function RodizioScreen() {
                 onChangeText={setInputValue}
                 onSubmitEditing={addPlayer}
                 placeholder="Nome do jogador"
-                placeholderTextColor={theme.colors.textMuted}
-                style={[
-                  styles.textInput,
-                  {
-                    color: theme.colors.text,
-                    backgroundColor: theme.colors.backgroundElevated,
-                    borderColor: theme.colors.border,
-                  },
-                ]}
+                placeholderTextColor={C.textMuted}
+                style={styles.textInput}
                 returnKeyType="done"
               />
-              <Pressable onPress={addPlayer} style={[styles.addButton, { backgroundColor: '#16A34A' }]}>
+              <Pressable onPress={addPlayer} style={styles.addButton}>
                 <Text style={styles.addButtonText}>+</Text>
               </Pressable>
             </View>
@@ -228,15 +217,11 @@ export default function RodizioScreen() {
             {players.length > 0 ? (
               <View style={styles.playerList}>
                 {players.map((name, idx) => (
-                  <View
-                    key={name}
-                    style={[styles.playerRow, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                    <Text style={[styles.playerIndex, { color: theme.colors.textMuted }]}>{idx + 1}</Text>
-                    <Text style={[styles.playerName, { color: theme.colors.text }]} numberOfLines={1}>
-                      {name}
-                    </Text>
+                  <View key={name} style={styles.playerRow}>
+                    <Text style={styles.playerIndex}>{idx + 1}</Text>
+                    <Text style={styles.playerName} numberOfLines={1}>{name}</Text>
                     <Pressable onPress={() => removeSetupPlayer(name)} style={styles.removeButton}>
-                      <Text style={[styles.removeButtonText, { color: theme.colors.textMuted }]}>✕</Text>
+                      <Text style={styles.removeButtonText}>✕</Text>
                     </Pressable>
                   </View>
                 ))}
@@ -244,16 +229,16 @@ export default function RodizioScreen() {
             ) : null}
 
             {players.length > 0 && players.length < playersPerTeam * 2 ? (
-              <View style={[styles.warningBox, { backgroundColor: 'rgba(234,179,8,0.1)', borderColor: 'rgba(234,179,8,0.4)' }]}>
-                <Text style={[styles.warningText, { color: '#B45309' }]}>
+              <View style={styles.warningBox}>
+                <Text style={styles.warningText}>
                   Mínimo {playersPerTeam * 2} jogadores para iniciar ({players.length}/{playersPerTeam * 2}).
                 </Text>
               </View>
             ) : null}
 
             {players.length > 0 ? (
-              <View style={[styles.setupSummary, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                <Text style={[styles.setupSummaryText, { color: theme.colors.textMuted }]}>
+              <View style={styles.setupSummary}>
+                <Text style={styles.setupSummaryText}>
                   {players.length} jogadores · {Math.floor(players.length / playersPerTeam)} time{Math.floor(players.length / playersPerTeam) > 1 ? 's' : ''} completo{Math.floor(players.length / playersPerTeam) > 1 ? 's' : ''}
                   {players.length % playersPerTeam > 0 ? ` + ${players.length % playersPerTeam} aguardando` : ''}
                 </Text>
@@ -263,11 +248,8 @@ export default function RodizioScreen() {
             <Pressable
               onPress={handleStart}
               disabled={!canStart}
-              style={[
-                styles.startButton,
-                { backgroundColor: canStart ? '#16A34A' : theme.colors.backgroundElevated },
-              ]}>
-              <Text style={[styles.startButtonText, { color: canStart ? '#FFF' : theme.colors.textMuted }]}>
+              style={[styles.startButton, { backgroundColor: canStart ? '#16A34A' : C.cardMuted }]}>
+              <Text style={[styles.startButtonText, { color: canStart ? '#FFF' : C.textMuted }]}>
                 Iniciar lista
               </Text>
             </Pressable>
@@ -277,73 +259,54 @@ export default function RodizioScreen() {
 
       {hasActiveRodizioState ? (
         <>
-          {/* Match count */}
           {matchCount > 0 ? (
-            <View style={[styles.matchBadge, { backgroundColor: 'rgba(22,163,74,0.1)', borderColor: 'rgba(22,163,74,0.3)' }]}>
-              <Text style={[styles.matchBadgeText, { color: '#16A34A' }]}>
-                Partida #{matchCount + 1} em andamento
-              </Text>
+            <View style={styles.matchBadge}>
+              <Text style={styles.matchBadgeText}>Partida #{matchCount + 1} em andamento</Text>
             </View>
           ) : null}
 
-          {/* Pending remove modal */}
           {pendingRemove !== null ? (
-            <View style={[styles.modal, { backgroundColor: theme.colors.surface, borderColor: '#DC2626' }]}>
+            <View style={styles.modal}>
               {pendingRemove.type === 'queue' ? (
                 <>
-                  <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-                    Remover {pendingRemove.player} da lista?
-                  </Text>
-                  <Pressable
-                    onPress={handleConfirmQueueRemove}
-                    style={[styles.modalBtn, { backgroundColor: '#DC2626' }]}>
+                  <Text style={styles.modalTitle}>Remover {pendingRemove.player} da lista?</Text>
+                  <Pressable onPress={handleConfirmQueueRemove} style={[styles.modalBtn, { backgroundColor: '#DC2626' }]}>
                     <Text style={styles.modalBtnTextWhite}>Sim, remover da lista</Text>
                   </Pressable>
-                  <Pressable
-                    onPress={() => setPendingRemove(null)}
-                    style={[styles.modalBtn, { backgroundColor: theme.colors.backgroundElevated, borderColor: theme.colors.border, borderWidth: 1 }]}>
-                    <Text style={[styles.modalBtnText, { color: theme.colors.text }]}>Cancelar</Text>
+                  <Pressable onPress={() => setPendingRemove(null)} style={[styles.modalBtn, { backgroundColor: C.cardMuted, borderColor: C.border, borderWidth: 1 }]}>
+                    <Text style={[styles.modalBtnText, { color: C.text }]}>Cancelar</Text>
                   </Pressable>
                 </>
               ) : (
                 <>
-                  <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-                    Remover {pendingRemove.player}?
-                  </Text>
-                  <Pressable
-                    onPress={handleRemoveNow}
-                    style={[styles.modalBtn, { backgroundColor: '#DC2626' }]}>
+                  <Text style={styles.modalTitle}>Remover {pendingRemove.player}?</Text>
+                  <Pressable onPress={handleRemoveNow} style={[styles.modalBtn, { backgroundColor: '#DC2626' }]}>
                     <Text style={styles.modalBtnTextWhite}>Remover agora e puxar próximo da lista</Text>
                   </Pressable>
                   {!leavingAfterMatch.includes(pendingRemove.player) ? (
-                    <Pressable
-                      onPress={handleRemoveAfterMatch}
-                      style={[styles.modalBtn, { backgroundColor: '#D97706' }]}>
+                    <Pressable onPress={handleRemoveAfterMatch} style={[styles.modalBtn, { backgroundColor: '#D97706' }]}>
                       <Text style={styles.modalBtnTextWhite}>Remover só depois do jogo</Text>
                     </Pressable>
                   ) : null}
-                  <Pressable
-                    onPress={() => setPendingRemove(null)}
-                    style={[styles.modalBtn, { backgroundColor: theme.colors.backgroundElevated, borderColor: theme.colors.border, borderWidth: 1 }]}>
-                    <Text style={[styles.modalBtnText, { color: theme.colors.text }]}>Cancelar</Text>
+                  <Pressable onPress={() => setPendingRemove(null)} style={[styles.modalBtn, { backgroundColor: C.cardMuted, borderColor: C.border, borderWidth: 1 }]}>
+                    <Text style={[styles.modalBtnText, { color: C.text }]}>Cancelar</Text>
                   </Pressable>
                 </>
               )}
             </View>
           ) : null}
 
-          {/* Incomplete team warning */}
           {incompleteTeam ? (
-            <View style={[styles.warningBox, { backgroundColor: 'rgba(220,38,38,0.08)', borderColor: 'rgba(220,38,38,0.35)' }]}>
-              <Text style={[styles.warningText, { color: '#B91C1C' }]}>
+            <View style={styles.warningBoxRed}>
+              <Text style={styles.warningTextRed}>
                 Time incompleto: não há jogador na lista para substituir. Adicione jogadores ou registre o vencedor para continuar.
               </Text>
             </View>
           ) : null}
 
           {/* Active match */}
-          <View style={[styles.matchCard, { backgroundColor: theme.colors.surface, borderColor: '#16A34A' }]}>
-            <Text style={[styles.matchCardTitle, { color: '#16A34A' }]}>Em campo agora</Text>
+          <View style={styles.matchCard}>
+            <Text style={styles.matchCardTitle}>Em campo agora</Text>
 
             <View style={styles.matchTeams}>
               {/* Team A */}
@@ -354,7 +317,7 @@ export default function RodizioScreen() {
                 <View style={styles.matchPlayerList}>
                   {teamA.map((name, i) => (
                     <View key={name} style={styles.matchPlayerRow}>
-                      <Text style={[styles.matchPlayer, { color: theme.colors.text }]} numberOfLines={1}>
+                      <Text style={styles.matchPlayer} numberOfLines={1}>
                         {i + 1}. {name}
                       </Text>
                       {leavingAfterMatch.includes(name) ? (
@@ -369,24 +332,22 @@ export default function RodizioScreen() {
                     </View>
                   ))}
                 </View>
-                <Pressable
-                  onPress={() => handleWin('A')}
-                  style={[styles.winButton, { backgroundColor: '#16A34A' }]}>
+                <Pressable onPress={() => handleWin('A')} style={[styles.winButton, { backgroundColor: '#16A34A' }]}>
                   <Text style={styles.winButtonText}>Registrar vitória do Time A</Text>
                 </Pressable>
               </View>
 
-              <Text style={[styles.vs, { color: theme.colors.textMuted }]}>×</Text>
+              <Text style={styles.vs}>×</Text>
 
               {/* Team B */}
               <View style={styles.matchTeam}>
-                <View style={[styles.teamBadge, { backgroundColor: theme.colors.primary }]}>
+                <View style={[styles.teamBadge, { backgroundColor: '#3B82F6' }]}>
                   <Text style={styles.teamBadgeText}>Time B</Text>
                 </View>
                 <View style={styles.matchPlayerList}>
                   {teamB.map((name, i) => (
                     <View key={name} style={styles.matchPlayerRow}>
-                      <Text style={[styles.matchPlayer, { color: theme.colors.text }]} numberOfLines={1}>
+                      <Text style={styles.matchPlayer} numberOfLines={1}>
                         {i + 1}. {name}
                       </Text>
                       {leavingAfterMatch.includes(name) ? (
@@ -401,9 +362,7 @@ export default function RodizioScreen() {
                     </View>
                   ))}
                 </View>
-                <Pressable
-                  onPress={() => handleWin('B')}
-                  style={[styles.winButton, { backgroundColor: theme.colors.primary }]}>
+                <Pressable onPress={() => handleWin('B')} style={[styles.winButton, { backgroundColor: '#3B82F6' }]}>
                   <Text style={styles.winButtonText}>Registrar vitória do Time B</Text>
                 </Pressable>
               </View>
@@ -411,40 +370,34 @@ export default function RodizioScreen() {
 
             <Pressable
               onPress={() => router.push('/ferramentas/cronometro-pelada' as never)}
-              style={[styles.timerLink, { borderColor: theme.colors.border }]}>
-              <Text style={[styles.timerLinkText, { color: theme.colors.textMuted }]}>
-                Abrir cronômetro desta partida
-              </Text>
+              style={styles.timerLink}>
+              <Text style={styles.timerLinkText}>Abrir cronômetro desta partida</Text>
             </Pressable>
           </View>
 
-          {/* Queue: "Próximos da lista" */}
+          {/* Queue */}
           {waitingPlayers.length > 0 ? (
             <View style={styles.section}>
-              <Text style={[styles.sectionLabel, { color: theme.colors.textMuted }]}>
+              <Text style={styles.sectionLabel}>
                 Próximos da lista ({waitingPlayers.length} jogador{waitingPlayers.length > 1 ? 'es' : ''})
               </Text>
               {queuedTeams.map((team, ti) => (
-                <View
-                  key={ti}
-                  style={[styles.queueCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                  <Text style={[styles.queueCardLabel, { color: theme.colors.textMuted }]}>
+                <View key={ti} style={styles.queueCard}>
+                  <Text style={styles.queueCardLabel}>
                     Próximo time {ti + 1}
                     {team.length < playersPerTeam ? ` (${team.length}/${playersPerTeam} — incompleto)` : ''}
                   </Text>
                   <View style={styles.queuePlayers}>
                     {team.map((name, pi) => (
-                      <View
-                        key={name}
-                        style={[styles.queuePlayerChip, { backgroundColor: theme.colors.backgroundElevated, borderColor: theme.colors.border }]}>
-                        <Text style={[styles.queuePlayerText, { color: theme.colors.text }]}>
+                      <View key={name} style={styles.queuePlayerChip}>
+                        <Text style={styles.queuePlayerText}>
                           {ti * playersPerTeam + pi + 1}. {name}
                         </Text>
                         <Pressable
                           onPress={() => setPendingRemove({ type: 'queue', player: name })}
                           style={styles.removeButton}
                           hitSlop={6}>
-                          <Text style={[styles.removeButtonText, { color: theme.colors.textMuted }]}>✕</Text>
+                          <Text style={styles.removeButtonText}>✕</Text>
                         </Pressable>
                       </View>
                     ))}
@@ -453,8 +406,8 @@ export default function RodizioScreen() {
               ))}
             </View>
           ) : (
-            <View style={[styles.warningBox, { backgroundColor: 'rgba(234,179,8,0.1)', borderColor: 'rgba(234,179,8,0.4)' }]}>
-              <Text style={[styles.warningText, { color: '#B45309' }]}>
+            <View style={styles.warningBox}>
+              <Text style={styles.warningText}>
                 Nenhum time na lista. Registre o vencedor para continuar o rodízio.
               </Text>
             </View>
@@ -462,43 +415,30 @@ export default function RodizioScreen() {
 
           {/* Add player during active session */}
           <View style={styles.section}>
-            <Text style={[styles.sectionLabel, { color: theme.colors.textMuted }]}>
-              Chegou alguém novo? Adicionar à lista
-            </Text>
+            <Text style={styles.sectionLabel}>Chegou alguém novo? Adicionar à lista</Text>
             <View style={styles.inputRow}>
               <TextInput
                 value={addDuringValue}
                 onChangeText={(t) => { setAddDuringValue(t); setAddDuringError(''); }}
                 onSubmitEditing={handleAddDuring}
                 placeholder="Nome do jogador"
-                placeholderTextColor={theme.colors.textMuted}
-                style={[
-                  styles.textInput,
-                  {
-                    color: theme.colors.text,
-                    backgroundColor: theme.colors.backgroundElevated,
-                    borderColor: theme.colors.border,
-                  },
-                ]}
+                placeholderTextColor={C.textMuted}
+                style={styles.textInput}
                 returnKeyType="done"
               />
-              <Pressable onPress={handleAddDuring} style={[styles.addButton, { backgroundColor: '#16A34A' }]}>
+              <Pressable onPress={handleAddDuring} style={styles.addButton}>
                 <Text style={styles.addButtonText}>+</Text>
               </Pressable>
             </View>
             {addDuringError ? (
-              <View style={[styles.warningBox, { backgroundColor: 'rgba(220,38,38,0.08)', borderColor: 'rgba(220,38,38,0.35)' }]}>
-                <Text style={[styles.warningText, { color: '#B91C1C' }]}>{addDuringError}</Text>
+              <View style={styles.warningBoxRed}>
+                <Text style={styles.warningTextRed}>{addDuringError}</Text>
               </View>
             ) : null}
           </View>
 
-          <Pressable
-            onPress={() => store.resetAll()}
-            style={[styles.resetButton, { borderColor: theme.colors.border }]}>
-            <Text style={[styles.resetButtonText, { color: theme.colors.textMuted }]}>
-              Resetar pelada
-            </Text>
+          <Pressable onPress={() => store.resetAll()} style={styles.resetButton}>
+            <Text style={styles.resetButtonText}>Resetar pelada</Text>
           </Pressable>
         </>
       ) : null}
@@ -506,10 +446,8 @@ export default function RodizioScreen() {
       <SafeAd placement={AD_PLACEMENTS.TOOLS_AFTER_RESULT} hasContent={hasResult} />
 
       <View style={styles.editorial}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-          Como a lista da pelada funciona na prática
-        </Text>
-        <Text style={[styles.editorialText, { color: theme.colors.textMuted }]}>
+        <Text style={styles.sectionTitle}>Como a lista da pelada funciona na prática</Text>
+        <Text style={styles.editorialText}>
           Imagine 16 jogadores, 5 por time. Os primeiros 5 formam o Time A, os 5 seguintes o Time B.
           Os 6 restantes ficam na lista, na ordem em que chegaram. Quando o Time A vence, o Time B
           vai para o final da lista — mas os 6 que já estavam esperando continuam na frente.
@@ -519,11 +457,9 @@ export default function RodizioScreen() {
 
       <View style={styles.faqList}>
         {FAQ.map((item) => (
-          <View
-            key={item.q}
-            style={[styles.faqCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <Text style={[styles.faqQ, { color: theme.colors.text }]}>{item.q}</Text>
-            <Text style={[styles.faqA, { color: theme.colors.textMuted }]}>{item.a}</Text>
+          <View key={item.q} style={styles.faqCard}>
+            <Text style={styles.faqQ}>{item.q}</Text>
+            <Text style={styles.faqA}>{item.a}</Text>
           </View>
         ))}
       </View>
@@ -531,7 +467,7 @@ export default function RodizioScreen() {
       <SafeAd placement={AD_PLACEMENTS.TOOLS_HUB_AFTER_CARDS} hasContent />
 
       <View style={styles.relatedLinks}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Outras ferramentas</Text>
+        <Text style={styles.sectionTitle}>Outras ferramentas</Text>
         <View style={styles.relatedRow}>
           {[
             { label: 'Cronômetro de Pelada', href: '/ferramentas/cronometro-pelada' },
@@ -541,27 +477,25 @@ export default function RodizioScreen() {
             <Pressable
               key={link.href}
               onPress={() => router.push(link.href as never)}
-              style={[styles.relatedChip, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <Text style={[styles.relatedChipText, { color: theme.colors.secondary }]}>
-                {link.label}
-              </Text>
+              style={styles.relatedChip}>
+              <Text style={styles.relatedChipText}>{link.label}</Text>
             </Pressable>
           ))}
         </View>
       </View>
-    </PublicPageShell>
+    </ToolPageShell>
   );
 }
 
 const styles = StyleSheet.create({
   sessionBanner: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
   sessionBannerText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '600' },
-  debugCard: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 6 },
-  debugTitle: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800' },
-  debugLine: { fontFamily: fonts.body, fontSize: 12, lineHeight: 18 },
+  debugCard: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 6, backgroundColor: C.card, borderColor: C.border },
+  debugTitle: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800', color: C.text },
+  debugLine: { fontFamily: fonts.body, fontSize: 12, lineHeight: 18, color: C.textMuted },
   section: { gap: 12 },
-  sectionLabel: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
-  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800' },
+  sectionLabel: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
+  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800', color: C.text },
   optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   optionChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 },
   optionChipText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800' },
@@ -574,14 +508,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontFamily: fonts.body,
     fontSize: 15,
+    color: C.text,
+    backgroundColor: C.cardMuted,
+    borderColor: C.border,
   },
-  addButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  addButton: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#16A34A' },
   addButtonText: { fontFamily: fonts.heading, fontSize: 24, fontWeight: '800', color: '#FFF' },
   playerList: { gap: 8 },
   playerRow: {
@@ -592,38 +523,37 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    backgroundColor: C.card,
+    borderColor: C.border,
   },
-  playerIndex: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '700', width: 20 },
-  playerName: { flex: 1, fontFamily: fonts.body, fontSize: 14 },
+  playerIndex: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '700', width: 20, color: C.textMuted },
+  playerName: { flex: 1, fontFamily: fonts.body, fontSize: 14, color: C.text },
   removeButton: { padding: 4 },
-  removeButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '700' },
-  warningBox: { borderWidth: 1, borderRadius: 12, padding: 12 },
-  warningText: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20 },
-  setupSummary: { borderWidth: 1, borderRadius: 12, padding: 12 },
-  setupSummaryText: { fontFamily: fonts.body, fontSize: 13 },
+  removeButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '700', color: C.textMuted },
+  warningBox: { borderWidth: 1, borderRadius: 12, padding: 12, backgroundColor: 'rgba(234,179,8,0.1)', borderColor: 'rgba(234,179,8,0.4)' },
+  warningText: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20, color: '#B45309' },
+  warningBoxRed: { borderWidth: 1, borderRadius: 12, padding: 12, backgroundColor: 'rgba(220,38,38,0.08)', borderColor: 'rgba(220,38,38,0.35)' },
+  warningTextRed: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20, color: '#B91C1C' },
+  setupSummary: { borderWidth: 1, borderRadius: 12, padding: 12, backgroundColor: C.card, borderColor: C.border },
+  setupSummaryText: { fontFamily: fonts.body, fontSize: 13, color: C.textMuted },
   startButton: { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   startButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800' },
-  matchBadge: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, alignSelf: 'flex-start' },
-  matchBadgeText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
-  modal: {
-    borderWidth: 1.5,
-    borderRadius: 20,
-    padding: 18,
-    gap: 10,
-  },
-  modalTitle: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', marginBottom: 4 },
+  matchBadge: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, alignSelf: 'flex-start', backgroundColor: 'rgba(22,163,74,0.1)', borderColor: 'rgba(22,163,74,0.3)' },
+  matchBadgeText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: '#16A34A' },
+  modal: { borderWidth: 1.5, borderRadius: 20, padding: 18, gap: 10, backgroundColor: C.card, borderColor: '#DC2626' },
+  modalTitle: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', marginBottom: 4, color: C.text },
   modalBtn: { borderRadius: 12, paddingVertical: 12, paddingHorizontal: 14, alignItems: 'center' },
   modalBtnText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700' },
   modalBtnTextWhite: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700', color: '#FFF', textAlign: 'center' },
-  matchCard: { borderWidth: 1.5, borderRadius: 24, padding: 20, gap: 16 },
-  matchCardTitle: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800' },
+  matchCard: { borderWidth: 1.5, borderRadius: 24, padding: 20, gap: 16, backgroundColor: C.card, borderColor: '#16A34A' },
+  matchCardTitle: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', color: '#16A34A' },
   matchTeams: { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
   matchTeam: { flex: 1, gap: 10 },
   teamBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' },
   teamBadgeText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '800', color: '#FFF' },
   matchPlayerList: { gap: 4 },
   matchPlayerRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  matchPlayer: { flex: 1, fontFamily: fonts.body, fontSize: 14, lineHeight: 22 },
+  matchPlayer: { flex: 1, fontFamily: fonts.body, fontSize: 14, lineHeight: 22, color: C.text },
   leavingBadge: {
     fontFamily: fonts.heading,
     fontSize: 10,
@@ -636,11 +566,11 @@ const styles = StyleSheet.create({
   },
   winButton: { borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, alignItems: 'center' },
   winButtonText: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '800', color: '#FFF', textAlign: 'center' },
-  vs: { fontFamily: fonts.display, fontSize: 28, fontWeight: '900', marginTop: 30 },
-  timerLink: { borderWidth: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
-  timerLinkText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
-  queueCard: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 10 },
-  queueCardLabel: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '700' },
+  vs: { fontFamily: fonts.display, fontSize: 28, fontWeight: '900', marginTop: 30, color: C.textMuted },
+  timerLink: { borderWidth: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center', borderColor: C.border },
+  timerLinkText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
+  queueCard: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 10, backgroundColor: C.card, borderColor: C.border },
+  queueCardLabel: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '700', color: C.textMuted },
   queuePlayers: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   queuePlayerChip: {
     flexDirection: 'row',
@@ -650,18 +580,20 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
+    backgroundColor: C.cardMuted,
+    borderColor: C.border,
   },
-  queuePlayerText: { fontFamily: fonts.body, fontSize: 13 },
-  resetButton: { borderWidth: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  resetButtonText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700' },
+  queuePlayerText: { fontFamily: fonts.body, fontSize: 13, color: C.text },
+  resetButton: { borderWidth: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderColor: C.border },
+  resetButtonText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700', color: C.textMuted },
   editorial: { gap: 10 },
-  editorialText: { fontFamily: fonts.body, fontSize: 14, lineHeight: 22 },
+  editorialText: { fontFamily: fonts.body, fontSize: 14, lineHeight: 22, color: C.textMuted },
   faqList: { gap: 12 },
-  faqCard: { borderWidth: 1, borderRadius: 20, padding: 18, gap: 8 },
-  faqQ: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800' },
-  faqA: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
+  faqCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 8, backgroundColor: C.card, borderColor: C.border },
+  faqQ: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800', color: C.text },
+  faqA: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: C.textMuted },
   relatedLinks: { gap: 12 },
   relatedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  relatedChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
-  relatedChipText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
+  relatedChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: C.card, borderColor: C.border },
+  relatedChipText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.accentLight },
 });

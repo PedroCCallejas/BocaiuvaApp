@@ -17,9 +17,10 @@ interface ToolHeroProps {
   eyebrow?: string;
   title: string;
   subtitle?: string;
-  description: string;
+  description?: string;
   badges?: string[];
   actions?: ToolHeroAction[];
+  hideSideCard?: boolean;
 }
 
 export function ToolHero({
@@ -29,6 +30,7 @@ export function ToolHero({
   description,
   badges = [],
   actions = [],
+  hideSideCard = false,
 }: ToolHeroProps) {
   return (
     <View style={styles.heroCard}>
@@ -40,7 +42,7 @@ export function ToolHero({
         <Text style={styles.eyebrow}>{eyebrow}</Text>
         <Text style={styles.title}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-        <Text style={styles.description}>{description}</Text>
+        {description ? <Text style={styles.description}>{description}</Text> : null}
 
         {badges.length ? (
           <View style={styles.badgesRow}>
@@ -68,16 +70,18 @@ export function ToolHero({
         ) : null}
       </View>
 
-      <View style={styles.sideCard}>
-        <Text style={styles.sideEyebrow}>Bora organizar</Text>
-        <Text style={styles.sideTitle}>Quadra pronta</Text>
-        <Text style={styles.sideCopy}>
-          Sorteio, lista, cronometro e campeonato com visual proprio para quem joga toda semana.
-        </Text>
-        <Pressable onPress={() => router.push('/login' as never)} style={styles.sideLink}>
-          <Text style={styles.sideLinkText}>Conhecer o app completo</Text>
-        </Pressable>
-      </View>
+      {!hideSideCard ? (
+        <View style={styles.sideCard}>
+          <Text style={styles.sideEyebrow}>Bora organizar</Text>
+          <Text style={styles.sideTitle}>Quadra pronta</Text>
+          <Text style={styles.sideCopy}>
+            Sorteio, lista, cronometro e campeonato com visual proprio para quem joga toda semana.
+          </Text>
+          <Pressable onPress={() => router.push('/login' as never)} style={styles.sideLink}>
+            <Text style={styles.sideLinkText}>Conhecer o app completo</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }

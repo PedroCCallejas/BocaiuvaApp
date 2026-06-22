@@ -3,10 +3,10 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 
 import { SafeAd } from '@/components/ads/SafeAd';
-import { PublicPageShell } from '@/components/public/PublicPageShell';
+import { ToolPageShell } from '@/components/tools/ToolPageShell';
+import { TOOL_COLORS } from '@/components/tools/tool-theme';
 import { AD_PLACEMENTS } from '@/constants/ads';
 import { fonts } from '@/constants/theme';
-import { useAppTheme } from '@/hooks/use-app-theme';
 import {
   TIMER_DEFAULTS,
   computeRemainingMs,
@@ -15,6 +15,8 @@ import {
   rehydratePickupToolsState,
   usePickupToolsStore,
 } from '@/store/pickup-tools-store';
+
+const C = TOOL_COLORS;
 
 function formatMs(ms: number) {
   const totalSeconds = Math.ceil(ms / 1000);
@@ -43,8 +45,6 @@ const FAQ = [
 ];
 
 export default function CronometroScreen() {
-  const theme = useAppTheme();
-
   const store = usePickupToolsStore();
   const {
     durationMs,
@@ -58,10 +58,7 @@ export default function CronometroScreen() {
     phase: rodizioPhase,
   } = store;
 
-  // Local display state — refreshed by interval while running
   const [displayMs, setDisplayMs] = useState(() => computeRemainingMs(store));
-
-  // Inputs for the config form (before game starts)
   const [minutesInput, setMinutesInput] = useState(String(Math.round(durationMs / 60000)));
   const [goalLimitInput, setGoalLimitInput] = useState(String(goalLimit));
   const [inputError, setInputError] = useState<string | null>(null);
@@ -76,8 +73,6 @@ export default function CronometroScreen() {
     setDisplayMs(computeRemainingMs(usePickupToolsStore.getState()));
   }, []);
 
-  // On mount: resolve timer state that may have changed while page was closed/refreshed.
-  // If timer was running and time already expired, end the game now.
   useEffect(() => {
     const s = usePickupToolsStore.getState();
     if (s.isRunning && s.winner === null) {
@@ -95,7 +90,6 @@ export default function CronometroScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Tick every 200ms when running to keep display updated
   useEffect(() => {
     if (!isRunning) {
       setDisplayMs(computeRemainingMs(store));
@@ -130,7 +124,6 @@ export default function CronometroScreen() {
       return;
     }
     setInputError(null);
-    // configureTimer is synchronous; startTimer reads get() directly — no setTimeout needed
     usePickupToolsStore.getState().configureTimer(mins * 60 * 1000, limit);
     usePickupToolsStore.getState().startTimer();
   }
@@ -167,14 +160,10 @@ export default function CronometroScreen() {
   });
 
   return (
-    <PublicPageShell
-      eyebrow="Ferramenta gratuita"
-      title="Cronômetro de Pelada"
-      description="Controle o tempo de cada partida e registre gols. Configure qualquer duração e o limite de gols do seu grupo. Estado salvo no dispositivo — sobrevive a recarregamentos."
-      actions={[
-        { label: 'Sorteador', href: '/ferramentas/sorteador-de-times', variant: 'secondary' },
-        { label: 'Rodízio', href: '/ferramentas/rodizio-de-times', variant: 'ghost' },
-      ]}>
+    <ToolPageShell
+      title="Cronômetro"
+      subtitle="Tempo, placar e limite de gols."
+      compactHero>
 
       {/* Session banner */}
       {sessionActive ? (
@@ -184,8 +173,8 @@ export default function CronometroScreen() {
           </Text>
         </View>
       ) : (
-        <View style={[styles.sessionBanner, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-          <Text style={[styles.sessionBannerText, { color: theme.colors.textMuted }]}>
+        <View style={[styles.sessionBanner, { backgroundColor: C.card, borderColor: C.border }]}>
+          <Text style={[styles.sessionBannerText, { color: C.textMuted }]}>
             Sessão salva neste dispositivo.
           </Text>
         </View>
@@ -193,120 +182,94 @@ export default function CronometroScreen() {
 
       {/* Config panel — only when game hasn't started */}
       {!gameStarted ? (
-        <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-          <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Configurar partida</Text>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Configurar partida</Text>
 
           <View style={styles.configRow}>
             <View style={styles.configField}>
-              <Text style={[styles.configLabel, { color: theme.colors.textMuted }]}>
-                Duração (minutos)
-              </Text>
+              <Text style={styles.configLabel}>Duração (minutos)</Text>
               <TextInput
                 value={minutesInput}
                 onChangeText={setMinutesInput}
                 keyboardType="number-pad"
                 maxLength={2}
-                style={[
-                  styles.configInput,
-                  {
-                    color: theme.colors.text,
-                    backgroundColor: theme.colors.backgroundElevated,
-                    borderColor: theme.colors.border,
-                  },
-                ]}
+                style={styles.configInput}
                 placeholder="10"
-                placeholderTextColor={theme.colors.textMuted}
+                placeholderTextColor={C.textMuted}
               />
             </View>
 
             <View style={styles.configField}>
-              <Text style={[styles.configLabel, { color: theme.colors.textMuted }]}>
-                Limite de gols (0 = sem limite)
-              </Text>
+              <Text style={styles.configLabel}>Limite de gols (0 = sem limite)</Text>
               <TextInput
                 value={goalLimitInput}
                 onChangeText={setGoalLimitInput}
                 keyboardType="number-pad"
                 maxLength={2}
-                style={[
-                  styles.configInput,
-                  {
-                    color: theme.colors.text,
-                    backgroundColor: theme.colors.backgroundElevated,
-                    borderColor: theme.colors.border,
-                  },
-                ]}
+                style={styles.configInput}
                 placeholder="2"
-                placeholderTextColor={theme.colors.textMuted}
+                placeholderTextColor={C.textMuted}
               />
             </View>
           </View>
 
           {inputError ? (
-            <Text style={[styles.errorText, { color: '#EF4444' }]}>{inputError}</Text>
+            <Text style={styles.errorText}>{inputError}</Text>
           ) : null}
 
-          <Pressable
-            onPress={handleStart}
-            style={[styles.primaryButton, { backgroundColor: '#16A34A' }]}>
+          <Pressable onPress={handleStart} style={styles.primaryButton}>
             <Text style={styles.primaryButtonText}>Iniciar pelada</Text>
           </Pressable>
         </View>
       ) : null}
 
       {/* Scoreboard */}
-      <View style={[styles.scoreboard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+      <View style={styles.scoreboard}>
         <View style={styles.timerRow}>
-          <Text style={[styles.timer, { color: gameOver ? theme.colors.secondary : theme.colors.text }]}>
+          <Text style={[styles.timer, { color: gameOver ? C.accent : C.text }]}>
             {formatMs(displayMs)}
           </Text>
           {goalLimit > 0 ? (
-            <Text style={[styles.goalLimitLabel, { color: theme.colors.textMuted }]}>
+            <Text style={styles.goalLimitLabel}>
               limite: {goalLimit} gol{goalLimit > 1 ? 's' : ''}
             </Text>
           ) : null}
         </View>
 
         {winnerLabel ? (
-          <Text style={[styles.winnerLabel, { color: '#16A34A' }]}>{winnerLabel}</Text>
+          <Text style={styles.winnerLabel}>{winnerLabel}</Text>
         ) : null}
 
         <View style={styles.scoreRow}>
           <View style={styles.teamBlock}>
-            <Text style={[styles.teamName, { color: theme.colors.textMuted }]}>Time A</Text>
-            <Text style={[styles.score, { color: theme.colors.text }]}>{teamAScore}</Text>
+            <Text style={styles.teamName}>Time A</Text>
+            <Text style={styles.score}>{teamAScore}</Text>
             <Pressable
               onPress={() => store.addGoal('A')}
               disabled={gameOver}
               style={[
                 styles.goalButton,
-                {
-                  backgroundColor: gameOver ? theme.colors.backgroundElevated : '#16A34A',
-                  borderColor: gameOver ? theme.colors.border : '#16A34A',
-                },
+                { backgroundColor: gameOver ? C.cardMuted : '#16A34A', borderColor: gameOver ? C.border : '#16A34A' },
               ]}>
-              <Text style={[styles.goalButtonText, { color: gameOver ? theme.colors.textMuted : '#FFF' }]}>
+              <Text style={[styles.goalButtonText, { color: gameOver ? C.textMuted : '#FFF' }]}>
                 + Gol
               </Text>
             </Pressable>
           </View>
 
-          <Text style={[styles.vs, { color: theme.colors.textMuted }]}>×</Text>
+          <Text style={styles.vs}>×</Text>
 
           <View style={styles.teamBlock}>
-            <Text style={[styles.teamName, { color: theme.colors.textMuted }]}>Time B</Text>
-            <Text style={[styles.score, { color: theme.colors.text }]}>{teamBScore}</Text>
+            <Text style={styles.teamName}>Time B</Text>
+            <Text style={styles.score}>{teamBScore}</Text>
             <Pressable
               onPress={() => store.addGoal('B')}
               disabled={gameOver}
               style={[
                 styles.goalButton,
-                {
-                  backgroundColor: gameOver ? theme.colors.backgroundElevated : '#16A34A',
-                  borderColor: gameOver ? theme.colors.border : '#16A34A',
-                },
+                { backgroundColor: gameOver ? C.cardMuted : '#16A34A', borderColor: gameOver ? C.border : '#16A34A' },
               ]}>
-              <Text style={[styles.goalButtonText, { color: gameOver ? theme.colors.textMuted : '#FFF' }]}>
+              <Text style={[styles.goalButtonText, { color: gameOver ? C.textMuted : '#FFF' }]}>
                 + Gol
               </Text>
             </Pressable>
@@ -316,23 +279,14 @@ export default function CronometroScreen() {
         {gameStarted ? (
           <View style={styles.controlsRow}>
             {!gameOver ? (
-              <Pressable
-                onPress={handleToggle}
-                style={[styles.controlButton, { backgroundColor: theme.colors.primary }]}>
+              <Pressable onPress={handleToggle} style={styles.controlButton}>
                 <Text style={styles.controlButtonText}>{isRunning ? 'Pausar' : 'Continuar'}</Text>
               </Pressable>
             ) : null}
             <Pressable
               onPress={handleReset}
-              style={[
-                styles.controlButton,
-                {
-                  backgroundColor: theme.colors.backgroundElevated,
-                  borderColor: theme.colors.border,
-                  borderWidth: 1,
-                },
-              ]}>
-              <Text style={[styles.controlButtonText, { color: theme.colors.textMuted }]}>
+              style={[styles.controlButton, { backgroundColor: C.cardMuted, borderColor: C.border, borderWidth: 1 }]}>
+              <Text style={[styles.controlButtonText, { color: C.textMuted }]}>
                 Resetar pelada
               </Text>
             </Pressable>
@@ -340,29 +294,25 @@ export default function CronometroScreen() {
         ) : null}
       </View>
 
-      {/* Current rodízio match info */}
+      {/* Rodízio info */}
       {showRodizio ? (
-        <View style={[styles.rodizioInfo, { backgroundColor: theme.colors.surface, borderColor: '#16A34A' }]}>
-          <Text style={[styles.rodizioTitle, { color: '#16A34A' }]}>Times no campo (rodízio)</Text>
+        <View style={styles.rodizioInfo}>
+          <Text style={styles.rodizioTitle}>Times no campo (rodízio)</Text>
           <View style={styles.rodizioTeams}>
             <View style={styles.rodizioTeam}>
-              <Text style={[styles.rodizioTeamLabel, { color: theme.colors.textMuted }]}>Time A</Text>
-              <Text style={[styles.rodizioPlayers, { color: theme.colors.text }]}>
-                {rodizioA.join(', ')}
-              </Text>
+              <Text style={styles.rodizioTeamLabel}>Time A</Text>
+              <Text style={styles.rodizioPlayers}>{rodizioA.join(', ')}</Text>
             </View>
-            <Text style={[styles.vs, { color: theme.colors.textMuted, fontSize: 20 }]}>×</Text>
+            <Text style={[styles.vs, { color: C.textMuted, fontSize: 20 }]}>×</Text>
             <View style={styles.rodizioTeam}>
-              <Text style={[styles.rodizioTeamLabel, { color: theme.colors.textMuted }]}>Time B</Text>
-              <Text style={[styles.rodizioPlayers, { color: theme.colors.text }]}>
-                {rodizioB.join(', ')}
-              </Text>
+              <Text style={styles.rodizioTeamLabel}>Time B</Text>
+              <Text style={styles.rodizioPlayers}>{rodizioB.join(', ')}</Text>
             </View>
           </View>
           <Pressable
             onPress={() => router.push('/ferramentas/rodizio-de-times' as never)}
-            style={[styles.secondaryButton, { borderColor: '#16A34A' }]}>
-            <Text style={[styles.secondaryButtonText, { color: '#16A34A' }]}>Abrir rodízio</Text>
+            style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>Abrir rodízio</Text>
           </Pressable>
         </View>
       ) : null}
@@ -370,9 +320,7 @@ export default function CronometroScreen() {
       <SafeAd placement={AD_PLACEMENTS.TOOLS_AFTER_RESULT} hasContent={hasResult} />
 
       <View style={styles.tipsSection}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-          Regras comuns para adaptar
-        </Text>
+        <Text style={styles.sectionTitle}>Regras comuns para adaptar</Text>
         <View style={styles.tipsList}>
           {[
             'Peladas curtas: 10 minutos ou 2 gols — o que vier primeiro.',
@@ -381,8 +329,8 @@ export default function CronometroScreen() {
             'Empate sem ganhador: sem limite de gols, respeite só o tempo.',
           ].map((tip, i) => (
             <View key={i} style={styles.tipItem}>
-              <Text style={[styles.tipBullet, { color: '#16A34A' }]}>•</Text>
-              <Text style={[styles.tipText, { color: theme.colors.textMuted }]}>{tip}</Text>
+              <Text style={styles.tipBullet}>•</Text>
+              <Text style={styles.tipText}>{tip}</Text>
             </View>
           ))}
         </View>
@@ -390,11 +338,9 @@ export default function CronometroScreen() {
 
       <View style={styles.faqList}>
         {FAQ.map((item) => (
-          <View
-            key={item.q}
-            style={[styles.faqCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <Text style={[styles.faqQ, { color: theme.colors.text }]}>{item.q}</Text>
-            <Text style={[styles.faqA, { color: theme.colors.textMuted }]}>{item.a}</Text>
+          <View key={item.q} style={styles.faqCard}>
+            <Text style={styles.faqQ}>{item.q}</Text>
+            <Text style={styles.faqA}>{item.a}</Text>
           </View>
         ))}
       </View>
@@ -402,7 +348,7 @@ export default function CronometroScreen() {
       <SafeAd placement={AD_PLACEMENTS.TOOLS_HUB_AFTER_CARDS} hasContent />
 
       <View style={styles.relatedLinks}>
-        <Text style={[styles.relatedTitle, { color: theme.colors.text }]}>Outras ferramentas</Text>
+        <Text style={styles.relatedTitle}>Outras ferramentas</Text>
         <View style={styles.relatedRow}>
           {[
             { label: 'Sorteador de Times', href: '/ferramentas/sorteador-de-times' },
@@ -412,18 +358,13 @@ export default function CronometroScreen() {
             <Pressable
               key={link.href}
               onPress={() => router.push(link.href as never)}
-              style={[
-                styles.relatedChip,
-                { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
-              ]}>
-              <Text style={[styles.relatedChipText, { color: theme.colors.secondary }]}>
-                {link.label}
-              </Text>
+              style={styles.relatedChip}>
+              <Text style={styles.relatedChipText}>{link.label}</Text>
             </Pressable>
           ))}
         </View>
       </View>
-    </PublicPageShell>
+    </ToolPageShell>
   );
 }
 
@@ -435,11 +376,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   sessionBannerText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '600' },
-  card: { borderWidth: 1, borderRadius: 24, padding: 20, gap: 16 },
-  cardTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800' },
+  card: { borderWidth: 1, borderRadius: 24, padding: 20, gap: 16, backgroundColor: C.card, borderColor: C.border },
+  cardTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800', color: C.text },
   configRow: { flexDirection: 'row', gap: 12 },
   configField: { flex: 1, gap: 6 },
-  configLabel: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
+  configLabel: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
   configInput: {
     borderWidth: 1,
     borderRadius: 12,
@@ -448,9 +389,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.heading,
     fontSize: 16,
     fontWeight: '800',
+    color: C.text,
+    backgroundColor: C.cardMuted,
+    borderColor: C.border,
   },
-  errorText: { fontFamily: fonts.body, fontSize: 13 },
-  primaryButton: { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  errorText: { fontFamily: fonts.body, fontSize: 13, color: '#EF4444' },
+  primaryButton: { borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: '#16A34A' },
   primaryButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
   secondaryButton: {
     borderWidth: 1,
@@ -459,13 +403,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     alignItems: 'center',
     alignSelf: 'flex-start',
+    borderColor: '#16A34A',
   },
-  secondaryButtonText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700' },
-  scoreboard: { borderWidth: 1, borderRadius: 28, padding: 24, gap: 20, alignItems: 'center' },
+  secondaryButtonText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700', color: '#16A34A' },
+  scoreboard: { borderWidth: 1, borderRadius: 28, padding: 24, gap: 20, alignItems: 'center', backgroundColor: C.card, borderColor: C.borderStrong },
   timerRow: { alignItems: 'center', gap: 4 },
   timer: { fontFamily: fonts.display, fontSize: 64, fontWeight: '900', letterSpacing: -2 },
-  goalLimitLabel: { fontFamily: fonts.body, fontSize: 12 },
-  winnerLabel: { fontFamily: fonts.heading, fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  goalLimitLabel: { fontFamily: fonts.body, fontSize: 12, color: C.textMuted },
+  winnerLabel: { fontFamily: fonts.heading, fontSize: 22, fontWeight: '800', textAlign: 'center', color: '#22C55E' },
   scoreRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -474,17 +419,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   teamBlock: { alignItems: 'center', gap: 10 },
-  teamName: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
-  score: { fontFamily: fonts.display, fontSize: 72, fontWeight: '900', lineHeight: 80 },
+  teamName: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
+  score: { fontFamily: fonts.display, fontSize: 72, fontWeight: '900', lineHeight: 80, color: C.text },
   goalButton: {
     borderRadius: 12,
     paddingHorizontal: 20,
     paddingVertical: 10,
     minWidth: 80,
     alignItems: 'center',
+    borderWidth: 1,
   },
   goalButtonText: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800' },
-  vs: { fontFamily: fonts.display, fontSize: 32, fontWeight: '900' },
+  vs: { fontFamily: fonts.display, fontSize: 32, fontWeight: '900', color: C.textMuted },
   controlsRow: { flexDirection: 'row', gap: 12, justifyContent: 'center', flexWrap: 'wrap' },
   controlButton: {
     borderRadius: 14,
@@ -492,27 +438,28 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     minWidth: 120,
     alignItems: 'center',
+    backgroundColor: '#16A34A',
   },
   controlButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
-  rodizioInfo: { borderWidth: 1.5, borderRadius: 20, padding: 16, gap: 12 },
-  rodizioTitle: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800' },
+  rodizioInfo: { borderWidth: 1.5, borderRadius: 20, padding: 16, gap: 12, borderColor: '#16A34A', backgroundColor: C.card },
+  rodizioTitle: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800', color: '#16A34A' },
   rodizioTeams: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
   rodizioTeam: { flex: 1, gap: 4 },
-  rodizioTeamLabel: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '700' },
-  rodizioPlayers: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20 },
+  rodizioTeamLabel: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '700', color: C.textMuted },
+  rodizioPlayers: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20, color: C.text },
   tipsSection: { gap: 12 },
-  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800' },
+  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800', color: C.text },
   tipsList: { gap: 10 },
   tipItem: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
-  tipBullet: { fontFamily: fonts.heading, fontSize: 16, lineHeight: 22 },
-  tipText: { flex: 1, fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
+  tipBullet: { fontFamily: fonts.heading, fontSize: 16, lineHeight: 22, color: '#16A34A' },
+  tipText: { flex: 1, fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: C.textMuted },
   faqList: { gap: 12 },
-  faqCard: { borderWidth: 1, borderRadius: 20, padding: 18, gap: 8 },
-  faqQ: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800' },
-  faqA: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
+  faqCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 8, backgroundColor: C.card, borderColor: C.border },
+  faqQ: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800', color: C.text },
+  faqA: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: C.textMuted },
   relatedLinks: { gap: 12 },
-  relatedTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800' },
+  relatedTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800', color: C.text },
   relatedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  relatedChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
-  relatedChipText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
+  relatedChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: C.card, borderColor: C.border },
+  relatedChipText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.accentLight },
 });

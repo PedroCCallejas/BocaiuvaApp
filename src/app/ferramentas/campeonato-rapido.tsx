@@ -3,10 +3,12 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 
 import { SafeAd } from '@/components/ads/SafeAd';
-import { PublicPageShell } from '@/components/public/PublicPageShell';
+import { ToolPageShell } from '@/components/tools/ToolPageShell';
+import { TOOL_COLORS } from '@/components/tools/tool-theme';
 import { AD_PLACEMENTS } from '@/constants/ads';
 import { fonts } from '@/constants/theme';
-import { useAppTheme } from '@/hooks/use-app-theme';
+
+const C = TOOL_COLORS;
 
 type Format = 'knockout' | 'league';
 type Phase = 'setup' | 'playing';
@@ -135,7 +137,6 @@ const FAQ = [
 ];
 
 export default function CampeonatoScreen() {
-  const theme = useAppTheme();
   const [inputValue, setInputValue] = useState('');
   const [teams, setTeams] = useState<string[]>([]);
   const [format, setFormat] = useState<Format>('knockout');
@@ -262,37 +263,17 @@ export default function CampeonatoScreen() {
     (format === 'league' ? leagueMatches.length > 0 : knockoutRounds.length > 0);
 
   return (
-    <PublicPageShell
-      eyebrow="Ferramenta gratuita"
+    <ToolPageShell
       title="Campeonato Rápido"
-      description="Monte um mini-campeonato entre amigos com mata-mata ou pontos corridos, gere os confrontos e acompanhe os resultados. Sem login, sem instalação."
-      actions={[
-        { label: 'Sorteador', href: '/ferramentas/sorteador-de-times', variant: 'secondary' },
-        { label: 'Cronômetro', href: '/ferramentas/cronometro-pelada', variant: 'ghost' },
-      ]}>
-      <View style={styles.intro}>
-        <Text style={[styles.introTitle, { color: theme.colors.text }]}>
-          Como usar o campeonato rápido
-        </Text>
-        <Text style={[styles.introText, { color: theme.colors.textMuted }]}>
-          Adicione os nomes dos times, escolha o formato — mata-mata ou pontos corridos — e
-          clique em "Gerar campeonato". Os confrontos são criados automaticamente. Para cada
-          partida, ajuste o placar e registre o resultado.
-        </Text>
-      </View>
+      subtitle="Monte os confrontos sem planilha."
+      compactHero>
 
       {phase === 'setup' ? (
         <>
-          <View
-            style={[
-              styles.card,
-              { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
-            ]}>
-            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
-              Times participantes
-            </Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Times participantes</Text>
             {teams.length > 0 ? (
-              <Text style={[styles.cardSubtitle, { color: theme.colors.textMuted }]}>
+              <Text style={styles.cardSubtitle}>
                 {teams.length} time{teams.length > 1 ? 's' : ''} adicionado{teams.length > 1 ? 's' : ''} (máximo 16)
               </Text>
             ) : null}
@@ -302,32 +283,15 @@ export default function CampeonatoScreen() {
                 onChangeText={setInputValue}
                 onSubmitEditing={addTeam}
                 placeholder="Nome do time"
-                placeholderTextColor={theme.colors.textMuted}
+                placeholderTextColor={C.textMuted}
                 returnKeyType="done"
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: theme.colors.backgroundElevated,
-                    borderColor: theme.colors.border,
-                    color: theme.colors.text,
-                  },
-                ]}
+                style={styles.input}
               />
               <Pressable
                 onPress={addTeam}
                 disabled={teams.length >= 16}
-                style={[
-                  styles.addButton,
-                  {
-                    backgroundColor:
-                      teams.length >= 16 ? theme.colors.backgroundElevated : theme.colors.primary,
-                  },
-                ]}>
-                <Text
-                  style={[
-                    styles.addButtonText,
-                    { color: teams.length >= 16 ? theme.colors.textMuted : '#FFFFFF' },
-                  ]}>
+                style={[styles.addButton, { backgroundColor: teams.length >= 16 ? C.cardMuted : '#16A34A' }]}>
+                <Text style={[styles.addButtonText, { color: teams.length >= 16 ? C.textMuted : '#FFFFFF' }]}>
                   Adicionar
                 </Text>
               </Pressable>
@@ -335,21 +299,11 @@ export default function CampeonatoScreen() {
             {teams.length > 0 ? (
               <View style={styles.teamList}>
                 {teams.map((team, index) => (
-                  <View
-                    key={`${team}-${index}`}
-                    style={[
-                      styles.teamChip,
-                      {
-                        backgroundColor: theme.colors.backgroundElevated,
-                        borderColor: theme.colors.border,
-                      },
-                    ]}>
-                    <Text style={[styles.teamIndex, { color: theme.colors.secondary }]}>
-                      {index + 1}
-                    </Text>
-                    <Text style={[styles.teamName, { color: theme.colors.text }]}>{team}</Text>
+                  <View key={`${team}-${index}`} style={styles.teamChip}>
+                    <Text style={styles.teamIndex}>{index + 1}</Text>
+                    <Text style={styles.teamName}>{team}</Text>
                     <Pressable onPress={() => removeTeam(index)} hitSlop={8}>
-                      <Text style={[styles.removeText, { color: theme.colors.textMuted }]}>✕</Text>
+                      <Text style={styles.removeText}>✕</Text>
                     </Pressable>
                   </View>
                 ))}
@@ -357,12 +311,8 @@ export default function CampeonatoScreen() {
             ) : null}
           </View>
 
-          <View
-            style={[
-              styles.card,
-              { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
-            ]}>
-            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>Formato</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Formato</Text>
             <View style={styles.formatRow}>
               {(
                 [
@@ -384,16 +334,13 @@ export default function CampeonatoScreen() {
                   style={[
                     styles.formatCard,
                     {
-                      backgroundColor:
-                        format === f.key ? theme.colors.primarySoft : theme.colors.backgroundElevated,
-                      borderColor: format === f.key ? theme.colors.primary : theme.colors.border,
+                      backgroundColor: format === f.key ? C.accentSoft : C.cardMuted,
+                      borderColor: format === f.key ? C.borderStrong : C.border,
                       flex: 1,
                     },
                   ]}>
-                  <Text style={[styles.formatLabel, { color: theme.colors.text }]}>{f.label}</Text>
-                  <Text style={[styles.formatDesc, { color: theme.colors.textMuted }]}>
-                    {f.desc}
-                  </Text>
+                  <Text style={styles.formatLabel}>{f.label}</Text>
+                  <Text style={styles.formatDesc}>{f.desc}</Text>
                 </Pressable>
               ))}
             </View>
@@ -404,24 +351,14 @@ export default function CampeonatoScreen() {
             disabled={teams.length < 2}
             style={[
               styles.generateButton,
-              {
-                backgroundColor:
-                  teams.length >= 2 ? theme.colors.primary : theme.colors.backgroundElevated,
-                borderColor: teams.length >= 2 ? theme.colors.primary : theme.colors.border,
-              },
+              { backgroundColor: teams.length >= 2 ? '#16A34A' : C.cardMuted, borderColor: teams.length >= 2 ? '#16A34A' : C.border },
             ]}>
-            <Text
-              style={[
-                styles.generateButtonText,
-                { color: teams.length >= 2 ? '#FFFFFF' : theme.colors.textMuted },
-              ]}>
+            <Text style={[styles.generateButtonText, { color: teams.length >= 2 ? '#FFFFFF' : C.textMuted }]}>
               Gerar campeonato
             </Text>
           </Pressable>
           {teams.length < 2 ? (
-            <Text style={[styles.hint, { color: theme.colors.textMuted }]}>
-              Adicione pelo menos 2 times para gerar o campeonato.
-            </Text>
+            <Text style={styles.hint}>Adicione pelo menos 2 times para gerar o campeonato.</Text>
           ) : null}
         </>
       ) : null}
@@ -429,23 +366,15 @@ export default function CampeonatoScreen() {
       {phase === 'playing' && format === 'knockout' && knockoutRounds.length > 0 ? (
         <View style={styles.playingSection}>
           {finalWinner ? (
-            <View
-              style={[
-                styles.championCard,
-                { backgroundColor: theme.colors.primarySoft, borderColor: theme.colors.primary },
-              ]}>
-              <Text style={[styles.championLabel, { color: theme.colors.secondary }]}>
-                Campeão
-              </Text>
-              <Text style={[styles.championName, { color: theme.colors.text }]}>
-                {finalWinner}
-              </Text>
+            <View style={styles.championCard}>
+              <Text style={styles.championLabel}>Campeão</Text>
+              <Text style={styles.championName}>{finalWinner}</Text>
             </View>
           ) : null}
 
           {knockoutRounds.map((round, ri) => (
             <View key={ri} style={styles.roundSection}>
-              <Text style={[styles.roundName, { color: theme.colors.text }]}>{round.name}</Text>
+              <Text style={styles.roundName}>{round.name}</Text>
               <View style={styles.matchList}>
                 {round.matches.map((match) => (
                   <View
@@ -453,61 +382,42 @@ export default function CampeonatoScreen() {
                     style={[
                       styles.matchCard,
                       {
-                        backgroundColor: theme.colors.surface,
-                        borderColor: match.played ? theme.colors.primary : theme.colors.border,
+                        borderColor: match.played ? '#16A34A' : C.border,
                         opacity: ri < currentRound ? 0.6 : 1,
                       },
                     ]}>
                     {match.teamB === 'BYE' ? (
-                      <Text style={[styles.byeText, { color: theme.colors.textMuted }]}>
-                        {match.teamA} — avança automaticamente (BYE)
-                      </Text>
+                      <Text style={styles.byeText}>{match.teamA} — avança automaticamente (BYE)</Text>
                     ) : (
                       <>
                         <View style={styles.matchTeamRow}>
-                          <Text style={[styles.matchTeam, { color: theme.colors.text }]}>
-                            {match.teamA}
-                          </Text>
+                          <Text style={styles.matchTeam}>{match.teamA}</Text>
                           <View style={styles.matchScoreControls}>
                             {ri === currentRound ? (
-                              <Pressable
-                                onPress={() => updateKnockoutScore(match.id, 'A', -1)}
-                                style={[styles.scoreBtn, { borderColor: theme.colors.border }]}>
-                                <Text style={[styles.scoreBtnText, { color: theme.colors.textMuted }]}>-</Text>
+                              <Pressable onPress={() => updateKnockoutScore(match.id, 'A', -1)} style={styles.scoreBtn}>
+                                <Text style={styles.scoreBtnText}>-</Text>
                               </Pressable>
                             ) : null}
-                            <Text style={[styles.matchScore, { color: theme.colors.text }]}>
-                              {match.scoreA}
-                            </Text>
+                            <Text style={styles.matchScore}>{match.scoreA}</Text>
                             {ri === currentRound ? (
-                              <Pressable
-                                onPress={() => updateKnockoutScore(match.id, 'A', 1)}
-                                style={[styles.scoreBtn, { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }]}>
+                              <Pressable onPress={() => updateKnockoutScore(match.id, 'A', 1)} style={[styles.scoreBtn, styles.scoreBtnActive]}>
                                 <Text style={styles.scoreBtnTextWhite}>+</Text>
                               </Pressable>
                             ) : null}
                           </View>
                         </View>
-                        <View style={[styles.matchDivider, { backgroundColor: theme.colors.border }]} />
+                        <View style={styles.matchDivider} />
                         <View style={styles.matchTeamRow}>
-                          <Text style={[styles.matchTeam, { color: theme.colors.text }]}>
-                            {match.teamB}
-                          </Text>
+                          <Text style={styles.matchTeam}>{match.teamB}</Text>
                           <View style={styles.matchScoreControls}>
                             {ri === currentRound ? (
-                              <Pressable
-                                onPress={() => updateKnockoutScore(match.id, 'B', -1)}
-                                style={[styles.scoreBtn, { borderColor: theme.colors.border }]}>
-                                <Text style={[styles.scoreBtnText, { color: theme.colors.textMuted }]}>-</Text>
+                              <Pressable onPress={() => updateKnockoutScore(match.id, 'B', -1)} style={styles.scoreBtn}>
+                                <Text style={styles.scoreBtnText}>-</Text>
                               </Pressable>
                             ) : null}
-                            <Text style={[styles.matchScore, { color: theme.colors.text }]}>
-                              {match.scoreB}
-                            </Text>
+                            <Text style={styles.matchScore}>{match.scoreB}</Text>
                             {ri === currentRound ? (
-                              <Pressable
-                                onPress={() => updateKnockoutScore(match.id, 'B', 1)}
-                                style={[styles.scoreBtn, { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }]}>
+                              <Pressable onPress={() => updateKnockoutScore(match.id, 'B', 1)} style={[styles.scoreBtn, styles.scoreBtnActive]}>
                                 <Text style={styles.scoreBtnTextWhite}>+</Text>
                               </Pressable>
                             ) : null}
@@ -522,80 +432,53 @@ export default function CampeonatoScreen() {
           ))}
 
           {isKnockoutRoundComplete && !isFinal ? (
-            <Pressable
-              onPress={advanceKnockout}
-              style={[styles.advanceButton, { backgroundColor: theme.colors.primary }]}>
+            <Pressable onPress={advanceKnockout} style={styles.advanceButton}>
               <Text style={styles.advanceButtonText}>Avançar para próxima fase</Text>
             </Pressable>
           ) : null}
 
-          <Pressable
-            onPress={reset}
-            style={[
-              styles.resetButton,
-              { borderColor: theme.colors.border, backgroundColor: theme.colors.backgroundElevated },
-            ]}>
-            <Text style={[styles.resetButtonText, { color: theme.colors.textMuted }]}>
-              Reiniciar campeonato
-            </Text>
+          <Pressable onPress={reset} style={styles.resetButton}>
+            <Text style={styles.resetButtonText}>Reiniciar campeonato</Text>
           </Pressable>
         </View>
       ) : null}
 
       {phase === 'playing' && format === 'league' ? (
         <View style={styles.playingSection}>
-          <Text style={[styles.roundName, { color: theme.colors.text }]}>Confrontos</Text>
+          <Text style={styles.roundName}>Confrontos</Text>
           <View style={styles.matchList}>
             {leagueMatches.map((match) => (
               <View
                 key={match.id}
-                style={[
-                  styles.matchCard,
-                  {
-                    backgroundColor: theme.colors.surface,
-                    borderColor: match.played ? theme.colors.primary : theme.colors.border,
-                  },
-                ]}>
+                style={[styles.matchCard, { borderColor: match.played ? '#16A34A' : C.border }]}>
                 <View style={styles.matchTeamRow}>
-                  <Text style={[styles.matchTeam, { color: theme.colors.text }]}>{match.teamA}</Text>
+                  <Text style={styles.matchTeam}>{match.teamA}</Text>
                   <View style={styles.matchScoreControls}>
-                    <Pressable
-                      onPress={() => updateLeagueScore(match.id, 'A', -1)}
-                      style={[styles.scoreBtn, { borderColor: theme.colors.border }]}>
-                      <Text style={[styles.scoreBtnText, { color: theme.colors.textMuted }]}>-</Text>
+                    <Pressable onPress={() => updateLeagueScore(match.id, 'A', -1)} style={styles.scoreBtn}>
+                      <Text style={styles.scoreBtnText}>-</Text>
                     </Pressable>
-                    <Text style={[styles.matchScore, { color: theme.colors.text }]}>{match.scoreA}</Text>
-                    <Pressable
-                      onPress={() => updateLeagueScore(match.id, 'A', 1)}
-                      style={[styles.scoreBtn, { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }]}>
+                    <Text style={styles.matchScore}>{match.scoreA}</Text>
+                    <Pressable onPress={() => updateLeagueScore(match.id, 'A', 1)} style={[styles.scoreBtn, styles.scoreBtnActive]}>
                       <Text style={styles.scoreBtnTextWhite}>+</Text>
                     </Pressable>
                   </View>
                 </View>
-                <View style={[styles.matchDivider, { backgroundColor: theme.colors.border }]} />
+                <View style={styles.matchDivider} />
                 <View style={styles.matchTeamRow}>
-                  <Text style={[styles.matchTeam, { color: theme.colors.text }]}>{match.teamB}</Text>
+                  <Text style={styles.matchTeam}>{match.teamB}</Text>
                   <View style={styles.matchScoreControls}>
-                    <Pressable
-                      onPress={() => updateLeagueScore(match.id, 'B', -1)}
-                      style={[styles.scoreBtn, { borderColor: theme.colors.border }]}>
-                      <Text style={[styles.scoreBtnText, { color: theme.colors.textMuted }]}>-</Text>
+                    <Pressable onPress={() => updateLeagueScore(match.id, 'B', -1)} style={styles.scoreBtn}>
+                      <Text style={styles.scoreBtnText}>-</Text>
                     </Pressable>
-                    <Text style={[styles.matchScore, { color: theme.colors.text }]}>{match.scoreB}</Text>
-                    <Pressable
-                      onPress={() => updateLeagueScore(match.id, 'B', 1)}
-                      style={[styles.scoreBtn, { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }]}>
+                    <Text style={styles.matchScore}>{match.scoreB}</Text>
+                    <Pressable onPress={() => updateLeagueScore(match.id, 'B', 1)} style={[styles.scoreBtn, styles.scoreBtnActive]}>
                       <Text style={styles.scoreBtnTextWhite}>+</Text>
                     </Pressable>
                   </View>
                 </View>
                 {!match.played ? (
-                  <Pressable
-                    onPress={() => markLeagueMatchPlayed(match.id)}
-                    style={[styles.confirmButton, { borderColor: theme.colors.border }]}>
-                    <Text style={[styles.confirmButtonText, { color: theme.colors.textMuted }]}>
-                      Confirmar placar
-                    </Text>
+                  <Pressable onPress={() => markLeagueMatchPlayed(match.id)} style={styles.confirmButton}>
+                    <Text style={styles.confirmButtonText}>Confirmar placar</Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -604,20 +487,11 @@ export default function CampeonatoScreen() {
 
           {standings.length > 0 ? (
             <View style={styles.standingsSection}>
-              <Text style={[styles.roundName, { color: theme.colors.text }]}>Classificação</Text>
-              <View
-                style={[
-                  styles.standingsTable,
-                  { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
-                ]}>
-                <View style={[styles.standingsHeader, { borderBottomColor: theme.colors.border }]}>
+              <Text style={styles.roundName}>Classificação</Text>
+              <View style={styles.standingsTable}>
+                <View style={styles.standingsHeader}>
                   {['#', 'Time', 'J', 'V', 'E', 'D', 'GD', 'Pts'].map((h) => (
-                    <Text
-                      key={h}
-                      style={[
-                        styles.standingsHeaderCell,
-                        { color: theme.colors.textMuted, flex: h === 'Time' ? 3 : 1 },
-                      ]}>
+                    <Text key={h} style={[styles.standingsHeaderCell, { flex: h === 'Time' ? 3 : 1 }]}>
                       {h}
                     </Text>
                   ))}
@@ -627,22 +501,16 @@ export default function CampeonatoScreen() {
                     key={row.team}
                     style={[
                       styles.standingsRow,
-                      i < standings.length - 1
-                        ? { borderBottomColor: theme.colors.border, borderBottomWidth: 1 }
-                        : null,
+                      i < standings.length - 1 ? { borderBottomColor: C.border, borderBottomWidth: 1 } : null,
                     ]}>
-                    <Text style={[styles.standingsCell, { color: theme.colors.secondary, flex: 1 }]}>
-                      {i + 1}
-                    </Text>
-                    <Text style={[styles.standingsCell, { color: theme.colors.text, flex: 3 }]}>
-                      {row.team}
-                    </Text>
+                    <Text style={[styles.standingsCell, { color: C.accent, flex: 1 }]}>{i + 1}</Text>
+                    <Text style={[styles.standingsCell, { color: C.text, flex: 3 }]}>{row.team}</Text>
                     {[row.played, row.w, row.d, row.l, row.gd, row.pts].map((val, vi) => (
                       <Text
                         key={vi}
                         style={[
                           styles.standingsCell,
-                          { color: theme.colors.textMuted, flex: 1, fontWeight: vi === 5 ? '800' : '400' },
+                          { color: C.textMuted, flex: 1, fontWeight: vi === 5 ? '800' : '400' },
                         ]}>
                         {val}
                       </Text>
@@ -653,15 +521,8 @@ export default function CampeonatoScreen() {
             </View>
           ) : null}
 
-          <Pressable
-            onPress={reset}
-            style={[
-              styles.resetButton,
-              { borderColor: theme.colors.border, backgroundColor: theme.colors.backgroundElevated },
-            ]}>
-            <Text style={[styles.resetButtonText, { color: theme.colors.textMuted }]}>
-              Reiniciar campeonato
-            </Text>
+          <Pressable onPress={reset} style={styles.resetButton}>
+            <Text style={styles.resetButtonText}>Reiniciar campeonato</Text>
           </Pressable>
         </View>
       ) : null}
@@ -669,7 +530,7 @@ export default function CampeonatoScreen() {
       <SafeAd placement={AD_PLACEMENTS.TOOLS_AFTER_RESULT} hasContent={hasResult} />
 
       <View style={styles.tipsSection}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Dicas de uso</Text>
+        <Text style={styles.sectionTitle}>Dicas de uso</Text>
         <View style={styles.tipsList}>
           {[
             'Para mata-mata com 4 times: 2 semifinais e 1 final — use 4 times para ter um formato limpo.',
@@ -678,39 +539,18 @@ export default function CampeonatoScreen() {
             'Use o cronômetro junto com este campeonato para controlar o tempo de cada jogo.',
           ].map((tip, i) => (
             <View key={i} style={styles.tipItem}>
-              <Text style={[styles.tipBullet, { color: theme.colors.secondary }]}>•</Text>
-              <Text style={[styles.tipText, { color: theme.colors.textMuted }]}>{tip}</Text>
+              <Text style={styles.tipBullet}>•</Text>
+              <Text style={styles.tipText}>{tip}</Text>
             </View>
           ))}
         </View>
       </View>
 
-      <View style={styles.example}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Exemplo prático</Text>
-        <View
-          style={[
-            styles.exampleCard,
-            { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
-          ]}>
-          <Text style={[styles.exampleText, { color: theme.colors.textMuted }]}>
-            Torneio de sábado com 4 times: adicione "Time A", "Time B", "Time C" e "Time D",
-            escolha "Mata-mata" e clique em "Gerar". A semifinal fica A×B e C×D. Após os
-            jogos, ajuste o placar e clique em "Avançar para próxima fase" para gerar a final
-            com os dois vencedores.
-          </Text>
-        </View>
-      </View>
-
       <View style={styles.faqList}>
         {FAQ.map((item) => (
-          <View
-            key={item.q}
-            style={[
-              styles.faqCard,
-              { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
-            ]}>
-            <Text style={[styles.faqQ, { color: theme.colors.text }]}>{item.q}</Text>
-            <Text style={[styles.faqA, { color: theme.colors.textMuted }]}>{item.a}</Text>
+          <View key={item.q} style={styles.faqCard}>
+            <Text style={styles.faqQ}>{item.q}</Text>
+            <Text style={styles.faqA}>{item.a}</Text>
           </View>
         ))}
       </View>
@@ -718,7 +558,7 @@ export default function CampeonatoScreen() {
       <SafeAd placement={AD_PLACEMENTS.TOOLS_HUB_AFTER_CARDS} hasContent />
 
       <View style={styles.relatedLinks}>
-        <Text style={[styles.relatedTitle, { color: theme.colors.text }]}>Outras ferramentas</Text>
+        <Text style={styles.relatedTitle}>Outras ferramentas</Text>
         <View style={styles.relatedRow}>
           {[
             { label: 'Sorteador de Times', href: '/ferramentas/sorteador-de-times' },
@@ -728,89 +568,79 @@ export default function CampeonatoScreen() {
             <Pressable
               key={link.href}
               onPress={() => router.push(link.href as never)}
-              style={[
-                styles.relatedChip,
-                { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
-              ]}>
-              <Text style={[styles.relatedChipText, { color: theme.colors.secondary }]}>
-                {link.label}
-              </Text>
+              style={styles.relatedChip}>
+              <Text style={styles.relatedChipText}>{link.label}</Text>
             </Pressable>
           ))}
         </View>
       </View>
-    </PublicPageShell>
+    </ToolPageShell>
   );
 }
 
 const styles = StyleSheet.create({
-  intro: { gap: 10 },
-  introTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800' },
-  introText: { fontFamily: fonts.body, fontSize: 15, lineHeight: 23 },
-  card: { borderWidth: 1, borderRadius: 24, padding: 20, gap: 14 },
-  cardTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800' },
-  cardSubtitle: { fontFamily: fonts.body, fontSize: 13, marginTop: -8 },
+  card: { borderWidth: 1, borderRadius: 24, padding: 20, gap: 14, backgroundColor: C.card, borderColor: C.border },
+  cardTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800', color: C.text },
+  cardSubtitle: { fontFamily: fonts.body, fontSize: 13, marginTop: -8, color: C.textMuted },
   inputRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  input: { flex: 1, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontFamily: fonts.body, fontSize: 15 },
+  input: { flex: 1, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontFamily: fonts.body, fontSize: 15, color: C.text, backgroundColor: C.cardMuted, borderColor: C.border },
   addButton: { borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, justifyContent: 'center' },
   addButtonText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800' },
   teamList: { gap: 8 },
-  teamChip: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
-  teamIndex: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '800', minWidth: 18 },
-  teamName: { flex: 1, fontFamily: fonts.body, fontSize: 14 },
-  removeText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
+  teamChip: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: C.cardMuted, borderColor: C.border },
+  teamIndex: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '800', minWidth: 18, color: C.accentLight },
+  teamName: { flex: 1, fontFamily: fonts.body, fontSize: 14, color: C.text },
+  removeText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
   formatRow: { flexDirection: 'row', gap: 12 },
   formatCard: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 6 },
-  formatLabel: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800' },
-  formatDesc: { fontFamily: fonts.body, fontSize: 13, lineHeight: 18 },
+  formatLabel: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800', color: C.text },
+  formatDesc: { fontFamily: fonts.body, fontSize: 13, lineHeight: 18, color: C.textMuted },
   generateButton: { borderWidth: 1, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   generateButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800' },
-  hint: { fontFamily: fonts.body, fontSize: 13 },
+  hint: { fontFamily: fonts.body, fontSize: 13, color: C.textMuted },
   playingSection: { gap: 18 },
-  championCard: { borderWidth: 2, borderRadius: 20, padding: 20, alignItems: 'center', gap: 6 },
-  championLabel: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
-  championName: { fontFamily: fonts.display, fontSize: 32, fontWeight: '900', textAlign: 'center' },
+  championCard: { borderWidth: 2, borderRadius: 20, padding: 20, alignItems: 'center', gap: 6, backgroundColor: C.accentSoft, borderColor: C.accent },
+  championLabel: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, color: C.accentLight },
+  championName: { fontFamily: fonts.display, fontSize: 32, fontWeight: '900', textAlign: 'center', color: C.text },
   roundSection: { gap: 12 },
-  roundName: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800' },
+  roundName: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800', color: C.text },
   matchList: { gap: 10 },
-  matchCard: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 10 },
+  matchCard: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 10, backgroundColor: C.card },
   matchTeamRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  matchTeam: { flex: 1, fontFamily: fonts.heading, fontSize: 15, fontWeight: '700' },
+  matchTeam: { flex: 1, fontFamily: fonts.heading, fontSize: 15, fontWeight: '700', color: C.text },
   matchScoreControls: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  matchScore: { fontFamily: fonts.display, fontSize: 24, fontWeight: '900', minWidth: 30, textAlign: 'center' },
-  scoreBtn: { width: 32, height: 32, borderRadius: 8, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  scoreBtnText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800' },
+  matchScore: { fontFamily: fonts.display, fontSize: 24, fontWeight: '900', minWidth: 30, textAlign: 'center', color: C.text },
+  scoreBtn: { width: 32, height: 32, borderRadius: 8, borderWidth: 1, alignItems: 'center', justifyContent: 'center', borderColor: C.border, backgroundColor: C.cardMuted },
+  scoreBtnActive: { backgroundColor: '#16A34A', borderColor: '#16A34A' },
+  scoreBtnText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', color: C.textMuted },
   scoreBtnTextWhite: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
-  matchDivider: { height: 1 },
-  byeText: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20 },
-  confirmButton: { borderWidth: 1, borderRadius: 10, paddingVertical: 8, alignItems: 'center', marginTop: 4 },
-  confirmButtonText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
+  matchDivider: { height: 1, backgroundColor: C.border },
+  byeText: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: C.textMuted },
+  confirmButton: { borderWidth: 1, borderRadius: 10, paddingVertical: 8, alignItems: 'center', marginTop: 4, borderColor: C.border },
+  confirmButtonText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
   standingsSection: { gap: 12 },
-  standingsTable: { borderWidth: 1, borderRadius: 16, overflow: 'hidden' },
-  standingsHeader: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1 },
-  standingsHeaderCell: { fontFamily: fonts.heading, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+  standingsTable: { borderWidth: 1, borderRadius: 16, overflow: 'hidden', backgroundColor: C.card, borderColor: C.border },
+  standingsHeader: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border },
+  standingsHeaderCell: { fontFamily: fonts.heading, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', color: C.textMuted },
   standingsRow: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 10 },
   standingsCell: { fontFamily: fonts.body, fontSize: 13 },
-  advanceButton: { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  advanceButton: { borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: '#16A34A' },
   advanceButtonText: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
-  resetButton: { borderWidth: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  resetButtonText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700' },
+  resetButton: { borderWidth: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderColor: C.border, backgroundColor: C.cardMuted },
+  resetButtonText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700', color: C.textMuted },
   tipsSection: { gap: 12 },
-  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800' },
+  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800', color: C.text },
   tipsList: { gap: 10 },
   tipItem: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
-  tipBullet: { fontFamily: fonts.heading, fontSize: 16, lineHeight: 22 },
-  tipText: { flex: 1, fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
-  example: { gap: 12 },
-  exampleCard: { borderWidth: 1, borderRadius: 16, padding: 16 },
-  exampleText: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
+  tipBullet: { fontFamily: fonts.heading, fontSize: 16, lineHeight: 22, color: C.accentLight },
+  tipText: { flex: 1, fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: C.textMuted },
   faqList: { gap: 12 },
-  faqCard: { borderWidth: 1, borderRadius: 20, padding: 18, gap: 8 },
-  faqQ: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800' },
-  faqA: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21 },
+  faqCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 8, backgroundColor: C.card, borderColor: C.border },
+  faqQ: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800', color: C.text },
+  faqA: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: C.textMuted },
   relatedLinks: { gap: 12 },
-  relatedTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800' },
+  relatedTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800', color: C.text },
   relatedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  relatedChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
-  relatedChipText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700' },
+  relatedChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: C.card, borderColor: C.border },
+  relatedChipText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.accentLight },
 });

@@ -1,4 +1,5 @@
-import { StyleSheet, View, type PropsWithChildren, type ViewStyle } from 'react-native';
+import type { PropsWithChildren } from 'react';
+import { StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { TOOL_COLORS } from './tool-theme';
 

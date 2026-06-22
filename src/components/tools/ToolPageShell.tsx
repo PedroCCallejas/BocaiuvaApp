@@ -41,10 +41,11 @@ const FOOTER_ITEMS: NavItem[] = [
 interface ToolPageShellProps extends PropsWithChildren {
   title: string;
   subtitle: string;
-  description: string;
+  description?: string;
   actions?: ToolAction[];
   heroBadges?: string[];
   eyebrow?: string;
+  compactHero?: boolean;
 }
 
 function isActivePath(currentPath: string, href: string) {
@@ -59,6 +60,7 @@ export function ToolPageShell({
   children,
   heroBadges = [...TOOL_HERO_BADGES],
   eyebrow,
+  compactHero = false,
 }: ToolPageShellProps) {
   const pathname = usePathname();
 
@@ -101,8 +103,9 @@ export function ToolPageShell({
         title={title}
         subtitle={subtitle}
         description={description}
-        badges={heroBadges}
-        actions={actions}
+        badges={compactHero ? [] : heroBadges}
+        actions={compactHero ? [] : actions}
+        hideSideCard={compactHero}
       />
 
       {children}

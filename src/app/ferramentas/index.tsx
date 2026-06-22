@@ -1,201 +1,65 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
 import { SafeAd } from '@/components/ads/SafeAd';
-import { PublicPageShell } from '@/components/public/PublicPageShell';
-import { ToolBadge } from '@/components/tools/ToolBadge';
-import { ToolCard } from '@/components/tools/ToolCard';
+import { ToolActionTile } from '@/components/tools/ToolActionTile';
 import { ToolPageShell } from '@/components/tools/ToolPageShell';
-import { ToolPrimaryButton } from '@/components/tools/ToolPrimaryButton';
 import { ToolSection } from '@/components/tools/ToolSection';
 import { TOOL_COLORS } from '@/components/tools/tool-theme';
 import { AD_PLACEMENTS } from '@/constants/ads';
 import { fonts } from '@/constants/theme';
-import { useAppTheme } from '@/hooks/use-app-theme';
 
-const TOOLS = [
+const TILES = [
   {
-    label: 'Sorteador de Times',
+    icon: '⚽',
+    title: 'Sortear Times',
+    description: 'Times equilibrados',
     href: '/ferramentas/sorteador-de-times',
-    tag: 'Futebol · Society · Futsal',
-    description:
-      'Distribua jogadores em times equilibrados de forma aleatória, por potes de habilidade ou pela ordem de chegada na pelada.',
   },
   {
-    label: 'Cronômetro de Pelada',
+    icon: '⏱',
+    title: 'Cronômetro',
+    description: 'Tempo e gols',
     href: '/ferramentas/cronometro-pelada',
-    tag: 'Pelada · Rachão',
-    description:
-      'Controle o tempo de cada partida, registre gols e veja quem ganhou. Configura duração e limite de gols.',
   },
   {
-    label: 'Rodízio de Times',
+    icon: '🔄',
+    title: 'Rodar Lista',
+    description: 'Quem entra e sai',
     href: '/ferramentas/rodizio-de-times',
-    tag: 'Rachão · Society',
-    description:
-      'Organize a fila de quem joga, com vencedor ficando e perdedor saindo. Monta os times automaticamente pela ordem de chegada.',
   },
   {
-    label: 'Campeonato Rápido',
+    icon: '🏆',
+    title: 'Campeonato',
+    description: 'Jogos rápidos',
     href: '/ferramentas/campeonato-rapido',
-    tag: 'Torneio · Mata-mata',
-    description:
-      'Crie um mini-campeonato entre amigos com mata-mata ou pontos corridos, gere os confrontos e registre os resultados.',
   },
 ];
 
-const FAQ = [
-  {
-    q: 'Preciso criar conta para usar as ferramentas?',
-    a: 'Não. Todas as ferramentas funcionam sem login, sem instalação e sem cadastro. Basta abrir a página e começar.',
-  },
-  {
-    q: 'Os dados são salvos entre sessões?',
-    a: 'As ferramentas funcionam localmente no navegador. Ao fechar ou recarregar a página, o estado é reiniciado. Para histórico permanente, crie uma conta no Professô FC.',
-  },
-  {
-    q: 'Funciona no celular?',
-    a: 'Sim. As ferramentas são responsivas e funcionam bem em qualquer dispositivo — celular, tablet ou computador.',
-  },
-  {
-    q: 'As ferramentas funcionam para futsal e rachão também?',
-    a: 'Sim. O sorteador e o cronômetro se adaptam a qualquer quantidade de jogadores e tempo de jogo. O rodízio foi especialmente pensado para o formato de rachão.',
-  },
+const STEPS = [
+  { num: '1', title: 'Adicione a turma', detail: 'Digite os nomes dos jogadores ou times.' },
+  { num: '2', title: 'Escolha a ferramenta', detail: 'Sorteio, cronômetro, lista ou campeonato.' },
+  { num: '3', title: 'Deixe a lista rodar', detail: 'O app cuida da ordem, do tempo e do placar.' },
 ];
 
-function LegacyToolsHubScreen() {
-  const theme = useAppTheme();
-
-  return (
-    <PublicPageShell
-      eyebrow="Ferramentas gratuitas"
-      title="Organize sua pelada do jeito certo"
-      description="Ferramentas práticas para sortear times, controlar partidas e organizar campeonatos. Gratuitas, sem cadastro e funcionam direto no navegador."
-      actions={[
-        { label: 'Sorteador de times', href: '/ferramentas/sorteador-de-times' },
-        { label: 'Cronômetro', href: '/ferramentas/cronometro-pelada', variant: 'secondary' },
-      ]}>
-      <View style={styles.intro}>
-        <Text style={[styles.introTitle, { color: theme.colors.text }]}>
-          Por que organizar a pelada antes de o jogo começar?
-        </Text>
-        <Text style={[styles.introText, { color: theme.colors.textMuted }]}>
-          Times mal sorteados, placar esquecido e fila sem ordem são os maiores problemas de
-          uma pelada. Com um sorteio justo, cronômetro definido e rodízio organizado, todo
-          mundo joga mais, discute menos e passa mais tempo com a bola nos pés.
-        </Text>
-        <Text style={[styles.introText, { color: theme.colors.textMuted }]}>
-          As ferramentas abaixo foram feitas para futebol amador, society, futsal e rachão.
-          Funcionam sem login, sem instalação e salvam tempo toda semana na organização do
-          grupo.
-        </Text>
-      </View>
-
-      <View style={styles.toolsGrid}>
-        {TOOLS.map((tool) => (
-          <Pressable
-            key={tool.href}
-            accessibilityRole="link"
-            onPress={() => router.push(tool.href as never)}
-            style={({ pressed }) => [
-              styles.toolCard,
-              {
-                backgroundColor: pressed ? theme.colors.primarySoft : theme.colors.surface,
-                borderColor: pressed ? theme.colors.primary : theme.colors.border,
-              },
-            ]}>
-            <Text style={[styles.toolTag, { color: theme.colors.secondary }]}>{tool.tag}</Text>
-            <Text style={[styles.toolLabel, { color: theme.colors.text }]}>{tool.label}</Text>
-            <Text style={[styles.toolDescription, { color: theme.colors.textMuted }]}>
-              {tool.description}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-          Para quem são essas ferramentas?
-        </Text>
-        <Text style={[styles.sectionText, { color: theme.colors.textMuted }]}>
-          Qualquer pessoa que organiza uma pelada, um rachão ou um torneio de futebol entre
-          amigos pode usar. O organizador típico é aquele que chega antes, monta os times,
-          controla o tempo e cuida da fila — e agora tem um conjunto de ferramentas para
-          fazer isso com agilidade.
-        </Text>
-        <Text style={[styles.sectionText, { color: theme.colors.textMuted }]}>
-          Para quem quer ir além, o Professô FC oferece uma plataforma completa com histórico
-          de partidas, presença de jogadores, escalação, ranking, notas e muito mais.
-        </Text>
-      </View>
-
-      <View style={styles.faqList}>
-        {FAQ.map((item) => (
-          <View
-            key={item.q}
-            style={[
-              styles.faqCard,
-              { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
-            ]}>
-            <Text style={[styles.faqQ, { color: theme.colors.text }]}>{item.q}</Text>
-            <Text style={[styles.faqA, { color: theme.colors.textMuted }]}>{item.a}</Text>
-          </View>
-        ))}
-      </View>
-
-      <SafeAd placement={AD_PLACEMENTS.TOOLS_HUB_AFTER_CARDS} hasContent />
-    </PublicPageShell>
-  );
-}
-
-const HUB_TOOLS = [
-  {
-    label: 'Sorteador de Times',
-    href: '/ferramentas/sorteador-de-times',
-    tag: 'Futebol · Society · Futsal',
-    description:
-      'Monte times aleatorios ou equilibrados por potes. Ideal para deixar a pelada mais justa.',
-    action: 'Sortear times',
-  },
-  {
-    label: 'Cronometro da Pelada',
-    href: '/ferramentas/cronometro-pelada',
-    tag: 'Tempo · Placar · Gols',
-    description: 'Controle o tempo, o placar e o limite de gols da partida.',
-    action: 'Abrir cronometro',
-  },
-  {
-    label: 'Lista da Pelada',
-    href: '/ferramentas/rodizio-de-times',
-    tag: 'Fila · Rachao · Rotacao',
-    description: 'Rode a fila de quem entra e sai respeitando a ordem de chegada.',
-    action: 'Rodar lista',
-  },
-  {
-    label: 'Campeonato Rapido',
-    href: '/ferramentas/campeonato-rapido',
-    tag: 'Mata-mata · Grupo · Final',
-    description: 'Crie confrontos simples para mata-mata ou disputa rapida entre times.',
-    action: 'Criar campeonato',
-  },
-];
+const SPORTS = ['Society', 'Futsal', 'Campo', 'Rachão', 'Treino'];
 
 const HUB_FAQ = [
   {
-    q: 'Preciso criar conta para usar as ferramentas?',
-    a: 'Nao. Todas as ferramentas desta area funcionam sem login e direto pelo navegador.',
-  },
-  {
-    q: 'Serve so para futebol de campo?',
-    a: 'Nao. A area foi pensada para futebol, society, futsal e qualquer rachao que precise organizar times, fila e tempo de jogo.',
-  },
-  {
-    q: 'Funciona bem no celular?',
-    a: 'Sim. A prioridade aqui e mobile, mas as ferramentas tambem ficam boas em tablet e desktop.',
+    q: 'Preciso criar conta?',
+    a: 'Não. Todas as ferramentas funcionam sem login, diretamente no navegador.',
   },
   {
     q: 'Os dados ficam salvos?',
-    a: 'As ferramentas usam armazenamento local do navegador quando faz sentido, sem depender de conta nem enviar dados para o app interno.',
+    a: 'O cronômetro e o rodízio salvam o estado no dispositivo. Ao fechar a aba, o estado é reiniciado nos outros.',
+  },
+  {
+    q: 'Funciona no celular?',
+    a: 'Sim. Prioridade total para mobile, mas funciona bem em tablet e desktop também.',
+  },
+  {
+    q: 'Serve para futsal e rachão?',
+    a: 'Sim. O sorteador, cronômetro e rodízio se adaptam a qualquer quantidade de jogadores e formato de jogo.',
   },
 ];
 
@@ -203,60 +67,63 @@ export default function ToolsHubScreen() {
   return (
     <ToolPageShell
       title="Ferramentas da Pelada"
-      subtitle="Organize seu rachao em poucos segundos."
-      description="Monte times equilibrados, rode a lista de quem entra e sai, controle o tempo da partida e crie campeonatos rapidos para sua turma. Tudo gratis, direto pelo navegador e sem precisar criar conta."
-      actions={[
-        { label: 'Sortear times', href: '/ferramentas/sorteador-de-times' },
-        { label: 'Abrir cronometro', href: '/ferramentas/cronometro-pelada', variant: 'secondary' },
-      ]}>
-      <ToolSection
-        kicker="Escolha a ferramenta"
-        title="Tudo o que a turma precisa antes da bola rolar"
-        description="Cada ferramenta resolve uma parte da organizacao da pelada. Use separadamente ou combine sorteio, cronometro, lista e campeonato no mesmo dia.">
-        <View style={styles.toolsGrid}>
-          {HUB_TOOLS.map((tool, index) => (
-            <ToolCard key={tool.href} tone={index === 1 ? 'field' : 'default'} style={styles.toolCard}>
-              <ToolBadge label={tool.tag} tone={index === 3 ? 'highlight' : 'accent'} />
-              <Text style={styles.toolLabelAlt}>{tool.label}</Text>
-              <Text style={styles.toolDescriptionAlt}>{tool.description}</Text>
-              <ToolPrimaryButton
-                label={tool.action}
-                variant={index === 0 ? 'primary' : 'secondary'}
-                onPress={() => router.push(tool.href as never)}
-              />
-            </ToolCard>
-          ))}
-        </View>
-      </ToolSection>
+      subtitle="Sorteie. Cronometre. Rode a lista."
+      description="Tudo direto na quadra, sem login."
+      actions={[{ label: 'Começar agora', href: '/ferramentas/sorteador-de-times' }]}>
+
+      {/* 4 grandes tiles */}
+      <View style={styles.tilesGrid}>
+        {TILES.map((tile) => (
+          <ToolActionTile
+            key={tile.href}
+            icon={tile.icon}
+            title={tile.title}
+            description={tile.description}
+            onPress={() => router.push(tile.href as never)}
+            style={styles.tile}
+          />
+        ))}
+      </View>
 
       <SafeAd placement={AD_PLACEMENTS.TOOLS_HUB_AFTER_CARDS} hasContent />
 
-      <ToolSection
-        kicker="Para qualquer grupo"
-        title="Area publica, util e sem enrolacao"
-        description="Essa area foi desenhada para o organizador da turma que quer resolver rapido: montar times, tocar a fila, marcar tempo e criar confrontos sem planilha.">
-        <View style={styles.reasonGrid}>
-          {[
-            'Sem cadastro para comecar.',
-            'Pensado para quadra, society e campo.',
-            'Bom para pelada casual ou mais competitiva.',
-          ].map((item) => (
-            <ToolCard key={item} tone="field" style={styles.reasonCard}>
-              <Text style={styles.reasonText}>{item}</Text>
-            </ToolCard>
+      {/* Como usar */}
+      <ToolSection kicker="Na prática" title="Como usar na quadra">
+        <View style={styles.stepsCol}>
+          {STEPS.map((step) => (
+            <View key={step.num} style={styles.stepRow}>
+              <View style={styles.stepNumBox}>
+                <Text style={styles.stepNum}>{step.num}</Text>
+              </View>
+              <View style={styles.stepContent}>
+                <Text style={styles.stepTitle}>{step.title}</Text>
+                <Text style={styles.stepDetail}>{step.detail}</Text>
+              </View>
+            </View>
           ))}
         </View>
       </ToolSection>
 
-      <ToolSection
-        kicker="Perguntas rapidas"
-        title="O que o pessoal sempre quer saber">
+      {/* Feito para */}
+      <View style={styles.sportsSection}>
+        <Text style={styles.sportsLabel}>Feito para</Text>
+        <View style={styles.sportsRow}>
+          {SPORTS.map((sport) => (
+            <View key={sport} style={styles.sportPill}>
+              <Text style={styles.sportText}>{sport}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* FAQ compacto */}
+      <ToolSection kicker="Dúvidas" title="O que o pessoal pergunta">
         <View style={styles.faqList}>
           {HUB_FAQ.map((item) => (
-            <ToolCard key={item.q} style={styles.faqCardAlt}>
-              <Text style={styles.faqQAlt}>{item.q}</Text>
-              <Text style={styles.faqAAlt}>{item.a}</Text>
-            </ToolCard>
+            <View key={item.q} style={styles.faqCard}>
+              <Text style={styles.faqQ}>{item.q}</Text>
+              <Text style={styles.faqA}>{item.a}</Text>
+            </View>
           ))}
         </View>
       </ToolSection>
@@ -265,125 +132,108 @@ export default function ToolsHubScreen() {
 }
 
 const styles = StyleSheet.create({
-  intro: {
-    gap: 12,
-  },
-  introTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 20,
-    fontWeight: '800',
-  },
-  introText: {
-    fontFamily: fonts.body,
-    fontSize: 15,
-    lineHeight: 23,
-  },
-  toolsGrid: {
+  tilesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 12,
+  },
+  tile: {
+    flexGrow: 1,
+    flexBasis: '45%',
+  },
+  stepsCol: {
     gap: 14,
   },
-  toolCard: {
-    flexGrow: 1,
-    flexBasis: 260,
+  stepRow: {
+    flexDirection: 'row',
+    gap: 14,
+    alignItems: 'flex-start',
+  },
+  stepNumBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: TOOL_COLORS.accentSoft,
     borderWidth: 1,
-    borderRadius: 24,
-    padding: 20,
-    gap: 8,
+    borderColor: TOOL_COLORS.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
-  toolTag: {
-    fontFamily: fonts.heading,
-    fontSize: 11,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  toolLabel: {
-    fontFamily: fonts.heading,
-    fontSize: 20,
-    fontWeight: '800',
-  },
-  toolDescription: {
-    fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  toolLabelAlt: {
+  stepNum: {
     fontFamily: fonts.display,
-    fontSize: 24,
+    fontSize: 16,
     fontWeight: '900',
-    lineHeight: 26,
+    color: TOOL_COLORS.accent,
+  },
+  stepContent: {
+    flex: 1,
+    gap: 2,
+    paddingTop: 6,
+  },
+  stepTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 16,
+    fontWeight: '800',
     color: TOOL_COLORS.text,
   },
-  toolDescriptionAlt: {
-    flex: 1,
+  stepDetail: {
     fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 13,
+    lineHeight: 19,
+    color: TOOL_COLORS.textSoft,
+  },
+  sportsSection: {
+    gap: 10,
+  },
+  sportsLabel: {
+    fontFamily: fonts.heading,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: TOOL_COLORS.highlight,
+  },
+  sportsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  sportPill: {
+    borderWidth: 1,
+    borderColor: TOOL_COLORS.border,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    backgroundColor: TOOL_COLORS.card,
+  },
+  sportText: {
+    fontFamily: fonts.heading,
+    fontSize: 13,
+    fontWeight: '700',
     color: TOOL_COLORS.textMuted,
   },
-  section: {
-    gap: 12,
-  },
-  sectionTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 20,
-    fontWeight: '800',
-  },
-  sectionText: {
-    fontFamily: fonts.body,
-    fontSize: 15,
-    lineHeight: 23,
-  },
   faqList: {
-    gap: 12,
+    gap: 10,
   },
   faqCard: {
     borderWidth: 1,
-    borderRadius: 20,
-    padding: 18,
-    gap: 8,
-  },
-  faqCardAlt: {
-    gap: 10,
+    borderColor: TOOL_COLORS.border,
+    borderRadius: 16,
+    padding: 16,
+    gap: 6,
+    backgroundColor: TOOL_COLORS.card,
   },
   faqQ: {
     fontFamily: fonts.heading,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  faqQAlt: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     color: TOOL_COLORS.text,
   },
   faqA: {
     fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  faqAAlt: {
-    fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 13,
+    lineHeight: 20,
     color: TOOL_COLORS.textMuted,
-  },
-  reasonGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  reasonCard: {
-    flexGrow: 1,
-    flexBasis: 220,
-    minHeight: 96,
-    justifyContent: 'center',
-  },
-  reasonText: {
-    fontFamily: fonts.heading,
-    fontSize: 16,
-    fontWeight: '700',
-    color: TOOL_COLORS.text,
   },
 });

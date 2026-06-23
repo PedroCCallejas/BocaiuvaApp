@@ -3071,53 +3071,57 @@ export const mockRepository: AppRepository = {
     match.finishedAt = match.finishedAt ?? now;
     match.updatedAt = now;
 
-    const matchFinishedNotificationId = buildNotificationId('match-finished', match.id);
-    const existingFinishedNotification = findNotificationByIdForTeam(
-      match.teamId,
-      matchFinishedNotificationId,
-    );
-    upsertNotification(
-      createMatchFinishedNotification({
-        id: matchFinishedNotificationId,
-        teamId: match.teamId,
-        match,
-        actorUserId: actor.id,
-        createdAt: existingFinishedNotification?.createdAt,
-        updatedAt: now,
-      }),
-    );
+    try {
+      const matchFinishedNotificationId = buildNotificationId('match-finished', match.id);
+      const existingFinishedNotification = findNotificationByIdForTeam(
+        match.teamId,
+        matchFinishedNotificationId,
+      );
+      upsertNotification(
+        createMatchFinishedNotification({
+          id: matchFinishedNotificationId,
+          teamId: match.teamId,
+          match,
+          actorUserId: actor.id,
+          createdAt: existingFinishedNotification?.createdAt,
+          updatedAt: now,
+        }),
+      );
 
-    const votingNotificationId = buildNotificationId('mvp-voting-opened', match.id);
-    const existingVotingNotification = findNotificationByIdForTeam(
-      match.teamId,
-      votingNotificationId,
-    );
-    upsertNotification(
-      createMvpVotingOpenedNotification({
-        id: votingNotificationId,
-        teamId: match.teamId,
-        match,
-        actorUserId: actor.id,
-        createdAt: existingVotingNotification?.createdAt,
-        updatedAt: now,
-      }),
-    );
+      const votingNotificationId = buildNotificationId('mvp-voting-opened', match.id);
+      const existingVotingNotification = findNotificationByIdForTeam(
+        match.teamId,
+        votingNotificationId,
+      );
+      upsertNotification(
+        createMvpVotingOpenedNotification({
+          id: votingNotificationId,
+          teamId: match.teamId,
+          match,
+          actorUserId: actor.id,
+          createdAt: existingVotingNotification?.createdAt,
+          updatedAt: now,
+        }),
+      );
 
-    const ratingsNotificationId = buildNotificationId('ratings-opened', match.id);
-    const existingRatingsNotification = findNotificationByIdForTeam(
-      match.teamId,
-      ratingsNotificationId,
-    );
-    upsertNotification(
-      createRatingsOpenedNotification({
-        id: ratingsNotificationId,
-        teamId: match.teamId,
-        match,
-        actorUserId: actor.id,
-        createdAt: existingRatingsNotification?.createdAt,
-        updatedAt: now,
-      }),
-    );
+      const ratingsNotificationId = buildNotificationId('ratings-opened', match.id);
+      const existingRatingsNotification = findNotificationByIdForTeam(
+        match.teamId,
+        ratingsNotificationId,
+      );
+      upsertNotification(
+        createRatingsOpenedNotification({
+          id: ratingsNotificationId,
+          teamId: match.teamId,
+          match,
+          actorUserId: actor.id,
+          createdAt: existingRatingsNotification?.createdAt,
+          updatedAt: now,
+        }),
+      );
+    } catch {
+      // best-effort: falha nas notificações não desfaz o encerramento
+    }
 
     return clone(match);
   },

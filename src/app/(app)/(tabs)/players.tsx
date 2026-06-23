@@ -22,11 +22,13 @@ import {
   selectTeamHistoricalPlayers,
 } from '@/store/selectors';
 
-type PlayerRosterFilter = 'active' | 'inactive' | 'all';
+type PlayerRosterFilter = 'active' | 'injured' | 'inactive' | 'suspended' | 'all';
 
 const PLAYER_FILTER_LABELS: Record<PlayerRosterFilter, string> = {
   active: 'Ativos',
+  injured: 'Lesionados',
   inactive: 'Inativos',
+  suspended: 'Antigos',
   all: 'Todos',
 };
 
@@ -73,22 +75,28 @@ export default function PlayersScreen() {
     ],
   );
   const activePlayers = players.filter((player) => player.status === 'active' && !player.deletedAt);
-  const inactivePlayers = players.filter((player) => player.status !== 'active' || Boolean(player.deletedAt));
+  const injuredPlayers = players.filter((player) => player.status === 'injured' && !player.deletedAt);
+  const inactivePlayers = players.filter((player) => player.status === 'inactive' || Boolean(player.deletedAt));
+  const suspendedPlayers = players.filter((player) => player.status === 'suspended' && !player.deletedAt);
   const visiblePlayers = useMemo(() => {
     if (!canManagePlayers) {
       return activePlayers;
     }
 
     switch (rosterFilter) {
+      case 'injured':
+        return injuredPlayers;
       case 'inactive':
         return inactivePlayers;
+      case 'suspended':
+        return suspendedPlayers;
       case 'all':
         return players;
       case 'active':
       default:
         return activePlayers;
     }
-  }, [activePlayers, canManagePlayers, inactivePlayers, players, rosterFilter]);
+  }, [activePlayers, injuredPlayers, inactivePlayers, suspendedPlayers, canManagePlayers, players, rosterFilter]);
 
   if (!team) {
     return null;
@@ -118,14 +126,18 @@ export default function PlayersScreen() {
       {canManagePlayers ? (
         <>
           <View style={styles.filterRow}>
-            {(['active', 'inactive', 'all'] as PlayerRosterFilter[]).map((filter) => {
+            {(['active', 'injured', 'inactive', 'suspended', 'all'] as PlayerRosterFilter[]).map((filter) => {
               const selected = rosterFilter === filter;
               const total =
                 filter === 'active'
                   ? activePlayers.length
-                  : filter === 'inactive'
-                    ? inactivePlayers.length
-                    : players.length;
+                  : filter === 'injured'
+                    ? injuredPlayers.length
+                    : filter === 'inactive'
+                      ? inactivePlayers.length
+                      : filter === 'suspended'
+                        ? suspendedPlayers.length
+                        : players.length;
 
               return (
                 <Pressable
@@ -158,18 +170,26 @@ export default function PlayersScreen() {
           title={
             players.length === 0
               ? 'Nenhum jogador cadastrado ainda'
-              : rosterFilter === 'inactive'
-                ? 'Nenhum jogador inativo'
-                : 'Nenhum jogador encontrado neste filtro'
+              : rosterFilter === 'injured'
+                ? 'Nenhum jogador lesionado'
+                : rosterFilter === 'inactive'
+                  ? 'Nenhum jogador inativo'
+                  : rosterFilter === 'suspended'
+                    ? 'Nenhum jogador antigo'
+                    : 'Nenhum jogador encontrado neste filtro'
           }
           description={
             players.length === 0
               ? canManagePlayers
                 ? 'Convide seus jogadores para comecar ou cadastre o primeiro nome do elenco.'
                 : 'O administrador ainda não cadastrou jogadores neste time.'
-              : rosterFilter === 'inactive'
-                ? 'Quando alguem sair do elenco ativo, o cadastro continua aparecendo aqui para reativacao.'
-                : 'Troque o filtro para visualizar outra parte do elenco.'
+              : rosterFilter === 'injured'
+                ? 'Jogadores em recuperação aparecem aqui. Quando voltarem, use "Reativar" na ficha.'
+                : rosterFilter === 'inactive'
+                  ? 'Quando alguem sair do elenco ativo, o cadastro continua aparecendo aqui para reativacao.'
+                  : rosterFilter === 'suspended'
+                    ? 'Jogadores fora do elenco permanentemente aparecem aqui como "Antigos".'
+                    : 'Troque o filtro para visualizar outra parte do elenco.'
           }
           actionLabel={
             players.length === 0 && canManagePlayers ? 'Convidar jogadores' : undefined

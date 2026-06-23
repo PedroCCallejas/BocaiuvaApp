@@ -3,7 +3,7 @@ import type { UpdatePlayerInput } from '@/services/repository/types';
 import type { Player, TeamMember } from '@/types/domain';
 
 export function isPlayerInactive(player: Pick<Player, 'status' | 'deletedAt'>) {
-  return player.status === 'inactive' || Boolean(player.deletedAt);
+  return player.status !== 'active' || Boolean(player.deletedAt);
 }
 
 export function canManagePlayerLifecycle(

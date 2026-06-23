@@ -44,7 +44,7 @@ const PERIOD_FILTERS: Array<{ id: StatsPeriodPreset; label: string }> = [
 ];
 const PLAYER_SCOPE_FILTERS: Array<{ id: StatsPlayerScope; label: string }> = [
   { id: 'active', label: 'Só ativos' },
-  { id: 'with-history', label: 'Incluir inativos' },
+  { id: 'with-history', label: 'Com histórico' },
   { id: 'all', label: 'Todos' },
 ];
 const MIN_GAMES_FILTERS = [1, 3, 5, 10];

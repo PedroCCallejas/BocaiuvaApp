@@ -6690,43 +6690,12 @@ export const firebaseRepository: AppRepository = {
         fetchNotificationByIdForTeam(activeTeamId, ratingsNotificationId),
       ]);
 
+      if (__DEV__) console.log('[match-finish] payload', { matchId: currentMatch.id, teamScore: input.teamScore, opponentScore: input.opponentScore, playerCount: confirmedPlayerIds.size });
+
       const batch = writeBatch(firestore);
       batch.set(
         doc(firestore, FIRESTORE_COLLECTIONS.matches, currentMatch.id),
         updatedMatch,
-      );
-      batch.set(
-        doc(firestore, FIRESTORE_COLLECTIONS.notifications, finishedNotificationId),
-        createMatchFinishedNotification({
-          id: finishedNotificationId,
-          teamId: currentMatch.teamId,
-          match: updatedMatch,
-          actorUserId: actorUserId,
-          createdAt: existingFinishedNotification?.createdAt,
-          updatedAt,
-        }),
-      );
-      batch.set(
-        doc(firestore, FIRESTORE_COLLECTIONS.notifications, votingNotificationId),
-        createMvpVotingOpenedNotification({
-          id: votingNotificationId,
-          teamId: currentMatch.teamId,
-          match: updatedMatch,
-          actorUserId: actorUserId,
-          createdAt: existingVotingNotification?.createdAt,
-          updatedAt,
-        }),
-      );
-      batch.set(
-        doc(firestore, FIRESTORE_COLLECTIONS.notifications, ratingsNotificationId),
-        createRatingsOpenedNotification({
-          id: ratingsNotificationId,
-          teamId: currentMatch.teamId,
-          match: updatedMatch,
-          actorUserId: actorUserId,
-          createdAt: existingRatingsNotification?.createdAt,
-          updatedAt,
-        }),
       );
 
       for (const existingMatchStat of existingMatchStats) {
@@ -6763,8 +6732,56 @@ export const firebaseRepository: AppRepository = {
         );
       }
 
+      if (__DEV__) console.log('[match-finish] committing batch', { matchId: currentMatch.id, statsCount: confirmedPlayerIds.size });
       await batch.commit();
-      await syncPublicTeamProjection(await fetchTeamById(activeTeamId), updatedAt);
+      if (__DEV__) console.log('[match-finish] batch committed', { matchId: currentMatch.id });
+
+      try {
+        const notifBatch = writeBatch(firestore);
+        notifBatch.set(
+          doc(firestore, FIRESTORE_COLLECTIONS.notifications, finishedNotificationId),
+          createMatchFinishedNotification({
+            id: finishedNotificationId,
+            teamId: currentMatch.teamId,
+            match: updatedMatch,
+            actorUserId: actorUserId,
+            createdAt: existingFinishedNotification?.createdAt,
+            updatedAt,
+          }),
+        );
+        notifBatch.set(
+          doc(firestore, FIRESTORE_COLLECTIONS.notifications, votingNotificationId),
+          createMvpVotingOpenedNotification({
+            id: votingNotificationId,
+            teamId: currentMatch.teamId,
+            match: updatedMatch,
+            actorUserId: actorUserId,
+            createdAt: existingVotingNotification?.createdAt,
+            updatedAt,
+          }),
+        );
+        notifBatch.set(
+          doc(firestore, FIRESTORE_COLLECTIONS.notifications, ratingsNotificationId),
+          createRatingsOpenedNotification({
+            id: ratingsNotificationId,
+            teamId: currentMatch.teamId,
+            match: updatedMatch,
+            actorUserId: actorUserId,
+            createdAt: existingRatingsNotification?.createdAt,
+            updatedAt,
+          }),
+        );
+        await notifBatch.commit();
+      } catch (notifError) {
+        if (__DEV__) console.warn('[match-finish] notifications failed (best-effort):', notifError);
+      }
+
+      try {
+        await syncPublicTeamProjection(await fetchTeamById(activeTeamId), updatedAt);
+      } catch (syncError) {
+        if (__DEV__) console.warn('[match-finish] syncPublicTeamProjection failed (best-effort):', syncError);
+      }
+
       return updatedMatch;
     } catch (error) {
       throw toFriendlyFirestoreError(

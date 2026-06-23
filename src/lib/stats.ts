@@ -359,7 +359,7 @@ function shouldIncludeManualStats(filters?: StatsFilters) {
 }
 
 function isPlayerActive(player: Player) {
-  return player.status !== 'inactive' && !player.deletedAt;
+  return player.status === 'active' && !player.deletedAt;
 }
 
 export function filterMatchesByPeriod(matches: Match[], filters?: StatsFilters) {

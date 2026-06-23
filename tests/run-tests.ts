@@ -3648,6 +3648,268 @@ const testCases: TestCase[] = [
       );
     },
   },
+  {
+    name: 'isPlayerInactive retorna true para lesionado, antigo e inativo, false apenas para ativo',
+    run() {
+      const active = createPlayer({ status: 'active', deletedAt: null });
+      const injured = createPlayer({ status: 'injured', deletedAt: null });
+      const inactive = createPlayer({ status: 'inactive', deletedAt: null });
+      const suspended = createPlayer({ status: 'suspended', deletedAt: null });
+      const withDeletedAt = createPlayer({ status: 'active', deletedAt: '2026-05-01T00:00:00.000Z' });
+
+      assert.equal(isPlayerInactive(active), false);
+      assert.equal(isPlayerInactive(injured), true, 'lesionado deve ser considerado inativo para mostrar botao reativar');
+      assert.equal(isPlayerInactive(inactive), true);
+      assert.equal(isPlayerInactive(suspended), true, 'antigo (suspended) deve ser considerado inativo');
+      assert.equal(isPlayerInactive(withDeletedAt), true);
+    },
+  },
+  {
+    name: 'escopo active em buildPlayerAggregates exclui jogador lesionado e antigo',
+    run() {
+      const team = createTeam({ id: 'team-scope-active-check' });
+      const match = createMatch({ teamId: team.id, status: 'finished' });
+      const pActive = createPlayer({ id: 'p-sc-active', teamId: team.id, status: 'active' });
+      const pInjured = createPlayer({ id: 'p-sc-injured', teamId: team.id, status: 'injured' });
+      const pSuspended = createPlayer({ id: 'p-sc-suspended', teamId: team.id, status: 'suspended' });
+
+      const snapshot = createSnapshot({
+        teams: [team],
+        players: [pActive, pInjured, pSuspended],
+        matches: [match],
+        attendance: [
+          createAttendance({ teamId: team.id, matchId: match.id, playerId: pActive.id, status: 'confirmed' }),
+          createAttendance({ teamId: team.id, matchId: match.id, playerId: pInjured.id, status: 'confirmed' }),
+          createAttendance({ teamId: team.id, matchId: match.id, playerId: pSuspended.id, status: 'confirmed' }),
+        ],
+        matchStats: [
+          createMatchStat({ teamId: team.id, matchId: match.id, playerId: pActive.id, goals: 1 }),
+          createMatchStat({ teamId: team.id, matchId: match.id, playerId: pInjured.id, goals: 5 }),
+          createMatchStat({ teamId: team.id, matchId: match.id, playerId: pSuspended.id, goals: 3 }),
+        ],
+      });
+
+      const aggregates = buildPlayerAggregates(snapshot, team.id, { playerScope: 'active' });
+      const ids = new Set(aggregates.map((a) => a.player.id));
+
+      assert.ok(ids.has(pActive.id), 'ativo deve aparecer no escopo active');
+      assert.ok(!ids.has(pInjured.id), 'lesionado nao deve aparecer no escopo active');
+      assert.ok(!ids.has(pSuspended.id), 'antigo nao deve aparecer no escopo active');
+    },
+  },
+  {
+    name: 'lesionado com historico aparece no escopo with-history e mantem seus gols',
+    run() {
+      const team = createTeam({ id: 'team-injured-wh' });
+      const match = createMatch({ teamId: team.id, status: 'finished' });
+      const injured = createPlayer({ id: 'p-injured-wh', teamId: team.id, status: 'injured' });
+
+      const snapshot = createSnapshot({
+        teams: [team],
+        players: [injured],
+        matches: [match],
+        attendance: [createAttendance({ teamId: team.id, matchId: match.id, playerId: injured.id, status: 'confirmed' })],
+        matchStats: [createMatchStat({ teamId: team.id, matchId: match.id, playerId: injured.id, goals: 2, assists: 1 })],
+      });
+
+      const agg = buildPlayerAggregates(snapshot, team.id, { playerScope: 'with-history' }).find((a) => a.player.id === injured.id);
+
+      assert.ok(agg, 'lesionado com historico deve aparecer em with-history');
+      assert.equal(agg.goals, 2, 'gols preservados');
+      assert.equal(agg.assists, 1, 'assistencias preservadas');
+      assert.equal(agg.isActive, false, 'isActive deve ser false para lesionado');
+    },
+  },
+  {
+    name: 'antigo (suspended) mantém estatísticas de jogos encerrados e aparece no ranking geral',
+    run() {
+      const team = createTeam({ id: 'team-sus-rank' });
+      const match = createMatch({ teamId: team.id, status: 'finished' });
+      const pActive = createPlayer({ id: 'p-sr-active', teamId: team.id, status: 'active' });
+      const pSuspended = createPlayer({ id: 'p-sr-suspended', teamId: team.id, status: 'suspended' });
+
+      const snapshot = createSnapshot({
+        teams: [team],
+        players: [pActive, pSuspended],
+        matches: [match],
+        attendance: [
+          createAttendance({ teamId: team.id, matchId: match.id, playerId: pActive.id, status: 'confirmed' }),
+          createAttendance({ teamId: team.id, matchId: match.id, playerId: pSuspended.id, status: 'confirmed' }),
+        ],
+        matchStats: [
+          createMatchStat({ teamId: team.id, matchId: match.id, playerId: pActive.id, goals: 2 }),
+          createMatchStat({ teamId: team.id, matchId: match.id, playerId: pSuspended.id, goals: 5 }),
+        ],
+      });
+
+      const aggregates = buildPlayerAggregates(snapshot, team.id, { playerScope: 'with-history' });
+      const susAgg = aggregates.find((a) => a.player.id === pSuspended.id);
+      const ranked = buildRankingByMetric(aggregates, 'goals');
+
+      assert.ok(susAgg, 'antigo com historico aparece no escopo with-history');
+      assert.equal(susAgg.goals, 5, 'gols do antigo preservados');
+      assert.equal(susAgg.isActive, false);
+      assert.equal(ranked[0]?.player.id, pSuspended.id, 'antigo com mais gols e o #1 no ranking geral');
+    },
+  },
+
+  // ── finishMatch ─────────────────────────────────────────────────────────────
+  {
+    name: 'admin encerra partida e estatisticas sao persistidas corretamente',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+
+      const result = await mockRepository.finishMatch(
+        {
+          matchId: 'match-3',
+          teamScore: 2,
+          opponentScore: 1,
+          playerStats: [
+            { playerId: 'player-7', goals: 1, assists: 1 },
+            { playerId: 'player-9', goals: 1, assists: 0 },
+          ],
+        },
+        'user-admin',
+      );
+
+      assert.equal(result.status, 'finished', 'status deve ser finished');
+      assert.equal(result.scoreboard?.team, 2, 'placar do time deve ser 2');
+      assert.equal(result.scoreboard?.opponent, 1, 'placar adversario deve ser 1');
+      assert.equal(result.scoreboard?.result, 'win', 'resultado deve ser win');
+
+      const snapshot = await mockRepository.getSnapshot();
+      const statP7 = snapshot.matchStats.find(
+        (s) => s.matchId === 'match-3' && s.playerId === 'player-7',
+      );
+      const statP9 = snapshot.matchStats.find(
+        (s) => s.matchId === 'match-3' && s.playerId === 'player-9',
+      );
+      assert.equal(statP7?.goals, 1, 'player-7 deve ter 1 gol');
+      assert.equal(statP7?.assists, 1, 'player-7 deve ter 1 assistencia');
+      assert.equal(statP9?.goals, 1, 'player-9 deve ter 1 gol');
+      assert.equal(statP9?.assists, 0, 'player-9 deve ter 0 assistencias');
+    },
+  },
+  {
+    name: 'jogador com 0 gols e 0 assistencias e persistido corretamente',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+
+      await mockRepository.finishMatch(
+        {
+          matchId: 'match-3',
+          teamScore: 0,
+          opponentScore: 0,
+          playerStats: [
+            { playerId: 'player-7', goals: 0, assists: 0 },
+            { playerId: 'player-9', goals: 0, assists: 0 },
+          ],
+        },
+        'user-admin',
+      );
+
+      const snapshot = await mockRepository.getSnapshot();
+      const statP7 = snapshot.matchStats.find(
+        (s) => s.matchId === 'match-3' && s.playerId === 'player-7',
+      );
+      assert.equal(statP7?.goals, 0, 'player-7 deve ter 0 gols');
+      assert.equal(statP7?.assists, 0, 'player-7 deve ter 0 assistencias');
+      assert.equal(statP7?.played, true, 'played deve ser true mesmo com 0 participacoes');
+    },
+  },
+  {
+    name: 'admin com roles [admin, player] pode encerrar partida sem bloqueio',
+    async run() {
+      resetMockRepositoryState();
+      // user-admin tem roles ['admin', 'player'] no seed
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+
+      const result = await mockRepository.finishMatch(
+        {
+          matchId: 'match-3',
+          teamScore: 1,
+          opponentScore: 0,
+          playerStats: [{ playerId: 'player-7', goals: 1, assists: 0 }],
+        },
+        'user-admin',
+      );
+
+      assert.equal(result.status, 'finished', 'admin com roles misto deve conseguir encerrar');
+    },
+  },
+  {
+    name: 'jogador comum nao pode encerrar partida',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'atacante@bocaiuva.app', password: '123456' });
+
+      await assert.rejects(
+        () =>
+          mockRepository.finishMatch(
+            {
+              matchId: 'match-3',
+              teamScore: 1,
+              opponentScore: 0,
+              playerStats: [{ playerId: 'player-9', goals: 1, assists: 0 }],
+            },
+            'user-striker',
+          ),
+        (error) => error instanceof Error && error.message.toLowerCase().includes('administrador'),
+      );
+    },
+  },
+  {
+    name: 'partida cancelada nao pode ser encerrada',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await mockRepository.deleteMatch('match-3', 'user-admin');
+
+      await assert.rejects(
+        () =>
+          mockRepository.finishMatch(
+            {
+              matchId: 'match-3',
+              teamScore: 0,
+              opponentScore: 0,
+              playerStats: [],
+            },
+            'user-admin',
+          ),
+        (error) =>
+          error instanceof Error && error.message.toLowerCase().includes('cancelada'),
+      );
+    },
+  },
+  {
+    name: 'encerrar partida persiste gols e notificacoes nao bloqueiam o save',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+
+      const result = await mockRepository.finishMatch(
+        {
+          matchId: 'match-3',
+          teamScore: 3,
+          opponentScore: 2,
+          playerStats: [
+            { playerId: 'player-7', goals: 2, assists: 1 },
+            { playerId: 'player-9', goals: 1, assists: 2 },
+          ],
+        },
+        'user-admin',
+      );
+
+      assert.equal(result.status, 'finished', 'match deve ter status finished');
+      const snapshot = await mockRepository.getSnapshot();
+      const stats = snapshot.matchStats.filter((s) => s.matchId === 'match-3');
+      assert.ok(stats.length >= 2, 'deve ter stats para os dois jogadores');
+      const p7 = stats.find((s) => s.playerId === 'player-7');
+      assert.equal(p7?.goals, 2, 'gols do player-7 devem estar salvos');
+    },
+  },
 ];
 
 let failed = 0;

@@ -96,6 +96,7 @@ export default function FinishMatchScreen() {
     String(currentMatch?.fieldCost?.splitCount ?? confirmedPlayers.length),
   );
   const [fieldCostNote, setFieldCostNote] = useState(currentMatch?.fieldCost?.note ?? '');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!currentMatch) {
@@ -197,19 +198,24 @@ export default function FinishMatchScreen() {
   }, [totalTeamGoals]);
 
   async function handleSave() {
-    if (!currentMatch) {
+    if (!currentMatch || saving) {
       return;
     }
+
+    if (__DEV__) console.log('[match-finish-ui] finish button pressed', { matchId: currentMatch.id });
 
     let nextFieldCost = null;
 
     if (hasFieldCostInput) {
+      if (__DEV__) console.log('[match-finish-ui] validation start');
       if (parsedFieldCostTotalAmount == null || parsedFieldCostTotalAmount < 0) {
+        if (__DEV__) console.log('[match-finish-ui] validation fail: invalid field cost amount');
         Alert.alert('Valor do campo inválido', 'Informe um valor total maior ou igual a zero.');
         return;
       }
 
       if (parsedFieldCostSplitCount == null || parsedFieldCostSplitCount <= 0) {
+        if (__DEV__) console.log('[match-finish-ui] validation fail: invalid split count');
         Alert.alert(
           'Divisão inválida',
           'Informe em quantas pessoas o valor do campo será dividido.',
@@ -224,25 +230,31 @@ export default function FinishMatchScreen() {
       };
     }
 
+    const payload = {
+      matchId: currentMatch.id,
+      teamScore,
+      opponentScore,
+      ownGoalsForTeam,
+      fieldCost: nextFieldCost,
+      playerStats: confirmedPlayers.map((player) => ({
+        playerId: player.id,
+        goals: playerStats[player.id]?.goals ?? 0,
+        assists: playerStats[player.id]?.assists ?? 0,
+      })),
+    };
+    if (__DEV__) console.log('[match-finish-ui] payload prepared', payload);
+
+    setSaving(true);
     try {
-      await finishMatch({
-        matchId: currentMatch.id,
-        teamScore,
-        opponentScore,
-        ownGoalsForTeam,
-        fieldCost: nextFieldCost,
-        playerStats: confirmedPlayers.map((player) => ({
-          playerId: player.id,
-          goals: playerStats[player.id]?.goals ?? 0,
-          assists: playerStats[player.id]?.assists ?? 0,
-        })),
-      });
+      await finishMatch(payload);
       router.replace(`/matches/${currentMatch.id}`);
     } catch (error) {
       Alert.alert(
         'Não foi possível encerrar',
         error instanceof Error ? error.message : 'Tente novamente.',
       );
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -469,6 +481,7 @@ export default function FinishMatchScreen() {
       <AppButton
         label={currentMatch.status === 'finished' ? 'Salvar estatísticas' : 'Encerrar jogo'}
         onPress={handleSave}
+        loading={saving}
         fullWidth
       />
     </Screen>

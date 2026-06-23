@@ -3910,6 +3910,191 @@ const testCases: TestCase[] = [
       assert.equal(p7?.goals, 2, 'gols do player-7 devem estar salvos');
     },
   },
+
+  // ── auditoria de botoes criticos ─────────────────────────────────────────────
+  {
+    name: 'admin cancela partida agendada via updateMatch e status fica canceled',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const result = await mockRepository.updateMatch(
+        'match-3',
+        {
+          date: '2026-05-08',
+          time: '20:30',
+          venue: 'Arena Bocaiuva',
+          opponentName: 'Galaticos FC',
+          linePlayersCount: 6,
+          matchType: 'society',
+          status: 'canceled',
+        },
+        'user-admin',
+      );
+      assert.equal(result.status, 'canceled', 'status deve ser canceled');
+      assert.equal(result.scoreboard, null, 'scoreboard deve ser null apos cancelamento');
+    },
+  },
+  {
+    name: 'partida cancelada via updateMatch nao tem scoreboard nem finishedAt',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await mockRepository.updateMatch(
+        'match-3',
+        {
+          date: '2026-05-08',
+          time: '20:30',
+          venue: 'Arena Bocaiuva',
+          opponentName: 'Galaticos FC',
+          linePlayersCount: 6,
+          matchType: 'society',
+          status: 'canceled',
+        },
+        'user-admin',
+      );
+      const snapshot = await mockRepository.getSnapshot();
+      const match = snapshot.matches.find((m) => m.id === 'match-3');
+      assert.ok(match, 'partida deve continuar no snapshot');
+      assert.equal(match?.status, 'canceled', 'status deve ser canceled');
+      assert.equal(match?.scoreboard, null, 'scoreboard deve ser null');
+      assert.equal(match?.finishedAt, null, 'finishedAt deve ser null');
+    },
+  },
+  {
+    name: 'jogador comum nao pode cancelar partida',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'atacante@bocaiuva.app', password: '123456' });
+      await assert.rejects(
+        () =>
+          mockRepository.updateMatch(
+            'match-3',
+            {
+              date: '2026-05-08',
+              time: '20:30',
+              venue: 'Arena Bocaiuva',
+              opponentName: 'Galaticos FC',
+              linePlayersCount: 6,
+              matchType: 'society',
+              status: 'canceled',
+            },
+            'user-striker',
+          ),
+        (error) =>
+          error instanceof Error && error.message.toLowerCase().includes('administrador'),
+      );
+    },
+  },
+  {
+    name: 'admin inativa jogador ativo com removePlayer e status fica inactive',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const result = await mockRepository.removePlayer('player-10', 'user-admin');
+      assert.equal(result.status, 'inactive', 'status deve ser inactive apos inativacao');
+      assert.ok(result.deletedAt, 'deletedAt deve ser preenchido apos inativacao');
+      const snapshot = await mockRepository.getSnapshot();
+      const player = snapshot.players.find((p) => p.id === 'player-10');
+      assert.equal(player?.status, 'inactive', 'player-10 deve estar inactive no snapshot');
+    },
+  },
+  {
+    name: 'removePlayer em jogador ja inativo lanca erro descritivo',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await mockRepository.removePlayer('player-10', 'user-admin');
+      await assert.rejects(
+        () => mockRepository.removePlayer('player-10', 'user-admin'),
+        (error) =>
+          error instanceof Error &&
+          error.message.includes('já está fora do elenco'),
+      );
+    },
+  },
+  {
+    name: 'admin reativa jogador inativo com reactivatePlayer e status fica active',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await mockRepository.removePlayer('player-10', 'user-admin');
+      const result = await mockRepository.reactivatePlayer('player-10', 'user-admin');
+      assert.equal(result.status, 'active', 'status deve voltar para active');
+      assert.equal(result.deletedAt, null, 'deletedAt deve ser null apos reativacao');
+    },
+  },
+  {
+    name: 'jogador reativado aparece no escopo active de buildPlayerAggregates',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await mockRepository.removePlayer('player-10', 'user-admin');
+      await mockRepository.reactivatePlayer('player-10', 'user-admin');
+      const snapshot = await mockRepository.getSnapshot();
+      const aggregates = buildPlayerAggregates(snapshot, 'team-bocaiuva', { playerScope: 'active' });
+      const ids = new Set(aggregates.map((a) => a.player.id));
+      assert.ok(ids.has('player-10'), 'player-10 reativado deve aparecer no escopo active');
+    },
+  },
+  {
+    name: 'admin cria e exclui resenha de partida com deleteMatchDiaryEntry',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const entry = await mockRepository.createMatchDiaryEntry(
+        {
+          matchId: 'match-1',
+          title: 'Resenha de auditoria',
+          content: 'Partida intensa, time mostrou evolucao.',
+          mentionedPlayerIds: [],
+        },
+        'user-admin',
+      );
+      assert.ok(entry.id, 'resenha deve ter id apos criacao');
+      await mockRepository.deleteMatchDiaryEntry(entry.id, 'user-admin');
+      const snapshot = await mockRepository.getSnapshot();
+      const found = snapshot.matchDiaryEntries.find((e) => e.id === entry.id);
+      assert.ok(!found, 'resenha excluida nao deve aparecer no snapshot');
+    },
+  },
+  {
+    name: 'jogador comum nao pode excluir resenha de partida',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const entry = await mockRepository.createMatchDiaryEntry(
+        {
+          matchId: 'match-1',
+          title: 'Resenha bloqueada',
+          content: 'Tentativa de exclusao por jogador comum.',
+          mentionedPlayerIds: [],
+        },
+        'user-admin',
+      );
+      await mockRepository.login({ email: 'atacante@bocaiuva.app', password: '123456' });
+      await assert.rejects(
+        () => mockRepository.deleteMatchDiaryEntry(entry.id, 'user-striker'),
+        (error) =>
+          error instanceof Error && error.message.toLowerCase().includes('administrador'),
+      );
+    },
+  },
+  {
+    name: 'admin exclui criterio sem uso e criterio some do snapshot',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const criterion = await mockRepository.createRatingCriterion(
+        { label: 'Criterio Auditoria Teste', type: 'positive' },
+        'user-admin',
+      );
+      assert.ok(criterion.id, 'criterio deve ter id apos criacao');
+      await mockRepository.deleteRatingCriterion(criterion.id, 'user-admin');
+      const snapshot = await mockRepository.getSnapshot();
+      const found = snapshot.ratingCriteria.find((c) => c.id === criterion.id);
+      assert.ok(!found, 'criterio excluido nao deve aparecer no snapshot');
+    },
+  },
 ];
 
 let failed = 0;

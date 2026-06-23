@@ -15,6 +15,7 @@ import { MatchDiaryEntryCard } from '@/components/matches/MatchDiaryEntryCard';
 import { RankingList } from '@/components/stats/RankingList';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Pill } from '@/components/ui/Pill';
 import { Screen } from '@/components/ui/Screen';
@@ -82,6 +83,11 @@ export default function MatchDetailsScreen() {
   const [savingFieldPayment, setSavingFieldPayment] = useState(false);
   const [savingDeleteMatch, setSavingDeleteMatch] = useState(false);
   const [savingManualMvp, setSavingManualMvp] = useState(false);
+  const [deleteMatchModalVisible, setDeleteMatchModalVisible] = useState(false);
+  const [cancelMatchModalVisible, setCancelMatchModalVisible] = useState(false);
+  const [deleteDiaryEntryId, setDeleteDiaryEntryId] = useState<string | null>(null);
+  const [savingCancelMatch, setSavingCancelMatch] = useState(false);
+  const [savingDeleteDiary, setSavingDeleteDiary] = useState(false);
   const [manualMvpDraftPlayerId, setManualMvpDraftPlayerId] = useState<string | null | undefined>(
     undefined,
   );
@@ -337,41 +343,34 @@ export default function MatchDetailsScreen() {
     }
   }
 
-  async function handleCancelMatch() {
-    Alert.alert(
-      'Cancelar partida',
-      'Essa partida vai sair do fluxo normal do time. Você pode editar os detalhes depois se precisar.',
-      [
-        { text: 'Voltar', style: 'cancel' },
-        {
-          text: 'Cancelar partida',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              try {
-                await updateMatch(currentMatch.id, {
-                  seasonId: currentMatch.seasonId ?? null,
-                  date: currentMatch.date,
-                  time: currentMatch.time,
-                  venue: currentMatch.venue,
-                  opponentName: currentMatch.opponentName,
-                  opponentLogoUrl: currentMatch.opponentLogoUrl ?? null,
-                  linePlayersCount: currentMatch.linePlayersCount,
-                  matchType: currentMatch.matchType,
-                  notes: currentMatch.notes ?? '',
-                  status: 'canceled',
-                });
-              } catch (error) {
-                Alert.alert(
-                  'Não foi possível cancelar',
-                  error instanceof Error ? error.message : 'Tente novamente.',
-                );
-              }
-            })();
-          },
-        },
-      ],
-    );
+  function handleCancelMatch() {
+    setCancelMatchModalVisible(true);
+  }
+
+  async function confirmCancelMatch() {
+    try {
+      setSavingCancelMatch(true);
+      await updateMatch(currentMatch.id, {
+        seasonId: currentMatch.seasonId ?? null,
+        date: currentMatch.date,
+        time: currentMatch.time,
+        venue: currentMatch.venue,
+        opponentName: currentMatch.opponentName,
+        opponentLogoUrl: currentMatch.opponentLogoUrl ?? null,
+        linePlayersCount: currentMatch.linePlayersCount,
+        matchType: currentMatch.matchType,
+        notes: currentMatch.notes ?? '',
+        status: 'canceled',
+      });
+      setCancelMatchModalVisible(false);
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível cancelar',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    } finally {
+      setSavingCancelMatch(false);
+    }
   }
 
   function resetNavigatingEditFallback() {
@@ -427,66 +426,48 @@ export default function MatchDetailsScreen() {
   }
 
   function handleDeleteDiaryEntry(entryId: string) {
-    Alert.alert(
-      'Excluir resenha',
-      'Essa publicação sai do diário da partida e remove as notificações vinculadas.',
-      [
-        { text: 'Voltar', style: 'cancel' },
-        {
-          text: 'Excluir',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              try {
-                await deleteMatchDiaryEntry(entryId);
-              } catch (error) {
-                Alert.alert(
-                  'Não foi possível excluir a resenha',
-                  error instanceof Error ? error.message : 'Tente novamente.',
-                );
-              }
-            })();
-          },
-        },
-      ],
-    );
+    setDeleteDiaryEntryId(entryId);
+  }
+
+  async function confirmDeleteDiaryEntry() {
+    if (!deleteDiaryEntryId) return;
+    try {
+      setSavingDeleteDiary(true);
+      await deleteMatchDiaryEntry(deleteDiaryEntryId);
+      setDeleteDiaryEntryId(null);
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível excluir a resenha',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    } finally {
+      setSavingDeleteDiary(false);
+    }
   }
 
   function handleDeleteMatch() {
-    if (__DEV__) {
-      console.log('[match-delete] button pressed', { matchId: currentMatch.id });
-    }
-    Alert.alert(
-      'Excluir partida',
-      'Esta partida será excluída das listas, ranking e estatísticas. Essa ação não pode ser desfeita.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Excluir',
-          style: 'destructive',
-          onPress: () => {
-            if (__DEV__) {
-              console.log('[match-delete] confirm accepted', { matchId: currentMatch.id });
-            }
-            void (async () => {
-              try {
-                setSavingDeleteMatch(true);
-                await deleteMatch(currentMatch.id);
-                router.replace('/matches');
-              } catch (error) {
-                setSavingDeleteMatch(false);
-                Alert.alert(
-                  'Não foi possível excluir a partida',
-                  error instanceof Error ? error.message : 'Tente novamente.',
-                );
-              }
-            })();
-          },
-        },
-      ],
-    );
-    if (__DEV__) {
-      console.log('[match-delete] confirm opened', { matchId: currentMatch.id });
+    if (__DEV__) console.log('[match-actions] delete button pressed', { matchId: currentMatch.id });
+    setDeleteMatchModalVisible(true);
+    if (__DEV__) console.log('[match-actions] delete modal opened', { matchId: currentMatch.id });
+  }
+
+  async function confirmDeleteMatch() {
+    if (__DEV__) console.log('[match-actions] delete confirmed', { matchId: currentMatch.id });
+    try {
+      if (__DEV__) console.log('[match-actions] delete start', { matchId: currentMatch.id });
+      setSavingDeleteMatch(true);
+      if (__DEV__) console.log('[match-actions] delete payload', { matchId: currentMatch.id });
+      await deleteMatch(currentMatch.id);
+      if (__DEV__) console.log('[match-actions] delete success', { matchId: currentMatch.id });
+      router.replace('/matches');
+    } catch (error) {
+      setSavingDeleteMatch(false);
+      setDeleteMatchModalVisible(false);
+      if (__DEV__) console.error('[match-actions] delete failed', { matchId: currentMatch.id, error });
+      Alert.alert(
+        'Não foi possível excluir a partida',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
     }
   }
 
@@ -1276,6 +1257,39 @@ export default function MatchDetailsScreen() {
       <AttendanceSection title="Confirmados" players={buckets.confirmed} />
       <AttendanceSection title="Ausentes" players={buckets.absent} />
       <AttendanceSection title="Pendentes" players={buckets.pending} />
+
+      <ConfirmModal
+        visible={cancelMatchModalVisible}
+        title="Cancelar partida"
+        description="Essa partida vai sair do fluxo normal do time. Você pode editar os detalhes depois se precisar."
+        confirmLabel="Cancelar partida"
+        cancelLabel="Voltar"
+        onConfirm={() => void confirmCancelMatch()}
+        onCancel={() => setCancelMatchModalVisible(false)}
+        loading={savingCancelMatch}
+        destructive
+      />
+      <ConfirmModal
+        visible={deleteDiaryEntryId !== null}
+        title="Excluir resenha"
+        description="Essa publicação sai do diário da partida e remove as notificações vinculadas."
+        confirmLabel="Excluir"
+        cancelLabel="Voltar"
+        onConfirm={() => void confirmDeleteDiaryEntry()}
+        onCancel={() => setDeleteDiaryEntryId(null)}
+        loading={savingDeleteDiary}
+        destructive
+      />
+      <ConfirmModal
+        visible={deleteMatchModalVisible}
+        title="Excluir partida?"
+        description="Essa ação remove a partida das listas, mas preserva o histórico interno."
+        confirmLabel="Excluir partida"
+        onConfirm={() => void confirmDeleteMatch()}
+        onCancel={() => setDeleteMatchModalVisible(false)}
+        loading={savingDeleteMatch}
+        destructive
+      />
     </Screen>
   );
 }

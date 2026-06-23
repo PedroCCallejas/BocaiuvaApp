@@ -3,6 +3,7 @@ import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
@@ -72,6 +73,7 @@ export default function TeamRatingCriteriaScreen() {
   const [form, setForm] = useState(emptyFormState);
   const [busyCriterionId, setBusyCriterionId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deleteCriterionModalTarget, setDeleteCriterionModalTarget] = useState<TeamRatingCriterion | null>(null);
 
   const usageByCriterionId = useMemo(
     () =>
@@ -194,39 +196,28 @@ export default function TeamRatingCriteriaScreen() {
     }
   }
 
-  async function handleDeleteCriterion(criterion: TeamRatingCriterion) {
-    const usageCount = usageByCriterionId[criterion.id] ?? 0;
-    const actionLabel = usageCount > 0 ? 'Inativar critério' : 'Excluir critério';
-    const message =
-      usageCount > 0
-        ? 'Este critério já aparece em avaliações antigas. Vamos apenas inativá-lo para preservar o histórico.'
-        : 'Este critério ainda não foi usado e será removido do time.';
+  function handleDeleteCriterion(criterion: TeamRatingCriterion) {
+    setDeleteCriterionModalTarget(criterion);
+  }
 
-    Alert.alert('Gerenciar critério', message, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: actionLabel,
-        style: usageCount > 0 ? 'default' : 'destructive',
-        onPress: () => {
-          void (async () => {
-            setBusyCriterionId(criterion.id);
-            try {
-              await deleteRatingCriterion(criterion.id);
-              if (editingCriterionId === criterion.id) {
-                resetForm();
-              }
-            } catch (error) {
-              Alert.alert(
-                'Não foi possível concluir',
-                error instanceof Error ? error.message : 'Tente novamente.',
-              );
-            } finally {
-              setBusyCriterionId(null);
-            }
-          })();
-        },
-      },
-    ]);
+  async function confirmDeleteCriterion() {
+    if (!deleteCriterionModalTarget) return;
+    const criterion = deleteCriterionModalTarget;
+    setDeleteCriterionModalTarget(null);
+    setBusyCriterionId(criterion.id);
+    try {
+      await deleteRatingCriterion(criterion.id);
+      if (editingCriterionId === criterion.id) {
+        resetForm();
+      }
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível concluir',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    } finally {
+      setBusyCriterionId(null);
+    }
   }
 
   return (
@@ -401,6 +392,26 @@ export default function TeamRatingCriteriaScreen() {
           ) : null}
         </View>
       </View>
+
+      {deleteCriterionModalTarget ? (
+        <ConfirmModal
+          visible={deleteCriterionModalTarget !== null}
+          title="Gerenciar critério"
+          description={
+            (usageByCriterionId[deleteCriterionModalTarget.id] ?? 0) > 0
+              ? 'Este critério já aparece em avaliações antigas. Vamos apenas inativá-lo para preservar o histórico.'
+              : 'Este critério ainda não foi usado e será removido do time.'
+          }
+          confirmLabel={
+            (usageByCriterionId[deleteCriterionModalTarget.id] ?? 0) > 0
+              ? 'Inativar critério'
+              : 'Excluir critério'
+          }
+          onConfirm={() => void confirmDeleteCriterion()}
+          onCancel={() => setDeleteCriterionModalTarget(null)}
+          destructive={(usageByCriterionId[deleteCriterionModalTarget.id] ?? 0) === 0}
+        />
+      ) : null}
     </Screen>
   );
 }

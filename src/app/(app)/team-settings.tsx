@@ -449,12 +449,7 @@ export default function TeamSettingsScreen() {
 
       setDeleteModalVisible(false);
       resetDeleteConfirmation();
-      Alert.alert('Exclusão concluída', successMessage, [
-        {
-          text: 'OK',
-          onPress: () => router.replace('/team-access' as never),
-        },
-      ]);
+      router.replace('/team-access' as never);
     } catch (error) {
       setIsDeletingTeam(false);
       Alert.alert(

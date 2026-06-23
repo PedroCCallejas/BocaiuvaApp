@@ -113,6 +113,46 @@ export default function EditPlayerScreen() {
   const [presentationVideoUploadProgress, setPresentationVideoUploadProgress] =
     useState<number | null>(null);
 
+  const ownProfileAccess = useMemo(
+    () =>
+      resolveOwnPlayerProfileAccess({
+        teamId: player?.teamId ?? team?.id ?? '',
+        user: currentUser,
+        membership: currentMembership,
+        player: player ?? null,
+        teamPlayers: snapshot.players,
+      }),
+    [currentMembership, currentUser, player, team, snapshot.players],
+  );
+  const computedStats = useMemo(
+    () =>
+      player ? getPlayerComputedStats(snapshot, player.teamId, player.id) : undefined,
+    [player, snapshot],
+  );
+
+  useEffect(() => {
+    if (!player || canManagePlayers || ownProfileAccess.allowed) {
+      return;
+    }
+
+    logOwnPlayerProfileAccess(
+      'edit-player-screen',
+      {
+        teamId: player.teamId,
+        user: currentUser,
+        membership: currentMembership,
+        player,
+      },
+      ownProfileAccess,
+    );
+  }, [
+    canManagePlayers,
+    currentMembership,
+    currentUser,
+    player,
+    ownProfileAccess,
+  ]);
+
   if (!team || !player) {
     return (
       <Screen>
@@ -127,17 +167,6 @@ export default function EditPlayerScreen() {
   }
 
   const editablePlayer = player;
-  const ownProfileAccess = useMemo(
-    () =>
-      resolveOwnPlayerProfileAccess({
-        teamId: editablePlayer.teamId,
-        user: currentUser,
-        membership: currentMembership,
-        player: editablePlayer,
-        teamPlayers: snapshot.players,
-      }),
-    [currentMembership, currentUser, editablePlayer, snapshot.players],
-  );
   const canEditProfile = canManagePlayers || ownProfileAccess.allowed;
   const variant = canManagePlayers ? 'admin' : canEditProfile ? 'self' : null;
   const canManageLifecycle = variant === 'admin' && canManageTeam;
@@ -146,33 +175,6 @@ export default function EditPlayerScreen() {
   const currentPresentationVideoUrl = removePresentationVideo
     ? null
     : editablePlayer.presentationVideoUrl ?? null;
-  const computedStats = useMemo(
-    () => getPlayerComputedStats(snapshot, editablePlayer.teamId, editablePlayer.id),
-    [editablePlayer.id, editablePlayer.teamId, snapshot],
-  );
-
-  useEffect(() => {
-    if (canManagePlayers || ownProfileAccess.allowed) {
-      return;
-    }
-
-    logOwnPlayerProfileAccess(
-      'edit-player-screen',
-      {
-        teamId: editablePlayer.teamId,
-        user: currentUser,
-        membership: currentMembership,
-        player: editablePlayer,
-      },
-      ownProfileAccess,
-    );
-  }, [
-    canManagePlayers,
-    currentMembership,
-    currentUser,
-    editablePlayer,
-    ownProfileAccess,
-  ]);
 
   const blockedDescription = getOwnPlayerProfileBlockedMessage(ownProfileAccess);
 

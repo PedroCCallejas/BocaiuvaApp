@@ -7,6 +7,7 @@ import { PlayerCard, type PlayerCardSummaryItem } from '@/components/cards/Playe
 import { PlayerAchievementBadge } from '@/components/player/PlayerAchievementBadge';
 import { PresentationVideoCard } from '@/components/video/PresentationVideoCard';
 import { AppButton } from '@/components/ui/AppButton';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Pill } from '@/components/ui/Pill';
 import { Screen } from '@/components/ui/Screen';
@@ -162,6 +163,10 @@ export default function PlayerDetailsScreen() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [showLegacyCriteria, setShowLegacyCriteria] = useState(false);
+  const [removePlayerModalVisible, setRemovePlayerModalVisible] = useState(false);
+  const [reactivatePlayerModalVisible, setReactivatePlayerModalVisible] = useState(false);
+  const [savingRemovePlayer, setSavingRemovePlayer] = useState(false);
+  const [savingReactivatePlayer, setSavingReactivatePlayer] = useState(false);
 
   const playerAchievements = useMemo(
     () =>
@@ -186,6 +191,27 @@ export default function PlayerDetailsScreen() {
       team,
       teamCriteria,
     ],
+  );
+
+  const aggregate = useMemo(
+    () =>
+      team && player
+        ? buildPlayerAggregates(snapshot, team.id).find(
+            (item) => item.player.id === player.id,
+          ) ?? null
+        : null,
+    [player, team, snapshot],
+  );
+  const teamFinishedMatches = useMemo(
+    () =>
+      team
+        ? sortMatchesByDate(
+            snapshot.matches.filter(
+              (match) => match.teamId === team.id && match.status === 'finished',
+            ),
+          )
+        : [],
+    [team, snapshot.matches],
   );
 
   if (!team || !player) {
@@ -216,23 +242,6 @@ export default function PlayerDetailsScreen() {
     currentPlayerRecord.presentationVideoUrl?.trim() ||
     null;
   const celebrationVideoUrl = currentPlayerRecord.celebrationVideoUrl?.trim() || null;
-
-  const aggregate = useMemo(
-    () =>
-      buildPlayerAggregates(snapshot, currentTeam.id).find(
-        (item) => item.player.id === currentPlayerRecord.id,
-      ) ?? null,
-    [currentPlayerRecord.id, currentTeam.id, snapshot],
-  );
-  const teamFinishedMatches = useMemo(
-    () =>
-      sortMatchesByDate(
-        snapshot.matches.filter(
-          (match) => match.teamId === currentTeam.id && match.status === 'finished',
-        ),
-      ),
-    [currentTeam.id, snapshot.matches],
-  );
   const finishedMatchById = new Map(teamFinishedMatches.map((match) => [match.id, match]));
   const allPlayerRatings = snapshot.playerRatings.filter(
     (rating) =>
@@ -327,74 +336,57 @@ export default function PlayerDetailsScreen() {
   }
 
   function handleRemovePlayer() {
-    Alert.alert(
-      'Inativar jogador',
-      currentPlayerRecord.linkedUserId
-        ? 'Este jogador não aparecerá como ativo no elenco, mas o histórico será preservado. Se houver conta vinculada, o acesso como jogador sai do elenco ativo; administradores continuam com a gestão.'
-        : 'Este jogador não aparecerá como ativo no elenco, mas o histórico será preservado.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Inativar jogador',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              try {
-                if (__DEV__) {
-                  console.log('[player-detail] inactivate pressed', {
-                    playerId: currentPlayerRecord.id,
-                    uid: currentUser?.id ?? null,
-                    teamId: currentTeam.id,
-                    canManageTeam,
-                  });
-                }
-                await removePlayer(currentPlayerRecord.id);
-                router.replace('/players');
-              } catch (error) {
-                Alert.alert(
-                  'Não foi possível inativar',
-                  error instanceof Error ? error.message : 'Tente novamente.',
-                );
-              }
-            })();
-          },
-        },
-      ],
-    );
+    setRemovePlayerModalVisible(true);
+  }
+
+  async function confirmRemovePlayer() {
+    try {
+      setSavingRemovePlayer(true);
+      if (__DEV__) {
+        console.log('[player-detail] inactivate pressed', {
+          playerId: currentPlayerRecord.id,
+          uid: currentUser?.id ?? null,
+          teamId: currentTeam.id,
+          canManageTeam,
+        });
+      }
+      await removePlayer(currentPlayerRecord.id);
+      router.replace('/players');
+    } catch (error) {
+      setSavingRemovePlayer(false);
+      setRemovePlayerModalVisible(false);
+      Alert.alert(
+        'Não foi possível inativar',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    }
   }
 
   function handleReactivatePlayer() {
-    Alert.alert(
-      'Reativar jogador',
-      'Esse cadastro volta ao elenco ativo, preserva o histórico e entra novamente nas partidas abertas do time.',
-      [
-        { text: 'Voltar', style: 'cancel' },
-        {
-          text: 'Reativar jogador',
-          onPress: () => {
-            void (async () => {
-              try {
-                if (__DEV__) {
-                  console.log('[player-detail] reactivate pressed', {
-                    playerId: currentPlayerRecord.id,
-                    uid: currentUser?.id ?? null,
-                    teamId: currentTeam.id,
-                    canManageTeam,
-                  });
-                }
-                await reactivatePlayer(currentPlayerRecord.id);
-                Alert.alert('Jogador reativado', 'O cadastro voltou ao elenco ativo.');
-              } catch (error) {
-                Alert.alert(
-                  'Não foi possível reativar',
-                  error instanceof Error ? error.message : 'Tente novamente.',
-                );
-              }
-            })();
-          },
-        },
-      ],
-    );
+    setReactivatePlayerModalVisible(true);
+  }
+
+  async function confirmReactivatePlayer() {
+    try {
+      setSavingReactivatePlayer(true);
+      if (__DEV__) {
+        console.log('[player-detail] reactivate pressed', {
+          playerId: currentPlayerRecord.id,
+          uid: currentUser?.id ?? null,
+          teamId: currentTeam.id,
+          canManageTeam,
+        });
+      }
+      await reactivatePlayer(currentPlayerRecord.id);
+      setReactivatePlayerModalVisible(false);
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível reativar',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    } finally {
+      setSavingReactivatePlayer(false);
+    }
   }
 
   return (
@@ -807,6 +799,31 @@ export default function PlayerDetailsScreen() {
           </Text>
         )}
       </View>
+
+      <ConfirmModal
+        visible={removePlayerModalVisible}
+        title="Inativar jogador"
+        description={
+          currentPlayerRecord.linkedUserId
+            ? 'Este jogador não aparecerá como ativo no elenco, mas o histórico será preservado. Se houver conta vinculada, o acesso como jogador sai do elenco ativo; administradores continuam com a gestão.'
+            : 'Este jogador não aparecerá como ativo no elenco, mas o histórico será preservado.'
+        }
+        confirmLabel="Inativar jogador"
+        onConfirm={() => void confirmRemovePlayer()}
+        onCancel={() => setRemovePlayerModalVisible(false)}
+        loading={savingRemovePlayer}
+        destructive
+      />
+      <ConfirmModal
+        visible={reactivatePlayerModalVisible}
+        title="Reativar jogador"
+        description="Esse cadastro volta ao elenco ativo, preserva o histórico e entra novamente nas partidas abertas do time."
+        confirmLabel="Reativar jogador"
+        cancelLabel="Voltar"
+        onConfirm={() => void confirmReactivatePlayer()}
+        onCancel={() => setReactivatePlayerModalVisible(false)}
+        loading={savingReactivatePlayer}
+      />
     </Screen>
   );
 }

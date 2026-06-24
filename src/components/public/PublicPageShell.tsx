@@ -1,4 +1,4 @@
-import type { PropsWithChildren } from 'react';
+import { useEffect, useState, type PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, usePathname } from 'expo-router';
 
@@ -54,6 +54,11 @@ export function PublicPageShell({
 }: PublicPageShellProps) {
   const pathname = usePathname();
   const theme = useAppTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   return (
     <Screen hideWebHeader contentContainerStyle={styles.screen}>
@@ -74,7 +79,7 @@ export function PublicPageShell({
 
         <View style={styles.navLinks}>
           {PUBLIC_NAV_ITEMS.map((item) => {
-            const active = isActivePath(pathname, item.href);
+            const active = mounted && isActivePath(pathname, item.href);
 
             return (
               <Pressable

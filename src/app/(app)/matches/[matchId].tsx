@@ -103,6 +103,7 @@ export default function MatchDetailsScreen() {
   }, []);
 
   if (!match) {
+    if (__DEV__) console.log('[match-detail] match missing', { matchId: resolvedMatchId });
     return (
       <Screen>
         <EmptyState
@@ -116,8 +117,54 @@ export default function MatchDetailsScreen() {
   }
 
   const currentMatch = match;
+  const fieldCost = currentMatch.fieldCost ?? null;
+  const fieldPayment = currentMatch.fieldPayment ?? null;
+
+  const [payerPlayerIdsDraft, setPayerPlayerIdsDraft] = useState<string[]>(
+    fieldPayment?.payerPlayerIds ?? [],
+  );
+  const [paidGuestCountDraft, setPaidGuestCountDraft] = useState(
+    String(fieldPayment?.paidGuestCount ?? 0),
+  );
+  const [pixKeyDraft, setPixKeyDraft] = useState(fieldPayment?.pixKey ?? '');
+  const [responsibleNameDraft, setResponsibleNameDraft] = useState(
+    fieldPayment?.responsibleName ?? '',
+  );
+
+  useEffect(() => {
+    setManualMvpDraftPlayerId(undefined);
+  }, [currentMatch.id]);
+
+  useEffect(() => {
+    setPayerPlayerIdsDraft(fieldPayment?.payerPlayerIds ?? []);
+    setPaidGuestCountDraft(String(fieldPayment?.paidGuestCount ?? 0));
+    setPixKeyDraft(fieldPayment?.pixKey ?? '');
+    setResponsibleNameDraft(fieldPayment?.responsibleName ?? '');
+  }, [
+    currentMatch.id,
+    fieldPayment?.paidGuestCount,
+    fieldPayment?.pixKey,
+    fieldPayment?.responsibleName,
+    fieldPayment?.payerPlayerIds,
+  ]);
+
+  const paidGuestCountValue = useMemo(() => {
+    const parsed = Number(paidGuestCountDraft.trim() || '0');
+    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+  }, [paidGuestCountDraft]);
+  const fieldPaymentSummary = useMemo(
+    () =>
+      fieldCost
+        ? getMatchFieldPaymentSummary(fieldCost, {
+            payerPlayerIds: payerPlayerIdsDraft,
+            paidGuestCount: paidGuestCountValue,
+          })
+        : null,
+    [fieldCost, paidGuestCountValue, payerPlayerIdsDraft],
+  );
 
   if (currentMatch.deletedAt) {
+    if (__DEV__) console.log('[match-detail] match canceled/deleted', { matchId: resolvedMatchId });
     return (
       <Screen>
         <EmptyState
@@ -164,8 +211,6 @@ export default function MatchDetailsScreen() {
     isPlayerConfirmedForMatch(snapshot, currentMatch.id, currentPlayer?.id);
   const mvpBreakdown = buildMatchMvpBreakdown(snapshot, currentMatch.id);
   const ratingsSummary = getRatingsSummary(snapshot, currentMatch.id);
-  const fieldCost = currentMatch.fieldCost ?? null;
-  const fieldPayment = currentMatch.fieldPayment ?? null;
   const matchStats = snapshot.matchStats
     .filter((item) => item.matchId === currentMatch.id)
     .sort((left, right) => right.goals + right.assists - (left.goals + left.assists));
@@ -178,48 +223,6 @@ export default function MatchDetailsScreen() {
   const canEditParticipants =
     canManage &&
     (currentMatch.status === 'finished' || currentMatch.status === 'canceled');
-  const [payerPlayerIdsDraft, setPayerPlayerIdsDraft] = useState<string[]>(
-    fieldPayment?.payerPlayerIds ?? [],
-  );
-  const [paidGuestCountDraft, setPaidGuestCountDraft] = useState(
-    String(fieldPayment?.paidGuestCount ?? 0),
-  );
-  const [pixKeyDraft, setPixKeyDraft] = useState(fieldPayment?.pixKey ?? '');
-  const [responsibleNameDraft, setResponsibleNameDraft] = useState(
-    fieldPayment?.responsibleName ?? '',
-  );
-
-  useEffect(() => {
-    setManualMvpDraftPlayerId(undefined);
-  }, [currentMatch.id]);
-
-  useEffect(() => {
-    setPayerPlayerIdsDraft(fieldPayment?.payerPlayerIds ?? []);
-    setPaidGuestCountDraft(String(fieldPayment?.paidGuestCount ?? 0));
-    setPixKeyDraft(fieldPayment?.pixKey ?? '');
-    setResponsibleNameDraft(fieldPayment?.responsibleName ?? '');
-  }, [
-    currentMatch.id,
-    fieldPayment?.paidGuestCount,
-    fieldPayment?.pixKey,
-    fieldPayment?.responsibleName,
-    fieldPayment?.payerPlayerIds,
-  ]);
-
-  const paidGuestCountValue = useMemo(() => {
-    const parsed = Number(paidGuestCountDraft.trim() || '0');
-    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
-  }, [paidGuestCountDraft]);
-  const fieldPaymentSummary = useMemo(
-    () =>
-      fieldCost
-        ? getMatchFieldPaymentSummary(fieldCost, {
-            payerPlayerIds: payerPlayerIdsDraft,
-            paidGuestCount: paidGuestCountValue,
-          })
-        : null,
-    [fieldCost, paidGuestCountValue, payerPlayerIdsDraft],
-  );
   const isCurrentPlayerMarkedAsPaid = currentPlayer
     ? payerPlayerIdsDraft.includes(currentPlayer.id)
     : false;
@@ -344,11 +347,14 @@ export default function MatchDetailsScreen() {
   }
 
   function handleCancelMatch() {
+    if (__DEV__) console.log('[match-actions] cancel pressed', { matchId: currentMatch.id });
     setCancelMatchModalVisible(true);
   }
 
   async function confirmCancelMatch() {
+    if (__DEV__) console.log('[match-actions] cancel confirmed', { matchId: currentMatch.id });
     try {
+      if (__DEV__) console.log('[match-actions] cancel start', { matchId: currentMatch.id });
       setSavingCancelMatch(true);
       await updateMatch(currentMatch.id, {
         seasonId: currentMatch.seasonId ?? null,
@@ -362,8 +368,10 @@ export default function MatchDetailsScreen() {
         notes: currentMatch.notes ?? '',
         status: 'canceled',
       });
+      if (__DEV__) console.log('[match-actions] cancel success', { matchId: currentMatch.id });
       setCancelMatchModalVisible(false);
     } catch (error) {
+      if (__DEV__) console.error('[match-actions] cancel failed', { matchId: currentMatch.id, error });
       Alert.alert(
         'Não foi possível cancelar',
         error instanceof Error ? error.message : 'Tente novamente.',
@@ -459,6 +467,7 @@ export default function MatchDetailsScreen() {
       if (__DEV__) console.log('[match-actions] delete payload', { matchId: currentMatch.id });
       await deleteMatch(currentMatch.id);
       if (__DEV__) console.log('[match-actions] delete success', { matchId: currentMatch.id });
+      if (__DEV__) console.log('[match-actions] redirect after delete', { matchId: currentMatch.id });
       router.replace('/matches');
     } catch (error) {
       setSavingDeleteMatch(false);

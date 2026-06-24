@@ -99,6 +99,52 @@ export default function MatchRatingsScreen() {
     }
   }, [activeCriteria, selectedPlayerId]);
 
+  const confirmedPlayers = match ? getConfirmedPlayers(snapshot, match.id) : [];
+  const selectedExistingRating = selectedPlayerId && match
+    ? findPlayerRating(snapshot, match.id, currentPlayer?.id, selectedPlayerId)
+    : null;
+
+  const playerById = useMemo(
+    () => new Map(confirmedPlayers.map((player) => [player.id, player])),
+    [confirmedPlayers],
+  );
+  const overallPreview = useMemo(
+    () =>
+      calculateOverallFromCriteriaScores({
+        criteriaScores,
+        criteriaSnapshot,
+      }),
+    [criteriaScores, criteriaSnapshot],
+  );
+  const existingRatingEntries = useMemo(
+    () =>
+      selectedExistingRating
+        ? buildRatingEntries(selectedExistingRating, teamCriteria)
+        : [],
+    [selectedExistingRating, teamCriteria],
+  );
+  const handleSelectPlayer = useCallback(
+    (playerId: string) => {
+      if (!match) return;
+      const existingRating = findPlayerRating(
+        snapshot,
+        match.id,
+        currentPlayer?.id,
+        playerId,
+      );
+      setSelectedPlayerId(playerId);
+      setCriteriaScores(
+        buildCriteriaState(
+          activeCriteria,
+          existingRating
+            ? normalizePlayerRatingForDisplay(existingRating, teamCriteria).criteriaScores
+            : null,
+        ),
+      );
+    },
+    [activeCriteria, currentPlayer?.id, match, snapshot, teamCriteria],
+  );
+
   if (!match || match.status !== 'finished') {
     return (
       <Screen>
@@ -124,16 +170,11 @@ export default function MatchRatingsScreen() {
   }
 
   const currentMatch = match;
-  const confirmedPlayers = getConfirmedPlayers(snapshot, currentMatch.id);
   const eligibleToRate = confirmedPlayers.filter((player) => player.id !== currentPlayer?.id);
   const canRate =
     eligibleToRate.length > 0 &&
     isPlayerConfirmedForMatch(snapshot, currentMatch.id, currentPlayer?.id);
   const ratingsSummary = getRatingsSummary(snapshot, currentMatch.id);
-  const playerById = useMemo(
-    () => new Map(confirmedPlayers.map((player) => [player.id, player])),
-    [confirmedPlayers],
-  );
   const rankingItems = ratingsSummary.map((item) => {
     const player = playerById.get(item.playerId);
     return {
@@ -149,27 +190,9 @@ export default function MatchRatingsScreen() {
       !findPlayerRating(snapshot, currentMatch.id, currentPlayer?.id, player.id),
   );
   const selectedPlayer = eligibleToRate.find((player) => player.id === selectedPlayerId) ?? null;
-  const selectedExistingRating = selectedPlayerId
-    ? findPlayerRating(snapshot, currentMatch.id, currentPlayer?.id, selectedPlayerId)
-    : null;
   const selectedPlayerSummary = selectedPlayerId
     ? ratingsSummary.find((item) => item.playerId === selectedPlayerId) ?? null
     : null;
-  const overallPreview = useMemo(
-    () =>
-      calculateOverallFromCriteriaScores({
-        criteriaScores,
-        criteriaSnapshot,
-      }),
-    [criteriaScores, criteriaSnapshot],
-  );
-  const existingRatingEntries = useMemo(
-    () =>
-      selectedExistingRating
-        ? buildRatingEntries(selectedExistingRating, teamCriteria)
-        : [],
-    [selectedExistingRating, teamCriteria],
-  );
   const selectedExistingRatingOverall = selectedExistingRating
     ? normalizePlayerRatingForDisplay(selectedExistingRating, teamCriteria).overall
     : null;
@@ -181,27 +204,6 @@ export default function MatchRatingsScreen() {
         type: criterion.type,
         value: criteriaScores[criterion.id] ?? DEFAULT_RATING_SCORE,
       }));
-
-  const handleSelectPlayer = useCallback(
-    (playerId: string) => {
-      const existingRating = findPlayerRating(
-        snapshot,
-        currentMatch.id,
-        currentPlayer?.id,
-        playerId,
-      );
-      setSelectedPlayerId(playerId);
-      setCriteriaScores(
-        buildCriteriaState(
-          activeCriteria,
-          existingRating
-            ? normalizePlayerRatingForDisplay(existingRating, teamCriteria).criteriaScores
-            : null,
-        ),
-      );
-    },
-    [activeCriteria, currentMatch.id, currentPlayer?.id, snapshot, teamCriteria],
-  );
 
   async function handleSubmit() {
     if (!selectedPlayerId || selectedExistingRating) {

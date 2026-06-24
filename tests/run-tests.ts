@@ -53,6 +53,7 @@ import {
   sanitizeLineupLayoutState,
 } from '@/lib/lineup';
 import {
+  findMatchById,
   findPlayerById,
   selectCanManageTeam,
   selectCurrentPlayer,
@@ -4093,6 +4094,208 @@ const testCases: TestCase[] = [
       const snapshot = await mockRepository.getSnapshot();
       const found = snapshot.ratingCriteria.find((c) => c.id === criterion.id);
       assert.ok(!found, 'criterio excluido nao deve aparecer no snapshot');
+    },
+  },
+
+  // ── early-return proxy: hooks antes dos guards condicionais ─────────────────
+
+  {
+    name: '[matchId] early-return: findMatchById retorna null para partida inexistente',
+    run() {
+      const state = {
+        snapshot: createSnapshot({ matches: [] }),
+      };
+      const result = findMatchById(state, 'match-que-nao-existe');
+      assert.equal(
+        result,
+        null,
+        'findMatchById retorna null — [matchId] retornaria early return por !match antes de qualquer hook',
+      );
+    },
+  },
+  {
+    name: '[matchId] early-return: partida com deletedAt dispara segundo guard condicional',
+    run() {
+      const deletedMatch = { ...createMatch({ id: 'match-deleted-proxy' }), deletedAt: '2026-06-01T10:00:00.000Z' };
+      const state = {
+        snapshot: createSnapshot({ matches: [deletedMatch] }),
+      };
+      const found = findMatchById(state, 'match-deleted-proxy');
+      assert.ok(found?.deletedAt, 'partida com deletedAt e detectada — [matchId] teria segundo early return');
+    },
+  },
+  {
+    name: 'matches/create early-return: selectCanManageTeam false para membro sem papel admin',
+    run() {
+      const team = createTeam({ id: 'team-no-manage' });
+      const user = createUser({ id: 'user-player-only', activeTeamId: team.id, teamId: team.id });
+      const membership = createTeamMember({
+        userId: user.id,
+        teamId: team.id,
+        roles: ['player'],
+        canManageTeam: false,
+      });
+      const canManage = selectCanManageTeam({
+        currentUserId: user.id,
+        snapshot: createSnapshot({ users: [user], teams: [team], teamMembers: [membership] }),
+      });
+      assert.equal(
+        canManage,
+        false,
+        'jogador sem papel admin retorna canManage=false — create.tsx retorna null antes dos hooks dependentes de team',
+      );
+    },
+  },
+
+  // ── best-effort: operacao principal nao depende de side effects ─────────────
+
+  {
+    name: 'createMatch: partida e salva no snapshot mesmo que notificacao falhasse',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const match = await mockRepository.createMatch(
+        {
+          teamId: 'team-bocaiuva',
+          seasonId: null,
+          date: '2026-07-10',
+          time: '20:00',
+          venue: 'Campo Teste Best-Effort',
+          locationUrl: null,
+          opponentName: 'Adversario Best-Effort',
+          opponentLogoUrl: null,
+          opponentTeamId: null,
+          opponentTeamName: null,
+          opponentTeamLogoUrl: null,
+          opponentSource: null,
+          linePlayersCount: 6,
+          matchType: 'society',
+          notes: '',
+        },
+        'user-admin',
+      );
+      assert.ok(match.id, 'createMatch deve retornar a partida com id');
+      const snapshot = await mockRepository.getSnapshot();
+      const saved = snapshot.matches.find((m) => m.id === match.id);
+      assert.ok(saved, 'partida deve estar no snapshot — save principal independe de notificacao');
+      assert.equal(saved?.status, 'scheduled', 'partida criada com status scheduled');
+    },
+  },
+  {
+    name: 'saveLineup: escalacao e salva no snapshot mesmo que notificacao falhasse',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const match = before.matches.find((m) => m.id === 'match-3');
+      const current = before.lineups.find((l) => l.matchId === 'match-3');
+      assert.ok(match, 'match-3 deve existir no seed');
+      assert.ok(current, 'lineup de match-3 deve existir no seed');
+      const confirmedPlayerIds = new Set(
+        before.attendance
+          .filter((a) => a.matchId === 'match-3' && a.status === 'confirmed')
+          .map((a) => a.playerId),
+      );
+      const preset = getFormationPresetByKey(match!.matchType, match!.linePlayersCount, current!.formationKey);
+      const draft = buildLineupStateFromSource({
+        existingLineup: current!,
+        preset,
+        players: before.players.filter((p) => confirmedPlayerIds.has(p.id)),
+      });
+      await mockRepository.saveLineup(
+        { matchId: 'match-3', formationKey: draft.formationKey, starters: draft.starters, benchPlayerIds: draft.benchPlayerIds },
+        'user-admin',
+      );
+      const after = await mockRepository.getSnapshot();
+      const saved = after.lineups.find((l) => l.matchId === 'match-3');
+      assert.ok(saved, 'lineup deve estar no snapshot — save principal independe de notificacao');
+    },
+  },
+  {
+    name: 'updateMatch: atualizacao e salva no snapshot mesmo que syncPublicTeamProjection falhasse',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const match = before.matches.find((m) => m.id === 'match-4');
+      assert.ok(match, 'match-4 deve existir no seed como partida scheduled');
+      await mockRepository.updateMatch(
+        'match-4',
+        {
+          date: match!.date,
+          time: match!.time,
+          venue: 'Venue Atualizado Best-Effort',
+          opponentName: match!.opponentName,
+          locationUrl: null,
+          linePlayersCount: match!.linePlayersCount,
+          matchType: match!.matchType,
+          notes: '',
+        },
+        'user-admin',
+      );
+      const after = await mockRepository.getSnapshot();
+      const updated = after.matches.find((m) => m.id === 'match-4');
+      assert.equal(updated?.venue, 'Venue Atualizado Best-Effort', 'venue atualizado — save principal independe de sync publico');
+    },
+  },
+  {
+    name: 'fluxo de jogador: status e atualizado no snapshot mesmo que sync publico falhasse',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const player = before.players.find((p) => p.teamId === 'team-bocaiuva' && p.status === 'active' && !p.deletedAt);
+      assert.ok(player, 'deve haver jogador ativo em team-bocaiuva no seed');
+      await mockRepository.removePlayer(player!.id, 'user-admin');
+      const after = await mockRepository.getSnapshot();
+      const updated = after.players.find((p) => p.id === player!.id);
+      assert.equal(updated?.status, 'inactive', 'jogador deve ter status inactive apos removePlayer');
+      assert.ok(updated?.deletedAt, 'jogador deve ter deletedAt — save principal independe de sync publico');
+    },
+  },
+  {
+    name: 'deleteMatch: soft-delete e executado no snapshot mesmo que syncPublicTeamProjection falhasse',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await mockRepository.deleteMatch('match-1', 'user-admin');
+      const snapshot = await mockRepository.getSnapshot();
+      const match = snapshot.matches.find((m) => m.id === 'match-1');
+      assert.ok(match, 'partida deve permanecer no snapshot (soft delete)');
+      assert.ok(match?.deletedAt, 'partida deve ter deletedAt — delete executado independente de sync publico');
+    },
+  },
+  {
+    name: 'best-effort: quando operacao principal falha o erro e propagado para o caller',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'atacante@bocaiuva.app', password: '123456' });
+      await assert.rejects(
+        () =>
+          mockRepository.createMatch(
+            {
+              teamId: 'team-bocaiuva',
+              seasonId: null,
+              date: '2026-07-10',
+              time: '20:00',
+              venue: 'Campo Proibido',
+              locationUrl: null,
+              opponentName: 'Adversario Proibido',
+              opponentLogoUrl: null,
+              opponentTeamId: null,
+              opponentTeamName: null,
+              opponentTeamLogoUrl: null,
+              opponentSource: null,
+              linePlayersCount: 6,
+              matchType: 'society',
+              notes: '',
+            },
+            'user-striker',
+          ),
+        (error) =>
+          error instanceof Error && error.message.toLowerCase().includes('administrador'),
+        'erro da operacao principal (sem permissao de admin) nao deve ser engolido — runBestEffort e reservado para side effects',
+      );
     },
   },
 ];

@@ -356,6 +356,16 @@ function logBestEffortMembershipLinkFailure(input: {
   );
 }
 
+async function runBestEffort(label: string, fn: () => Promise<unknown>) {
+  try {
+    await fn();
+  } catch (error) {
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.warn(`[best-effort] ${label} failed`, error);
+    }
+  }
+}
+
 function buildBootstrapLogPayload(context?: RepositoryErrorContext) {
   const trace = getCurrentBootstrapTrace();
 
@@ -5537,7 +5547,7 @@ export const firebaseRepository: AppRepository = {
       }
 
       await ensureOpenMatchAttendanceForPlayer(player, now);
-      await syncPublicTeamProjection(team, now);
+      await runBestEffort('createPlayer:syncPublicTeamProjection', () => syncPublicTeamProjection(team, now));
 
       return player;
     } catch (error) {
@@ -5699,7 +5709,7 @@ export const firebaseRepository: AppRepository = {
         }
 
         await ensureOpenMatchAttendanceForPlayer(updatedPlayer, now);
-        await syncPublicTeamProjection(currentTeam, now);
+        await runBestEffort('updatePlayer:syncPublicTeamProjection', () => syncPublicTeamProjection(currentTeam, now));
 
         return updatedPlayer;
       }
@@ -5728,7 +5738,7 @@ export const firebaseRepository: AppRepository = {
       });
 
       await updateDoc(playerRef, selfUpdatePatch);
-      await syncPublicTeamProjection(currentTeam, now);
+      await runBestEffort('updatePlayer:syncPublicTeamProjection', () => syncPublicTeamProjection(currentTeam, now));
       return updatedPlayer;
     } catch (error) {
       throw toFriendlyFirestoreError(
@@ -5775,7 +5785,7 @@ export const firebaseRepository: AppRepository = {
         });
       }
 
-      await syncPublicTeamProjection(currentTeam, updatedAt);
+      await runBestEffort('unlinkPlayerAccount:syncPublicTeamProjection', () => syncPublicTeamProjection(currentTeam, updatedAt));
       return updatedPlayer;
     } catch (error) {
       throw toFriendlyFirestoreError(
@@ -5917,7 +5927,7 @@ export const firebaseRepository: AppRepository = {
         );
       }
 
-      await syncPublicTeamProjection(currentTeam, updatedAt);
+      await runBestEffort('removePlayer:syncPublicTeamProjection', () => syncPublicTeamProjection(currentTeam, updatedAt));
       return updatedPlayer;
     } catch (error) {
       throw toFriendlyFirestoreError(
@@ -6011,7 +6021,7 @@ export const firebaseRepository: AppRepository = {
       }
 
       await ensureOpenMatchAttendanceForPlayer(updatedPlayer, now);
-      await syncPublicTeamProjection(currentTeam, now);
+      await runBestEffort('reactivatePlayer:syncPublicTeamProjection', () => syncPublicTeamProjection(currentTeam, now));
 
       return updatedPlayer;
     } catch (error) {
@@ -6056,43 +6066,48 @@ export const firebaseRepository: AppRepository = {
         updatedAt: createdAt,
       });
 
-      const batch = writeBatch(firestore);
-      batch.set(matchRef, match);
-      batch.set(
-        doc(
-          firestore,
-          FIRESTORE_COLLECTIONS.notifications,
-          buildNotificationId('match-created', match.id),
-        ),
-        createMatchCreatedNotification({
-          id: buildNotificationId('match-created', match.id),
-          teamId: match.teamId,
-          match,
-          actorUserId: actor.id,
-          updatedAt: createdAt,
-        }),
-      );
+      await setDoc(matchRef, match);
 
-      for (const player of teamPlayers) {
-        const attendanceId = buildStableDocumentId(match.id, player.id);
-        const attendance = normalizeAttendanceDocument({
-          id: attendanceId,
-          teamId: input.teamId,
-          matchId: match.id,
-          playerId: player.id,
-          userId: player.linkedUserId ?? null,
-          status: 'pending',
-          respondedAt: null,
-          createdAt,
-          updatedAt: createdAt,
-        });
-        batch.set(
-          doc(firestore, FIRESTORE_COLLECTIONS.attendance, attendanceId),
-          attendance,
+      await runBestEffort('createMatch:notification', async () => {
+        await setDoc(
+          doc(
+            firestore,
+            FIRESTORE_COLLECTIONS.notifications,
+            buildNotificationId('match-created', match.id),
+          ),
+          createMatchCreatedNotification({
+            id: buildNotificationId('match-created', match.id),
+            teamId: match.teamId,
+            match,
+            actorUserId: actor.id,
+            updatedAt: createdAt,
+          }),
         );
-      }
+      });
 
-      await batch.commit();
+      await runBestEffort('createMatch:attendance', async () => {
+        const attendanceBatch = writeBatch(firestore);
+        for (const player of teamPlayers) {
+          const attendanceId = buildStableDocumentId(match.id, player.id);
+          const attendance = normalizeAttendanceDocument({
+            id: attendanceId,
+            teamId: input.teamId,
+            matchId: match.id,
+            playerId: player.id,
+            userId: player.linkedUserId ?? null,
+            status: 'pending',
+            respondedAt: null,
+            createdAt,
+            updatedAt: createdAt,
+          });
+          attendanceBatch.set(
+            doc(firestore, FIRESTORE_COLLECTIONS.attendance, attendanceId),
+            attendance,
+          );
+        }
+        await attendanceBatch.commit();
+      });
+
       return match;
     } catch (error) {
       throw toFriendlyFirestoreError(
@@ -6186,7 +6201,9 @@ export const firebaseRepository: AppRepository = {
         }),
       );
       await batch.commit();
-      await syncPublicTeamProjection(await fetchTeamById(activeTeamId), updatedAt);
+      await runBestEffort('updateMatch:syncPublicTeamProjection', async () => {
+        await syncPublicTeamProjection(await fetchTeamById(activeTeamId), updatedAt);
+      });
       return updatedMatch;
     } catch (error) {
       throw toFriendlyFirestoreError(
@@ -6531,27 +6548,28 @@ export const firebaseRepository: AppRepository = {
         createdAt: existingLineup?.createdAt ?? updatedAt,
         updatedAt,
       });
-      const notificationId = buildNotificationId('lineup-published', match.id);
-      let existingNotification = null;
-      try {
-        existingNotification = await fetchNotificationByIdForTeam(activeTeamId, notificationId);
-      } catch {
-        // GET on non-existent notification is denied by rules — create fresh
-      }
-      const batch = writeBatch(firestore);
-      batch.set(lineupRef, lineup);
-      batch.set(
-        doc(firestore, FIRESTORE_COLLECTIONS.notifications, notificationId),
-        createLineupPublishedNotification({
-          id: notificationId,
-          teamId: match.teamId,
-          match,
-          actorUserId: actorUserId,
-          createdAt: existingNotification?.createdAt,
-          updatedAt,
-        }),
-      );
-      await batch.commit();
+      await setDoc(lineupRef, lineup);
+
+      await runBestEffort('saveLineup:notification', async () => {
+        const notificationId = buildNotificationId('lineup-published', match.id);
+        let existingNotification = null;
+        try {
+          existingNotification = await fetchNotificationByIdForTeam(activeTeamId, notificationId);
+        } catch {
+          // GET on non-existent notification is denied by rules — create fresh
+        }
+        await setDoc(
+          doc(firestore, FIRESTORE_COLLECTIONS.notifications, notificationId),
+          createLineupPublishedNotification({
+            id: notificationId,
+            teamId: match.teamId,
+            match,
+            actorUserId: actorUserId,
+            createdAt: existingNotification?.createdAt,
+            updatedAt,
+          }),
+        );
+      });
       return lineup;
     } catch (error) {
       throw toFriendlyFirestoreError(
@@ -7203,6 +7221,10 @@ export const firebaseRepository: AppRepository = {
       if (__DEV__) {
         console.log('[match-delete] success', { matchId, activeTeamId });
       }
+
+      await runBestEffort('deleteMatch:syncPublicTeamProjection', async () => {
+        await syncPublicTeamProjection(await fetchTeamById(activeTeamId), updatedAt);
+      });
     } catch (error) {
       if (__DEV__) {
         console.error('[match-delete] failed', { matchId, error });

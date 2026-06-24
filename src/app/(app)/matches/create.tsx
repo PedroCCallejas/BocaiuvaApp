@@ -79,19 +79,14 @@ export default function CreateMatchScreen() {
     },
   });
 
-  if (!team || !canManage) {
-    return null;
-  }
-
-  const currentTeam = team;
   const opponentName = watch('opponentName');
-  const selectedPublicTeam =
-    publicTeams.find((item) => item.id === selectedPublicTeamId) ?? null;
+
   const suggestedPublicTeams = useMemo(() => {
+    if (!team) return [];
     const normalizedOpponentName = opponentName.trim().toLowerCase();
 
     return publicTeams
-      .filter((item) => item.id !== currentTeam.id)
+      .filter((item) => item.id !== team.id)
       .filter((item) => {
         if (!normalizedOpponentName) {
           return true;
@@ -100,7 +95,7 @@ export default function CreateMatchScreen() {
         return item.name.toLowerCase().includes(normalizedOpponentName);
       })
       .slice(0, 4);
-  }, [currentTeam.id, opponentName, publicTeams]);
+  }, [team, opponentName, publicTeams]);
 
   useEffect(() => {
     let mounted = true;
@@ -133,6 +128,14 @@ export default function CreateMatchScreen() {
       mounted = false;
     };
   }, [listPublicTeams]);
+
+  if (!team || !canManage) {
+    return null;
+  }
+
+  const currentTeam = team;
+  const selectedPublicTeam =
+    publicTeams.find((item) => item.id === selectedPublicTeamId) ?? null;
 
   function handleSelectPublicTeam(publicTeam: PublicTeamSummary) {
     setSelectedPublicTeamId(publicTeam.id);

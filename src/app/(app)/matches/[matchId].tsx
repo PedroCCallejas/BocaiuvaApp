@@ -102,6 +102,52 @@ export default function MatchDetailsScreen() {
     };
   }, []);
 
+  const [payerPlayerIdsDraft, setPayerPlayerIdsDraft] = useState<string[]>(
+    () => match?.fieldPayment?.payerPlayerIds ?? [],
+  );
+  const [paidGuestCountDraft, setPaidGuestCountDraft] = useState(
+    () => String(match?.fieldPayment?.paidGuestCount ?? 0),
+  );
+  const [pixKeyDraft, setPixKeyDraft] = useState(
+    () => match?.fieldPayment?.pixKey ?? '',
+  );
+  const [responsibleNameDraft, setResponsibleNameDraft] = useState(
+    () => match?.fieldPayment?.responsibleName ?? '',
+  );
+
+  useEffect(() => {
+    setManualMvpDraftPlayerId(undefined);
+  }, [match?.id]);
+
+  useEffect(() => {
+    const fp = match?.fieldPayment ?? null;
+    setPayerPlayerIdsDraft(fp?.payerPlayerIds ?? []);
+    setPaidGuestCountDraft(String(fp?.paidGuestCount ?? 0));
+    setPixKeyDraft(fp?.pixKey ?? '');
+    setResponsibleNameDraft(fp?.responsibleName ?? '');
+  }, [
+    match?.id,
+    match?.fieldPayment?.paidGuestCount,
+    match?.fieldPayment?.pixKey,
+    match?.fieldPayment?.responsibleName,
+    match?.fieldPayment?.payerPlayerIds,
+  ]);
+
+  const paidGuestCountValue = useMemo(() => {
+    const parsed = Number(paidGuestCountDraft.trim() || '0');
+    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+  }, [paidGuestCountDraft]);
+
+  const fieldPaymentSummary = useMemo(() => {
+    const fc = match?.fieldCost ?? null;
+    return fc
+      ? getMatchFieldPaymentSummary(fc, {
+          payerPlayerIds: payerPlayerIdsDraft,
+          paidGuestCount: paidGuestCountValue,
+        })
+      : null;
+  }, [match?.fieldCost, paidGuestCountValue, payerPlayerIdsDraft]);
+
   if (!match) {
     if (__DEV__) console.log('[match-detail] match missing', { matchId: resolvedMatchId });
     return (
@@ -119,49 +165,6 @@ export default function MatchDetailsScreen() {
   const currentMatch = match;
   const fieldCost = currentMatch.fieldCost ?? null;
   const fieldPayment = currentMatch.fieldPayment ?? null;
-
-  const [payerPlayerIdsDraft, setPayerPlayerIdsDraft] = useState<string[]>(
-    fieldPayment?.payerPlayerIds ?? [],
-  );
-  const [paidGuestCountDraft, setPaidGuestCountDraft] = useState(
-    String(fieldPayment?.paidGuestCount ?? 0),
-  );
-  const [pixKeyDraft, setPixKeyDraft] = useState(fieldPayment?.pixKey ?? '');
-  const [responsibleNameDraft, setResponsibleNameDraft] = useState(
-    fieldPayment?.responsibleName ?? '',
-  );
-
-  useEffect(() => {
-    setManualMvpDraftPlayerId(undefined);
-  }, [currentMatch.id]);
-
-  useEffect(() => {
-    setPayerPlayerIdsDraft(fieldPayment?.payerPlayerIds ?? []);
-    setPaidGuestCountDraft(String(fieldPayment?.paidGuestCount ?? 0));
-    setPixKeyDraft(fieldPayment?.pixKey ?? '');
-    setResponsibleNameDraft(fieldPayment?.responsibleName ?? '');
-  }, [
-    currentMatch.id,
-    fieldPayment?.paidGuestCount,
-    fieldPayment?.pixKey,
-    fieldPayment?.responsibleName,
-    fieldPayment?.payerPlayerIds,
-  ]);
-
-  const paidGuestCountValue = useMemo(() => {
-    const parsed = Number(paidGuestCountDraft.trim() || '0');
-    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
-  }, [paidGuestCountDraft]);
-  const fieldPaymentSummary = useMemo(
-    () =>
-      fieldCost
-        ? getMatchFieldPaymentSummary(fieldCost, {
-            payerPlayerIds: payerPlayerIdsDraft,
-            paidGuestCount: paidGuestCountValue,
-          })
-        : null,
-    [fieldCost, paidGuestCountValue, payerPlayerIdsDraft],
-  );
 
   if (currentMatch.deletedAt) {
     if (__DEV__) console.log('[match-detail] match canceled/deleted', { matchId: resolvedMatchId });

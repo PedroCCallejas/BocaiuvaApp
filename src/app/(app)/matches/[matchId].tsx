@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Clipboard,
+  Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -23,7 +25,8 @@ import { SectionHeader } from '@/components/ui/SectionHeader';
 import { MATCH_TYPE_LABELS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
-import { formatMatchDateTime, hasMatchElapsedHours } from '@/lib/date';
+import { formatDateBR, formatMatchDateTime, hasMatchElapsedHours, isValidTime, parseDateBRToISO } from '@/lib/date';
+import { isValidExternalUrl } from '@/lib/url';
 import { openExternalUrl } from '@/lib/external-url';
 import { formatCurrencyBRL, getMatchFieldPaymentSummary } from '@/lib/field-cost';
 import {
@@ -49,7 +52,7 @@ import {
   selectCurrentPlayer,
   selectTeamPlayers,
 } from '@/store/selectors';
-import type { AttendanceStatus, Player } from '@/types/domain';
+import type { AttendanceStatus, MatchType, Player } from '@/types/domain';
 
 const ATTENDANCE_STATUS_LABELS: Record<AttendanceStatus, string> = {
   confirmed: 'Confirmado',
@@ -114,6 +117,15 @@ export default function MatchDetailsScreen() {
   const [responsibleNameDraft, setResponsibleNameDraft] = useState(
     () => match?.fieldPayment?.responsibleName ?? '',
   );
+
+  const [editMetaModalVisible, setEditMetaModalVisible] = useState(false);
+  const [savingEditMeta, setSavingEditMeta] = useState(false);
+  const [editMetaError, setEditMetaError] = useState<string | null>(null);
+  const [editMetaDateDraft, setEditMetaDateDraft] = useState('');
+  const [editMetaTimeDraft, setEditMetaTimeDraft] = useState('');
+  const [editMetaVenueDraft, setEditMetaVenueDraft] = useState('');
+  const [editMetaLocationUrlDraft, setEditMetaLocationUrlDraft] = useState('');
+  const [editMetaMatchTypeDraft, setEditMetaMatchTypeDraft] = useState<MatchType>('society');
 
   useEffect(() => {
     setManualMvpDraftPlayerId(undefined);
@@ -229,6 +241,10 @@ export default function MatchDetailsScreen() {
   const isCurrentPlayerMarkedAsPaid = currentPlayer
     ? payerPlayerIdsDraft.includes(currentPlayer.id)
     : false;
+
+  const canEditMatchMetadata =
+    canManage &&
+    (currentMatch.status === 'finished' || currentMatch.status === 'canceled');
 
   async function handleOpenLocation() {
     if (!currentMatch.locationUrl) {
@@ -510,6 +526,66 @@ export default function MatchDetailsScreen() {
       );
     } finally {
       setSavingManualMvp(false);
+    }
+  }
+
+  function handleOpenEditMeta() {
+    setEditMetaDateDraft(formatDateBR(currentMatch.date));
+    setEditMetaTimeDraft(currentMatch.time ?? '');
+    setEditMetaVenueDraft(currentMatch.venue ?? '');
+    setEditMetaLocationUrlDraft(currentMatch.locationUrl ?? '');
+    setEditMetaMatchTypeDraft(currentMatch.matchType);
+    setEditMetaError(null);
+    setEditMetaModalVisible(true);
+  }
+
+  async function handleSaveEditMeta() {
+    const parsedDate = parseDateBRToISO(editMetaDateDraft);
+    if (!parsedDate) {
+      setEditMetaError('Data inválida. Use o formato DD/MM/AAAA.');
+      return;
+    }
+    if (!isValidTime(editMetaTimeDraft)) {
+      setEditMetaError('Horário inválido. Use o formato HH:mm.');
+      return;
+    }
+    if (editMetaVenueDraft.trim().length < 3) {
+      setEditMetaError('Informe o local com pelo menos 3 caracteres.');
+      return;
+    }
+    const locationUrlTrimmed = editMetaLocationUrlDraft.trim();
+    if (locationUrlTrimmed && !isValidExternalUrl(locationUrlTrimmed)) {
+      setEditMetaError('Cole um link válido de mapas.');
+      return;
+    }
+
+    try {
+      setEditMetaError(null);
+      setSavingEditMeta(true);
+      await updateMatch(currentMatch.id, {
+        seasonId: currentMatch.seasonId ?? null,
+        date: parsedDate,
+        time: editMetaTimeDraft,
+        venue: editMetaVenueDraft.trim(),
+        locationUrl: locationUrlTrimmed || null,
+        opponentName: currentMatch.opponentName,
+        opponentLogoUrl: currentMatch.opponentLogoUrl ?? null,
+        opponentTeamId: currentMatch.opponentTeamId ?? null,
+        opponentTeamName: currentMatch.opponentTeamName ?? null,
+        opponentTeamLogoUrl: currentMatch.opponentTeamLogoUrl ?? null,
+        opponentSource: currentMatch.opponentSource ?? null,
+        linePlayersCount: currentMatch.linePlayersCount,
+        matchType: editMetaMatchTypeDraft,
+        notes: currentMatch.notes ?? '',
+        status: currentMatch.status,
+      });
+      setEditMetaModalVisible(false);
+    } catch (error) {
+      setEditMetaError(
+        error instanceof Error ? error.message : 'Não foi possível salvar. Tente novamente.',
+      );
+    } finally {
+      setSavingEditMeta(false);
     }
   }
 
@@ -836,6 +912,13 @@ export default function MatchDetailsScreen() {
             label="Abrir localização"
             variant="secondary"
             onPress={() => void handleOpenLocation()}
+          />
+        ) : null}
+        {canEditMatchMetadata ? (
+          <AppButton
+            label="Editar dados da partida"
+            variant="secondary"
+            onPress={handleOpenEditMeta}
           />
         ) : null}
       </View>
@@ -1302,6 +1385,121 @@ export default function MatchDetailsScreen() {
         loading={savingDeleteMatch}
         destructive
       />
+
+      <Modal
+        visible={editMetaModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!savingEditMeta) setEditMetaModalVisible(false);
+        }}
+      >
+        <Pressable
+          style={styles.overlay}
+          onPress={savingEditMeta ? undefined : () => setEditMetaModalVisible(false)}
+        >
+          <Pressable
+            style={[
+              styles.editMetaCard,
+              { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
+            ]}
+            onPress={() => {}}
+          >
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.editMetaTitle, { color: theme.colors.text }]}>
+                Editar dados da partida
+              </Text>
+              <View style={styles.editMetaFields}>
+                <View style={styles.editMetaRow}>
+                  <View style={styles.editMetaHalf}>
+                    <AppInput
+                      label="Data"
+                      keyboardType="number-pad"
+                      value={editMetaDateDraft}
+                      onChangeText={setEditMetaDateDraft}
+                      placeholder="DD/MM/AAAA"
+                      editable={!savingEditMeta}
+                    />
+                  </View>
+                  <View style={styles.editMetaHalf}>
+                    <AppInput
+                      label="Horário"
+                      keyboardType="numbers-and-punctuation"
+                      value={editMetaTimeDraft}
+                      onChangeText={setEditMetaTimeDraft}
+                      placeholder="HH:mm"
+                      editable={!savingEditMeta}
+                    />
+                  </View>
+                </View>
+                <AppInput
+                  label="Local"
+                  value={editMetaVenueDraft}
+                  onChangeText={setEditMetaVenueDraft}
+                  placeholder="Nome do campo"
+                  editable={!savingEditMeta}
+                />
+                <AppInput
+                  label="Link da localização"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  value={editMetaLocationUrlDraft}
+                  onChangeText={setEditMetaLocationUrlDraft}
+                  placeholder="Link do Google Maps (opcional)"
+                  editable={!savingEditMeta}
+                />
+                <Text style={[styles.editMetaFieldLabel, { color: theme.colors.textMuted }]}>
+                  Tipo de partida
+                </Text>
+                <View style={styles.editMetaChipRow}>
+                  {(['society', 'futsal', 'field', 'training'] as MatchType[]).map((type) => {
+                    const selected = editMetaMatchTypeDraft === type;
+                    return (
+                      <Pressable
+                        key={type}
+                        disabled={savingEditMeta}
+                        onPress={() => setEditMetaMatchTypeDraft(type)}
+                        style={[
+                          styles.editMetaChip,
+                          {
+                            backgroundColor: selected
+                              ? theme.colors.primarySoft
+                              : theme.colors.surfaceMuted,
+                            borderColor: selected ? theme.colors.primary : theme.colors.border,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.editMetaChipLabel, { color: theme.colors.text }]}>
+                          {MATCH_TYPE_LABELS[type]}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                {editMetaError ? (
+                  <Text style={[styles.editMetaError, { color: theme.colors.danger }]}>
+                    {editMetaError}
+                  </Text>
+                ) : null}
+                <View style={styles.buttonRow}>
+                  <AppButton
+                    label="Cancelar"
+                    variant="ghost"
+                    disabled={savingEditMeta}
+                    onPress={() => setEditMetaModalVisible(false)}
+                  />
+                  <AppButton
+                    label="Salvar alterações"
+                    loading={savingEditMeta}
+                    disabled={savingEditMeta}
+                    onPress={() => void handleSaveEditMeta()}
+                  />
+                </View>
+              </View>
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Screen>
   );
 }
@@ -1492,6 +1690,65 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   locationText: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  editMetaCard: {
+    width: '100%',
+    maxWidth: 480,
+    maxHeight: '90%',
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+  },
+  editMetaTitle: {
+    fontFamily: fonts.heading,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  editMetaFields: {
+    gap: 14,
+  },
+  editMetaRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  editMetaHalf: {
+    flex: 1,
+  },
+  editMetaFieldLabel: {
+    fontFamily: fonts.heading,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  editMetaChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  editMetaChip: {
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  editMetaChipLabel: {
+    fontFamily: fonts.heading,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  editMetaError: {
     fontFamily: fonts.body,
     fontSize: 14,
     lineHeight: 20,

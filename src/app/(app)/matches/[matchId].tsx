@@ -77,6 +77,7 @@ export default function MatchDetailsScreen() {
   const canManage = useAppStore(selectCanManageTeam);
   const setAttendance = useAppStore((state) => state.setAttendance);
   const updateMatch = useAppStore((state) => state.updateMatch);
+  const updateMatchMetadata = useAppStore((state) => state.updateMatchMetadata);
   const updateMatchFieldPayment = useAppStore((state) => state.updateMatchFieldPayment);
   const deleteMatchDiaryEntry = useAppStore((state) => state.deleteMatchDiaryEntry);
   const deleteMatch = useAppStore((state) => state.deleteMatch);
@@ -559,25 +560,19 @@ export default function MatchDetailsScreen() {
       return;
     }
 
+    if (__DEV__) {
+      console.log('[match-metadata] save attempt', { matchId: currentMatch.id, status: currentMatch.status, date: parsedDate, venue: editMetaVenueDraft.trim(), matchType: editMetaMatchTypeDraft });
+    }
+
     try {
       setEditMetaError(null);
       setSavingEditMeta(true);
-      await updateMatch(currentMatch.id, {
-        seasonId: currentMatch.seasonId ?? null,
+      await updateMatchMetadata(currentMatch.id, {
         date: parsedDate,
         time: editMetaTimeDraft,
         venue: editMetaVenueDraft.trim(),
         locationUrl: locationUrlTrimmed || null,
-        opponentName: currentMatch.opponentName,
-        opponentLogoUrl: currentMatch.opponentLogoUrl ?? null,
-        opponentTeamId: currentMatch.opponentTeamId ?? null,
-        opponentTeamName: currentMatch.opponentTeamName ?? null,
-        opponentTeamLogoUrl: currentMatch.opponentTeamLogoUrl ?? null,
-        opponentSource: currentMatch.opponentSource ?? null,
-        linePlayersCount: currentMatch.linePlayersCount,
         matchType: editMetaMatchTypeDraft,
-        notes: currentMatch.notes ?? '',
-        status: currentMatch.status,
       });
       setEditMetaModalVisible(false);
     } catch (error) {

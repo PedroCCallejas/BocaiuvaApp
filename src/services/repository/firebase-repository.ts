@@ -180,6 +180,7 @@ import {
   type SnapshotSubscriptionHandlers,
   type UpdateAttendanceInput,
   type UpdateMatchInput,
+  type UpdateMatchMetadataInput,
   type UpdateMatchFieldPaymentInput,
   type UpdateMatchDiaryEntryInput,
   type UpdateRatingCriterionInput,
@@ -6213,6 +6214,66 @@ export const firebaseRepository: AppRepository = {
     }
   },
 
+  async updateMatchMetadata(matchId: string, input: UpdateMatchMetadataInput, actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      const { membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
+
+      if (__DEV__) {
+        console.log('[match-metadata] attempt', { matchId, uid: actorUserId, canManage: membership.canManageTeam, date: input.date, venue: input.venue, matchType: input.matchType });
+      }
+
+      if (!membership.canManageTeam) {
+        if (__DEV__) console.warn('[match-metadata] blocked: not admin', { matchId, uid: actorUserId });
+        throw createRepositoryError(
+          'Seu usuário não tem permissão para editar esta partida. Verifique se você é admin do time.',
+          'permission-denied',
+        );
+      }
+
+      const currentMatch = await fetchMatchByIdForTeam(activeTeamId, matchId);
+
+      if (__DEV__) {
+        console.log('[match-metadata] match', { matchId, teamId: currentMatch.teamId, status: currentMatch.status, deletedAt: currentMatch.deletedAt });
+      }
+
+      if (currentMatch.deletedAt) {
+        throw createRepositoryError(
+          'Esta partida foi excluída e não pode ser editada.',
+          'failed-precondition',
+        );
+      }
+
+      const updatedAt = nowIso();
+      await updateDoc(doc(firestore, FIRESTORE_COLLECTIONS.matches, matchId), {
+        date: input.date,
+        time: input.time,
+        venue: input.venue.trim(),
+        locationUrl: input.locationUrl?.trim() || null,
+        matchType: input.matchType,
+        updatedAt,
+      });
+
+      if (__DEV__) console.log('[match-metadata] saved', { matchId });
+
+      await runBestEffort('updateMatchMetadata:syncPublicTeamProjection', async () => {
+        await syncPublicTeamProjection(await fetchTeamById(activeTeamId), updatedAt);
+      });
+    } catch (error) {
+      const code = (error as Record<string, unknown>)?.code as string | undefined;
+      if (__DEV__) {
+        console.error('[match-metadata] error', { matchId, code, message: (error as Error)?.message });
+      }
+      if (code === 'permission-denied') {
+        throw createRepositoryError(
+          'Seu usuário não tem permissão para editar esta partida. Verifique se você é admin do time.',
+          'permission-denied',
+        );
+      }
+      throw toFriendlyFirestoreError(error, 'Não foi possível salvar os dados da partida.');
+    }
+  },
+
   async updateMatchFieldPayment(
     matchId: string,
     input: UpdateMatchFieldPaymentInput,
@@ -6806,6 +6867,155 @@ export const firebaseRepository: AppRepository = {
         error,
         'Não foi possível encerrar a partida agora.',
       );
+    }
+  },
+
+  async updateFinishedMatchStats(input: FinishMatchInput, actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      const { membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
+
+      if (__DEV__) console.log('[finish-match] mode edit-finished', { matchId: input.matchId, uid: actorUserId });
+
+      if (!membership.canManageTeam) {
+        throw createRepositoryError(
+          'Apenas o administrador do time pode fazer essa ação.',
+          'permission-denied',
+        );
+      }
+
+      const currentMatch = await fetchMatchByIdForTeam(activeTeamId, input.matchId);
+
+      if (currentMatch.status !== 'finished') {
+        throw createRepositoryError(
+          'Esta função só pode ser usada em partidas já encerradas.',
+          'failed-precondition',
+        );
+      }
+
+      const ownGoalsForTeam = input.ownGoalsForTeam ?? 0;
+
+      if (input.teamScore < 0 || input.opponentScore < 0 || ownGoalsForTeam < 0) {
+        throw createRepositoryError('O placar não pode ter números negativos.', 'failed-precondition');
+      }
+
+      const updatedAt = nowIso();
+      const attendance = await fetchAttendanceByMatchIdForTeam(activeTeamId, currentMatch.id);
+      const confirmedPlayerIds = new Set(
+        attendance.filter((item) => item.status === 'confirmed').map((item) => item.playerId),
+      );
+
+      if (confirmedPlayerIds.size === 0) {
+        throw createRepositoryError(
+          'Confirme a presença do elenco antes de salvar as estatísticas.',
+          'failed-precondition',
+        );
+      }
+
+      for (const stat of input.playerStats) {
+        if (!confirmedPlayerIds.has(stat.playerId)) {
+          throw createRepositoryError(
+            'Somente jogadores confirmados podem receber gols e assistencias.',
+            'failed-precondition',
+          );
+        }
+        if (stat.goals < 0 || stat.assists < 0) {
+          throw createRepositoryError('Gols e assistências não podem ser negativos.', 'failed-precondition');
+        }
+      }
+
+      const existingLineup = await fetchLineupByMatchIdForTeam(activeTeamId, currentMatch.id);
+      const starterIds = new Set(existingLineup?.starters.map((s) => s.playerId) ?? []);
+      const submittedStats = input.playerStats.reduce<Record<string, { goals: number; assists: number }>>(
+        (acc, stat) => {
+          acc[stat.playerId] = { goals: stat.goals, assists: stat.assists };
+          return acc;
+        },
+        {},
+      );
+
+      const existingMatchStats = await fetchMatchStatsByMatchIdForTeam(activeTeamId, currentMatch.id);
+      const nextMatchStatIds = new Set(
+        [...confirmedPlayerIds].map((id) => buildStableDocumentId(currentMatch.id, id)),
+      );
+
+      const nextFieldCost = input.fieldCost
+        ? buildMatchFieldCost({ values: input.fieldCost, updatedAt, updatedByUserId: actorUserId })
+        : null;
+
+      if (
+        nextFieldCost &&
+        currentMatch.fieldPayment &&
+        getMatchFieldPaymentSummary(nextFieldCost, currentMatch.fieldPayment).totalPaidCount > nextFieldCost.splitCount
+      ) {
+        throw createRepositoryError(
+          'A nova divisão do campo não comporta a quantidade de pagantes já marcada.',
+          'failed-precondition',
+        );
+      }
+
+      const updatedMatch = normalizeMatchDocument({
+        ...currentMatch,
+        scoreboard: {
+          team: input.teamScore,
+          opponent: input.opponentScore,
+          ownGoalsForTeam,
+          result: calculateMatchResult(input.teamScore, input.opponentScore),
+        },
+        fieldCost: nextFieldCost,
+        fieldPayment: nextFieldCost ? currentMatch.fieldPayment ?? null : null,
+        updatedAt,
+      });
+
+      if (__DEV__) console.log('[finish-match] edit-finished batch', { matchId: currentMatch.id, statsCount: confirmedPlayerIds.size });
+
+      const batch = writeBatch(firestore);
+      batch.set(doc(firestore, FIRESTORE_COLLECTIONS.matches, currentMatch.id), updatedMatch);
+
+      for (const existingMatchStat of existingMatchStats) {
+        if (!nextMatchStatIds.has(existingMatchStat.id)) {
+          batch.delete(doc(firestore, FIRESTORE_COLLECTIONS.matchStats, existingMatchStat.id));
+        }
+      }
+
+      for (const playerId of confirmedPlayerIds) {
+        const matchStatId = buildStableDocumentId(currentMatch.id, playerId);
+        const existingMatchStat = existingMatchStats.find((s) => s.id === matchStatId) ?? null;
+        const matchStat = normalizeMatchStatDocument({
+          id: matchStatId,
+          teamId: currentMatch.teamId,
+          matchId: currentMatch.id,
+          playerId,
+          played: true,
+          started: starterIds.has(playerId),
+          goals: submittedStats[playerId]?.goals ?? 0,
+          assists: submittedStats[playerId]?.assists ?? 0,
+          yellowCards: 0,
+          redCards: 0,
+          notes: '',
+          createdAt: existingMatchStat?.createdAt ?? updatedAt,
+          updatedAt,
+        });
+        batch.set(doc(firestore, FIRESTORE_COLLECTIONS.matchStats, matchStatId), matchStat);
+      }
+
+      await batch.commit();
+
+      if (__DEV__) console.log('[finish-match] edit-finished committed', { matchId: currentMatch.id });
+
+      try {
+        await syncPublicTeamProjection(await fetchTeamById(activeTeamId), updatedAt);
+      } catch (syncError) {
+        if (__DEV__) console.warn('[finish-match] edit-finished syncPublicTeamProjection failed (best-effort):', syncError);
+      }
+
+      return updatedMatch;
+    } catch (error) {
+      if (__DEV__) {
+        const e = error as Record<string, unknown>;
+        console.error('[finish-match] edit-finished error', { matchId: input.matchId, code: e.code, message: (error as Error)?.message });
+      }
+      throw toFriendlyFirestoreError(error, 'Não foi possível salvar as estatísticas agora.');
     }
   },
 

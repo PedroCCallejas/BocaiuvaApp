@@ -32,6 +32,7 @@ import type {
   SubmitMvpVoteInput,
   SubmitPlayerRatingInput,
   UpdateMatchInput,
+  UpdateMatchMetadataInput,
   UpdateMatchFieldPaymentInput,
   UpdateMatchDiaryEntryInput,
   UpdateRatingCriterionInput,
@@ -101,6 +102,7 @@ export interface AppState {
   reactivatePlayer: (playerId: string) => Promise<void>;
   createMatch: (input: CreateMatchInput) => Promise<string>;
   updateMatch: (matchId: string, input: UpdateMatchInput) => Promise<void>;
+  updateMatchMetadata: (matchId: string, input: UpdateMatchMetadataInput) => Promise<void>;
   updateMatchFieldPayment: (
     matchId: string,
     input: UpdateMatchFieldPaymentInput,
@@ -108,6 +110,7 @@ export interface AppState {
   setAttendance: (input: UpdateAttendanceInput) => Promise<void>;
   saveLineup: (input: SaveLineupInput) => Promise<void>;
   finishMatch: (input: FinishMatchInput) => Promise<void>;
+  updateFinishedMatchStats: (input: FinishMatchInput) => Promise<void>;
   registerFinishedMatch: (input: RegisterFinishedMatchInput) => Promise<string>;
   previewLegacyMatchImport: (
     payload: ImportedMatchPayloadItem[],
@@ -737,6 +740,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     await refreshCurrentSession(set, get);
   },
 
+  async updateMatchMetadata(matchId, input) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    await repository.updateMatchMetadata(matchId, input, userId);
+    await refreshCurrentSession(set, get);
+  },
+
   async updateMatchFieldPayment(matchId, input) {
     const userId = get().currentUserId;
     if (!userId) {
@@ -818,6 +831,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     await repository.finishMatch(input, userId);
+    await refreshCurrentSession(set, get);
+  },
+
+  async updateFinishedMatchStats(input) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    await repository.updateFinishedMatchStats(input, userId);
     await refreshCurrentSession(set, get);
   },
 

@@ -4298,6 +4298,270 @@ const testCases: TestCase[] = [
       );
     },
   },
+
+  // ── Frente A: updateMatchMetadata ────────────────────────────────────────
+  {
+    name: 'updateMatchMetadata: admin edita venue e matchType em partida encerrada',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await mockRepository.updateMatchMetadata(
+        'match-1',
+        { date: '2026-04-10', time: '20:00', venue: 'Arena Nova', locationUrl: null, matchType: 'futsal' },
+        'user-admin',
+      );
+      const snapshot = await mockRepository.getSnapshot();
+      const match = snapshot.matches.find((m) => m.id === 'match-1');
+      assert.equal(match?.venue, 'Arena Nova', 'venue deve estar atualizado');
+      assert.equal(match?.matchType, 'futsal', 'matchType deve estar atualizado');
+    },
+  },
+  {
+    name: 'updateMatchMetadata: placar, MVP e presenca preservados apos edicao de metadata',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const beforeMatch = before.matches.find((m) => m.id === 'match-1');
+      assert.ok(beforeMatch?.scoreboard, 'match-1 deve ter placar no seed');
+      await mockRepository.updateMatchMetadata(
+        'match-1',
+        { date: '2026-04-10', time: '21:00', venue: 'Arena Reformada', locationUrl: null, matchType: 'society' },
+        'user-admin',
+      );
+      const after = await mockRepository.getSnapshot();
+      const afterMatch = after.matches.find((m) => m.id === 'match-1');
+      assert.deepEqual(afterMatch?.scoreboard, beforeMatch?.scoreboard, 'placar nao deve ser alterado');
+      assert.deepEqual(afterMatch?.mvpWinnerPlayerIds, beforeMatch?.mvpWinnerPlayerIds, 'MVP nao deve ser alterado');
+      const beforeAtt = before.attendance.filter((a) => a.matchId === 'match-1');
+      const afterAtt = after.attendance.filter((a) => a.matchId === 'match-1');
+      assert.equal(afterAtt.length, beforeAtt.length, 'presencas nao devem ser alteradas');
+    },
+  },
+  {
+    name: 'updateMatchMetadata: stats de jogadores preservadas apos edicao de metadata',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const beforeStats = before.matchStats.filter((s) => s.matchId === 'match-1');
+      await mockRepository.updateMatchMetadata(
+        'match-1',
+        { date: '2026-04-10', time: '20:00', venue: 'Arena Bocaiuva', locationUrl: null, matchType: 'society' },
+        'user-admin',
+      );
+      const after = await mockRepository.getSnapshot();
+      const afterStats = after.matchStats.filter((s) => s.matchId === 'match-1');
+      assert.equal(afterStats.length, beforeStats.length, 'numero de stats nao deve mudar');
+      const player9before = beforeStats.find((s) => s.playerId === 'player-9');
+      const player9after = afterStats.find((s) => s.playerId === 'player-9');
+      assert.equal(player9after?.goals, player9before?.goals, 'gols de player-9 nao devem mudar');
+    },
+  },
+  {
+    name: 'updateMatchMetadata: jogador sem permissao nao pode editar metadata',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'atacante@bocaiuva.app', password: '123456' });
+      await assert.rejects(
+        () =>
+          mockRepository.updateMatchMetadata(
+            'match-1',
+            { date: '2026-04-10', time: '20:00', venue: 'Arena Hacker', locationUrl: null, matchType: 'society' },
+            'user-striker',
+          ),
+        (error) => error instanceof Error,
+        'nao-admin deve receber erro ao tentar editar metadata',
+      );
+    },
+  },
+  {
+    name: 'updateMatchMetadata: partida com deletedAt nao pode ser editada',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await mockRepository.deleteMatch('match-1', 'user-admin');
+      await assert.rejects(
+        () =>
+          mockRepository.updateMatchMetadata(
+            'match-1',
+            { date: '2026-04-10', time: '20:00', venue: 'Arena Nova', locationUrl: null, matchType: 'society' },
+            'user-admin',
+          ),
+        (error) => error instanceof Error && error.message.toLowerCase().includes('exclu'),
+        'partida excluida nao pode ter metadata editada',
+      );
+    },
+  },
+
+  // ── Frente B: updateFinishedMatchStats ────────────────────────────────────
+  {
+    name: 'updateFinishedMatchStats: admin aumenta gols de jogador em partida encerrada',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const beforeStat = before.matchStats.find((s) => s.matchId === 'match-1' && s.playerId === 'player-8');
+      assert.equal(beforeStat?.goals, 1, 'player-8 deve ter 1 gol no seed');
+      await mockRepository.updateFinishedMatchStats(
+        {
+          matchId: 'match-1',
+          teamScore: 5,
+          opponentScore: 2,
+          ownGoalsForTeam: 0,
+          fieldCost: null,
+          playerStats: [
+            { playerId: 'player-8', goals: 3, assists: 0 },
+            { playerId: 'player-9', goals: 2, assists: 1 },
+          ],
+        },
+        'user-admin',
+      );
+      const after = await mockRepository.getSnapshot();
+      const afterStat = after.matchStats.find((s) => s.matchId === 'match-1' && s.playerId === 'player-8');
+      assert.equal(afterStat?.goals, 3, 'player-8 deve ter 3 gols apos edicao');
+    },
+  },
+  {
+    name: 'updateFinishedMatchStats: status permanece finished apos edicao',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await mockRepository.updateFinishedMatchStats(
+        {
+          matchId: 'match-1',
+          teamScore: 3,
+          opponentScore: 1,
+          ownGoalsForTeam: 0,
+          fieldCost: null,
+          playerStats: [{ playerId: 'player-9', goals: 3, assists: 0 }],
+        },
+        'user-admin',
+      );
+      const snapshot = await mockRepository.getSnapshot();
+      const match = snapshot.matches.find((m) => m.id === 'match-1');
+      assert.equal(match?.status, 'finished', 'status deve permanecer finished');
+    },
+  },
+  {
+    name: 'updateFinishedMatchStats: finishedAt preservado apos edicao',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const beforeMatch = before.matches.find((m) => m.id === 'match-1');
+      const originalFinishedAt = beforeMatch?.finishedAt;
+      assert.ok(originalFinishedAt, 'match-1 deve ter finishedAt no seed');
+      await mockRepository.updateFinishedMatchStats(
+        {
+          matchId: 'match-1',
+          teamScore: 3,
+          opponentScore: 1,
+          ownGoalsForTeam: 0,
+          fieldCost: null,
+          playerStats: [{ playerId: 'player-9', goals: 3, assists: 0 }],
+        },
+        'user-admin',
+      );
+      const after = await mockRepository.getSnapshot();
+      const afterMatch = after.matches.find((m) => m.id === 'match-1');
+      assert.equal(afterMatch?.finishedAt, originalFinishedAt, 'finishedAt nao deve ser alterado');
+    },
+  },
+  {
+    name: 'updateFinishedMatchStats: MVP e votos preservados apos edicao',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const beforeMatch = before.matches.find((m) => m.id === 'match-1');
+      assert.deepEqual(beforeMatch?.mvpWinnerPlayerIds, ['player-9'], 'MVP deve ser player-9 no seed');
+      await mockRepository.updateFinishedMatchStats(
+        {
+          matchId: 'match-1',
+          teamScore: 5,
+          opponentScore: 2,
+          ownGoalsForTeam: 0,
+          fieldCost: null,
+          playerStats: [{ playerId: 'player-1', goals: 5, assists: 0 }],
+        },
+        'user-admin',
+      );
+      const after = await mockRepository.getSnapshot();
+      const afterMatch = after.matches.find((m) => m.id === 'match-1');
+      assert.deepEqual(afterMatch?.mvpWinnerPlayerIds, ['player-9'], 'MVP nao deve mudar apos edicao de stats');
+      assert.equal(afterMatch?.mvpTotalVotes, beforeMatch?.mvpTotalVotes, 'votos MVP nao devem mudar');
+    },
+  },
+  {
+    name: 'updateFinishedMatchStats: placar atualizado corretamente no snapshot',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await mockRepository.updateFinishedMatchStats(
+        {
+          matchId: 'match-1',
+          teamScore: 1,
+          opponentScore: 3,
+          ownGoalsForTeam: 0,
+          fieldCost: null,
+          playerStats: [{ playerId: 'player-9', goals: 1, assists: 0 }],
+        },
+        'user-admin',
+      );
+      const snapshot = await mockRepository.getSnapshot();
+      const match = snapshot.matches.find((m) => m.id === 'match-1');
+      assert.equal(match?.scoreboard?.team, 1, 'placar do time deve ser 1');
+      assert.equal(match?.scoreboard?.opponent, 3, 'placar do adversario deve ser 3');
+      assert.equal(match?.scoreboard?.result, 'loss', 'resultado deve ser loss');
+    },
+  },
+  {
+    name: 'updateFinishedMatchStats: jogador sem permissao nao pode editar estatisticas',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'atacante@bocaiuva.app', password: '123456' });
+      await assert.rejects(
+        () =>
+          mockRepository.updateFinishedMatchStats(
+            {
+              matchId: 'match-1',
+              teamScore: 2,
+              opponentScore: 1,
+              ownGoalsForTeam: 0,
+              fieldCost: null,
+              playerStats: [{ playerId: 'player-9', goals: 2, assists: 0 }],
+            },
+            'user-striker',
+          ),
+        (error) => error instanceof Error,
+        'nao-admin deve receber erro ao tentar editar estatisticas',
+      );
+    },
+  },
+  {
+    name: 'updateFinishedMatchStats: partida nao-encerrada rejeita edicao de stats',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await assert.rejects(
+        () =>
+          mockRepository.updateFinishedMatchStats(
+            {
+              matchId: 'match-4',
+              teamScore: 2,
+              opponentScore: 1,
+              ownGoalsForTeam: 0,
+              fieldCost: null,
+              playerStats: [],
+            },
+            'user-admin',
+          ),
+        (error) => error instanceof Error && error.message.toLowerCase().includes('encerrada'),
+        'partida nao encerrada deve rejeitar updateFinishedMatchStats',
+      );
+    },
+  },
 ];
 
 let failed = 0;

@@ -120,6 +120,7 @@ import type {
   SubmitMvpVoteInput,
   SubmitPlayerRatingInput,
   UpdateMatchInput,
+  UpdateMatchMetadataInput,
   UpdateMatchFieldPaymentInput,
   UpdateMatchDiaryEntryInput,
   UpdateRatingCriterionInput,
@@ -2743,6 +2744,24 @@ export const mockRepository: AppRepository = {
     return clone(match);
   },
 
+  async updateMatchMetadata(matchId: string, input: UpdateMatchMetadataInput, actorUserId: string) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    const match = findMatchForTeam(activeTeamId, matchId);
+    requireTeamAdmin(actorUserId, match.teamId);
+
+    if (match.deletedAt) {
+      throw new Error('Esta partida foi excluída e não pode ser editada.');
+    }
+
+    const updatedAt = nowIso();
+    match.date = input.date;
+    match.time = input.time;
+    match.venue = input.venue.trim();
+    match.locationUrl = input.locationUrl?.trim() || null;
+    match.matchType = input.matchType;
+    match.updatedAt = updatedAt;
+  },
+
   async updateMatchFieldPayment(
     matchId: string,
     input: UpdateMatchFieldPaymentInput,
@@ -3122,6 +3141,115 @@ export const mockRepository: AppRepository = {
     } catch {
       // best-effort: falha nas notificações não desfaz o encerramento
     }
+
+    return clone(match);
+  },
+
+  async updateFinishedMatchStats(input: FinishMatchInput, actorUserId: string) {
+    const { actor, activeTeamId } = ensureActiveTeamContext(actorUserId);
+    const match = findMatchForTeam(activeTeamId, input.matchId);
+    requireTeamAdmin(actorUserId, match.teamId);
+
+    if (match.status !== 'finished') {
+      throw new Error('Esta função só pode ser usada em partidas já encerradas.');
+    }
+
+    const now = nowIso();
+    const snapshot = snapshotForTeam(activeTeamId);
+    const confirmedPlayerIds = new Set(getConfirmedPlayerIds(snapshot, match.id));
+    const starterIds = new Set(
+      findLineupForTeam(activeTeamId, match.id)?.starters.map((item) => item.playerId) ?? [],
+    );
+
+    const ownGoalsForTeam = input.ownGoalsForTeam ?? 0;
+
+    if (input.teamScore < 0 || input.opponentScore < 0 || ownGoalsForTeam < 0) {
+      throw new Error('O placar não pode ter números negativos.');
+    }
+
+    if (confirmedPlayerIds.size === 0) {
+      throw new Error('Confirme a presença do elenco antes de salvar as estatísticas.');
+    }
+
+    for (const stat of input.playerStats) {
+      if (!confirmedPlayerIds.has(stat.playerId)) {
+        throw new Error('Somente jogadores confirmados podem receber estatísticas da partida.');
+      }
+      if (stat.goals < 0 || stat.assists < 0) {
+        throw new Error('Gols e assistências não podem ser negativos.');
+      }
+    }
+
+    const submittedMap = input.playerStats.reduce<Record<string, { goals: number; assists: number }>>(
+      (acc, stat) => {
+        acc[stat.playerId] = { goals: stat.goals, assists: stat.assists };
+        return acc;
+      },
+      {},
+    );
+
+    const nextStatIds = new Set(
+      [...confirmedPlayerIds].map((playerId) => buildStableDocumentId(match.id, playerId)),
+    );
+    database.matchStats = database.matchStats.filter(
+      (item) => item.matchId !== match.id || nextStatIds.has(item.id),
+    );
+
+    const statsToInsert = [...confirmedPlayerIds].map<MatchStat>((playerId) => {
+      const existing = findMatchStatsForMatch(activeTeamId, match.id).find(
+        (item) => item.playerId === playerId,
+      );
+      return {
+        id: buildStableDocumentId(match.id, playerId),
+        teamId: match.teamId,
+        matchId: match.id,
+        playerId,
+        played: true,
+        started: starterIds.has(playerId),
+        goals: submittedMap[playerId]?.goals ?? 0,
+        assists: submittedMap[playerId]?.assists ?? 0,
+        yellowCards: 0,
+        redCards: 0,
+        notes: '',
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+    });
+
+    for (const stat of statsToInsert) {
+      const existingIndex = database.matchStats.findIndex((item) => item.id === stat.id);
+      if (existingIndex >= 0) {
+        database.matchStats[existingIndex] = stat;
+      } else {
+        database.matchStats.push(stat);
+      }
+    }
+
+    match.scoreboard = {
+      team: input.teamScore,
+      opponent: input.opponentScore,
+      ownGoalsForTeam,
+      result: calculateMatchResult(input.teamScore, input.opponentScore),
+    };
+    const nextFieldCost = input.fieldCost
+      ? buildMatchFieldCost({
+          values: input.fieldCost,
+          updatedAt: now,
+          updatedByUserId: actor.id,
+        })
+      : null;
+    if (
+      nextFieldCost &&
+      match.fieldPayment &&
+      getMatchFieldPaymentSummary(nextFieldCost, match.fieldPayment).totalPaidCount > nextFieldCost.splitCount
+    ) {
+      throw new Error('A nova divisão do campo não comporta a quantidade de pagantes já marcada.');
+    }
+
+    match.fieldCost = nextFieldCost;
+    match.fieldPayment = nextFieldCost ? match.fieldPayment ?? null : null;
+    // status and finishedAt preserved intentionally
+    match.updatedAt = now;
 
     return clone(match);
   },

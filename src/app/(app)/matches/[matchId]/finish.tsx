@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { MetricCard } from '@/components/cards/MetricCard';
@@ -57,6 +57,7 @@ export default function FinishMatchScreen() {
   const match = useAppStore((state) => findMatchById(state, String(matchId)));
   const canManage = useAppStore(selectCanManageTeam);
   const finishMatch = useAppStore((state) => state.finishMatch);
+  const updateFinishedMatchStats = useAppStore((state) => state.updateFinishedMatchStats);
   const currentMatch = match ?? null;
   const confirmedPlayers = useMemo(
     () => (currentMatch ? getConfirmedPlayers(snapshot, currentMatch.id) : []),
@@ -97,6 +98,7 @@ export default function FinishMatchScreen() {
   );
   const [fieldCostNote, setFieldCostNote] = useState(currentMatch?.fieldCost?.note ?? '');
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentMatch) {
@@ -202,24 +204,22 @@ export default function FinishMatchScreen() {
       return;
     }
 
-    if (__DEV__) console.log('[match-finish-ui] finish button pressed', { matchId: currentMatch.id });
+    const isReEdit = currentMatch.status === 'finished';
+
+    if (__DEV__) console.log('[finish-match] save button pressed', { matchId: currentMatch.id, mode: isReEdit ? 'edit-finished' : 'finish' });
 
     let nextFieldCost = null;
 
     if (hasFieldCostInput) {
-      if (__DEV__) console.log('[match-finish-ui] validation start');
       if (parsedFieldCostTotalAmount == null || parsedFieldCostTotalAmount < 0) {
-        if (__DEV__) console.log('[match-finish-ui] validation fail: invalid field cost amount');
-        Alert.alert('Valor do campo inválido', 'Informe um valor total maior ou igual a zero.');
+        if (__DEV__) console.log('[finish-match] validation fail: invalid field cost amount');
+        setSaveError('Valor do campo inválido. Informe um valor total maior ou igual a zero.');
         return;
       }
 
       if (parsedFieldCostSplitCount == null || parsedFieldCostSplitCount <= 0) {
-        if (__DEV__) console.log('[match-finish-ui] validation fail: invalid split count');
-        Alert.alert(
-          'Divisão inválida',
-          'Informe em quantas pessoas o valor do campo será dividido.',
-        );
+        if (__DEV__) console.log('[finish-match] validation fail: invalid split count');
+        setSaveError('Divisão inválida. Informe em quantas pessoas o valor do campo será dividido.');
         return;
       }
 
@@ -242,17 +242,23 @@ export default function FinishMatchScreen() {
         assists: playerStats[player.id]?.assists ?? 0,
       })),
     };
-    if (__DEV__) console.log('[match-finish-ui] payload prepared', payload);
+
+    if (__DEV__) console.log('[finish-match] payload', { ...payload, mode: isReEdit ? 'edit-finished' : 'finish' });
 
     setSaving(true);
+    setSaveError(null);
     try {
-      await finishMatch(payload);
+      if (isReEdit) {
+        if (__DEV__) console.log('[finish-match] mode edit-finished');
+        await updateFinishedMatchStats(payload);
+      } else {
+        if (__DEV__) console.log('[finish-match] mode finish');
+        await finishMatch(payload);
+      }
       router.replace(`/matches/${currentMatch.id}`);
     } catch (error) {
-      Alert.alert(
-        'Não foi possível encerrar',
-        error instanceof Error ? error.message : 'Tente novamente.',
-      );
+      if (__DEV__) console.error('[finish-match] error', { mode: isReEdit ? 'edit-finished' : 'finish', message: (error as Error)?.message });
+      setSaveError(error instanceof Error ? error.message : 'Não foi possível salvar. Tente novamente.');
     } finally {
       setSaving(false);
     }
@@ -478,6 +484,10 @@ export default function FinishMatchScreen() {
         </View>
       ))}
 
+      {saveError ? (
+        <Text style={[styles.saveError, { color: theme.colors.danger }]}>{saveError}</Text>
+      ) : null}
+
       <AppButton
         label={currentMatch.status === 'finished' ? 'Salvar estatísticas' : 'Encerrar jogo'}
         onPress={handleSave}
@@ -585,5 +595,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+  },
+  saveError: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
   },
 });

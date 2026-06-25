@@ -179,6 +179,14 @@ export interface UpdateMatchInput {
   status?: Match['status'];
 }
 
+export interface UpdateMatchMetadataInput {
+  date: string;
+  time: string;
+  venue: string;
+  locationUrl?: string | null;
+  matchType: MatchType;
+}
+
 export interface UpdateAttendanceInput {
   matchId: string;
   playerId: string;
@@ -378,6 +386,7 @@ export interface AppRepository {
   reactivatePlayer(playerId: string, actorUserId: string): Promise<Player>;
   createMatch(input: CreateMatchInput, creatorUserId: string): Promise<Match>;
   updateMatch(matchId: string, input: UpdateMatchInput, actorUserId: string): Promise<Match>;
+  updateMatchMetadata(matchId: string, input: UpdateMatchMetadataInput, actorUserId: string): Promise<void>;
   updateMatchFieldPayment(
     matchId: string,
     input: UpdateMatchFieldPaymentInput,
@@ -386,6 +395,7 @@ export interface AppRepository {
   updateAttendance(input: UpdateAttendanceInput, actorUserId: string): Promise<AttendanceRecord>;
   saveLineup(input: SaveLineupInput, actorUserId: string): Promise<Lineup>;
   finishMatch(input: FinishMatchInput, actorUserId: string): Promise<Match>;
+  updateFinishedMatchStats(input: FinishMatchInput, actorUserId: string): Promise<Match>;
   registerFinishedMatch(
     input: RegisterFinishedMatchInput,
     actorUserId: string,

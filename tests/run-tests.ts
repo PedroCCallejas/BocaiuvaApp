@@ -4081,6 +4081,136 @@ const testCases: TestCase[] = [
     },
   },
   {
+    name: 'admin publica resenha com titulo, texto, humor e jogadores mencionados',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const entry = await mockRepository.createMatchDiaryEntry(
+        {
+          matchId: 'match-1',
+          title: 'Que partida!',
+          content: 'Time mostrou muito foco e determinacao.',
+          mood: 'highlight',
+          mentionedPlayerIds: ['player-10'],
+          notifyTeam: false,
+          pinned: true,
+        },
+        'user-admin',
+      );
+      assert.ok(entry.id, 'resenha deve ter id apos criacao');
+      assert.equal(entry.title, 'Que partida!', 'titulo deve ser salvo');
+      assert.equal(entry.mood, 'highlight', 'humor deve ser salvo');
+      assert.ok(entry.mentionedPlayerIds.includes('player-10'), 'jogador mencionado deve estar na resenha');
+      assert.equal(entry.pinned, true, 'pinned deve ser salvo');
+      const snapshot = await mockRepository.getSnapshot();
+      const found = snapshot.matchDiaryEntries.find((e) => e.id === entry.id);
+      assert.ok(found, 'resenha deve persistir no snapshot');
+    },
+  },
+  {
+    name: 'admin publica resenha com notifyTeam e resenha e salva independentemente das notificacoes',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const entry = await mockRepository.createMatchDiaryEntry(
+        {
+          matchId: 'match-1',
+          title: 'Resenha com notificacao',
+          content: 'Texto da resenha com notificacao ligada.',
+          mentionedPlayerIds: ['player-10'],
+          notifyTeam: true,
+          pinned: false,
+        },
+        'user-admin',
+      );
+      assert.ok(entry.id, 'resenha deve ter id mesmo com notifyTeam true');
+      const snapshot = await mockRepository.getSnapshot();
+      const found = snapshot.matchDiaryEntries.find((e) => e.id === entry.id);
+      assert.ok(found, 'resenha deve persistir no snapshot apos publicacao com notificacao');
+    },
+  },
+  {
+    name: 'admin edita resenha existente e alteracoes persistem',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const entry = await mockRepository.createMatchDiaryEntry(
+        {
+          matchId: 'match-1',
+          title: 'Titulo original',
+          content: 'Conteudo original da resenha.',
+          mentionedPlayerIds: [],
+          notifyTeam: false,
+          pinned: false,
+        },
+        'user-admin',
+      );
+      await mockRepository.updateMatchDiaryEntry(
+        entry.id,
+        {
+          title: 'Titulo editado',
+          content: 'Conteudo editado apos edicao.',
+          mood: 'warning',
+          pinned: true,
+          notifyTeam: false,
+        },
+        'user-admin',
+      );
+      const snapshot = await mockRepository.getSnapshot();
+      const updated = snapshot.matchDiaryEntries.find((e) => e.id === entry.id);
+      assert.ok(updated, 'resenha editada deve existir no snapshot');
+      assert.equal(updated?.title, 'Titulo editado', 'titulo deve estar atualizado');
+      assert.equal(updated?.mood, 'warning', 'humor deve estar atualizado');
+      assert.equal(updated?.pinned, true, 'pinned deve estar atualizado');
+    },
+  },
+  {
+    name: 'jogador comum nao pode publicar resenha',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'atacante@bocaiuva.app', password: '123456' });
+      await assert.rejects(
+        () =>
+          mockRepository.createMatchDiaryEntry(
+            {
+              matchId: 'match-1',
+              title: 'Resenha nao autorizada',
+              content: 'Tentativa de publicacao por jogador comum.',
+              mentionedPlayerIds: [],
+            },
+            'user-striker',
+          ),
+        (error) =>
+          error instanceof Error && error.message.toLowerCase().includes('administrador'),
+      );
+    },
+  },
+  {
+    name: 'resenha publicada pelo admin persiste apos segunda leitura do snapshot',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const entry = await mockRepository.createMatchDiaryEntry(
+        {
+          matchId: 'match-1',
+          title: 'Persistencia',
+          content: 'Texto que deve persistir.',
+          mentionedPlayerIds: [],
+          notifyTeam: false,
+          pinned: false,
+        },
+        'user-admin',
+      );
+      const snapshot1 = await mockRepository.getSnapshot();
+      const snapshot2 = await mockRepository.getSnapshot();
+      const found1 = snapshot1.matchDiaryEntries.find((e) => e.id === entry.id);
+      const found2 = snapshot2.matchDiaryEntries.find((e) => e.id === entry.id);
+      assert.ok(found1, 'resenha deve existir na primeira leitura');
+      assert.ok(found2, 'resenha deve existir na segunda leitura (persistencia)');
+      assert.equal(found1?.content, found2?.content, 'conteudo deve ser identico nas duas leituras');
+    },
+  },
+  {
     name: 'admin exclui criterio sem uso e criterio some do snapshot',
     async run() {
       resetMockRepositoryState();

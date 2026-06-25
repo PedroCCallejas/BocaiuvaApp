@@ -7211,36 +7211,57 @@ export const firebaseRepository: AppRepository = {
         updatedAt,
       });
 
-      const batch = writeBatch(firestore);
-      batch.set(
-        doc(firestore, FIRESTORE_COLLECTIONS.matchDiaryEntries, entry.id),
-        entry,
-      );
-
-      if (input.notifyTeam) {
-        const [teamMembers, existingNotifications] = await Promise.all([
-          fetchTeamMembersByTeamId(activeTeamId),
-          fetchAllNotificationsByTeamId(activeTeamId),
-        ]);
-        const notificationDocuments = buildDiaryNotificationDocuments({
-          entry,
-          match,
-          actorUserId: actor.id,
-          teamMembers,
-          existingNotifications,
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[match-diary] save start', {
+          matchId: input.matchId,
+          teamId: activeTeamId,
+          uid: actor.id,
+          canManage: membership.canManageTeam,
+          notifyTeam: input.notifyTeam,
         });
-
-        for (const notification of notificationDocuments) {
-          batch.set(
-            doc(firestore, FIRESTORE_COLLECTIONS.notifications, notification.id),
-            notification,
-          );
-        }
       }
 
-      await batch.commit();
+      await setDoc(doc(firestore, FIRESTORE_COLLECTIONS.matchDiaryEntries, entry.id), entry);
+
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[match-diary] save success', { entryId: entry.id });
+      }
+
+      if (input.notifyTeam) {
+        await runBestEffort('createMatchDiaryEntry:notification', async () => {
+          const [teamMembers, existingNotifications] = await Promise.all([
+            fetchTeamMembersByTeamId(activeTeamId),
+            fetchAllNotificationsByTeamId(activeTeamId),
+          ]);
+          const notificationDocuments = buildDiaryNotificationDocuments({
+            entry,
+            match,
+            actorUserId: actor.id,
+            teamMembers,
+            existingNotifications,
+          });
+
+          if (notificationDocuments.length > 0) {
+            const notifBatch = writeBatch(firestore);
+            for (const notification of notificationDocuments) {
+              notifBatch.set(
+                doc(firestore, FIRESTORE_COLLECTIONS.notifications, notification.id),
+                notification,
+              );
+            }
+            await notifBatch.commit();
+          }
+        });
+      }
+
       return entry;
     } catch (error) {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.error('[match-diary] save failed', {
+          matchId: input.matchId,
+          error,
+        });
+      }
       throw toFriendlyFirestoreError(
         error,
         'Não foi possível publicar a resenha agora.',
@@ -7297,52 +7318,81 @@ export const firebaseRepository: AppRepository = {
         updatedAt,
       });
 
-      const batch = writeBatch(firestore);
-      batch.set(
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[match-diary] save start', {
+          entryId,
+          teamId: activeTeamId,
+          uid: actor.id,
+          canManage: membership.canManageTeam,
+          notifyTeam: input.notifyTeam,
+        });
+      }
+
+      await setDoc(
         doc(firestore, FIRESTORE_COLLECTIONS.matchDiaryEntries, updatedEntry.id),
         updatedEntry,
       );
 
-      if (input.notifyTeam) {
-        const [teamMembers, existingNotifications] = await Promise.all([
-          fetchTeamMembersByTeamId(activeTeamId),
-          fetchAllNotificationsByTeamId(activeTeamId),
-        ]);
-        const existingDiaryNotifications = existingNotifications.filter(
-          (notification) =>
-            notification.type === 'match-diary-published' &&
-            notification.entryId === updatedEntry.id,
-        );
-        const nextNotificationDocuments = buildDiaryNotificationDocuments({
-          entry: updatedEntry,
-          match,
-          actorUserId: actor.id,
-          teamMembers,
-          existingNotifications,
-        });
-        const nextNotificationIds = new Set(
-          nextNotificationDocuments.map((notification) => notification.id),
-        );
-
-        for (const notification of existingDiaryNotifications) {
-          if (!nextNotificationIds.has(notification.id)) {
-            batch.delete(
-              doc(firestore, FIRESTORE_COLLECTIONS.notifications, notification.id),
-            );
-          }
-        }
-
-        for (const notification of nextNotificationDocuments) {
-          batch.set(
-            doc(firestore, FIRESTORE_COLLECTIONS.notifications, notification.id),
-            notification,
-          );
-        }
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[match-diary] save success', { entryId: updatedEntry.id });
       }
 
-      await batch.commit();
+      if (input.notifyTeam) {
+        await runBestEffort('updateMatchDiaryEntry:notification', async () => {
+          const [teamMembers, existingNotifications] = await Promise.all([
+            fetchTeamMembersByTeamId(activeTeamId),
+            fetchAllNotificationsByTeamId(activeTeamId),
+          ]);
+          const existingDiaryNotifications = existingNotifications.filter(
+            (notification) =>
+              notification.type === 'match-diary-published' &&
+              notification.entryId === updatedEntry.id,
+          );
+          const nextNotificationDocuments = buildDiaryNotificationDocuments({
+            entry: updatedEntry,
+            match,
+            actorUserId: actor.id,
+            teamMembers,
+            existingNotifications,
+          });
+          const nextNotificationIds = new Set(
+            nextNotificationDocuments.map((notification) => notification.id),
+          );
+
+          const notifBatch = writeBatch(firestore);
+          let hasChanges = false;
+
+          for (const notification of existingDiaryNotifications) {
+            if (!nextNotificationIds.has(notification.id)) {
+              notifBatch.delete(
+                doc(firestore, FIRESTORE_COLLECTIONS.notifications, notification.id),
+              );
+              hasChanges = true;
+            }
+          }
+
+          for (const notification of nextNotificationDocuments) {
+            notifBatch.set(
+              doc(firestore, FIRESTORE_COLLECTIONS.notifications, notification.id),
+              notification,
+            );
+            hasChanges = true;
+          }
+
+          if (hasChanges) {
+            await notifBatch.commit();
+          }
+        });
+      }
+
       return updatedEntry;
     } catch (error) {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.error('[match-diary] save failed', {
+          entryId,
+          error,
+        });
+      }
       throw toFriendlyFirestoreError(
         error,
         'Não foi possível atualizar a resenha agora.',

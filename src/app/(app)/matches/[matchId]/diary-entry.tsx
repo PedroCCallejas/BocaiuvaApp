@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { AppButton } from '@/components/ui/AppButton';
@@ -40,6 +40,7 @@ export default function MatchDiaryEntryScreen() {
   const [notifyTeam, setNotifyTeam] = useState(true);
   const [pinned, setPinned] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const editableEntry = useMemo(() => {
     if (!entryId) {
@@ -124,6 +125,18 @@ export default function MatchDiaryEntryScreen() {
   }
 
   async function handleSubmit() {
+    setSaveError(null);
+
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.log('[match-diary] publish pressed', {
+        matchId: currentMatch.id,
+        entryId: editableEntry?.id ?? null,
+        notifyTeam,
+        pinned,
+        mentionedPlayerIds,
+      });
+    }
+
     try {
       setSaving(true);
 
@@ -150,9 +163,26 @@ export default function MatchDiaryEntryScreen() {
 
       router.replace(`/matches/${currentMatch.id}`);
     } catch (error) {
-      Alert.alert(
-        'Não foi possível salvar a resenha',
-        error instanceof Error ? error.message : 'Tente novamente.',
+      const isPermissionDenied =
+        error instanceof Error &&
+        (error.message.toLowerCase().includes('permission') ||
+          (error as { code?: string }).code === 'permission-denied');
+
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.error('[match-diary] save failed', {
+          matchId: currentMatch.id,
+          entryId: editableEntry?.id ?? null,
+          code: (error as { code?: string }).code,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      setSaveError(
+        isPermissionDenied
+          ? 'Seu usuário não tem permissão para publicar a resenha desta partida. Verifique se você é admin do time.'
+          : error instanceof Error
+            ? error.message
+            : 'Não foi possível salvar a resenha. Tente novamente.',
       );
     } finally {
       setSaving(false);
@@ -291,6 +321,12 @@ export default function MatchDiaryEntryScreen() {
         </View>
       </View>
 
+      {saveError ? (
+        <Text style={[styles.errorText, { color: theme.colors.danger }]}>
+          {saveError}
+        </Text>
+      ) : null}
+
       <View style={styles.buttonRow}>
         <AppButton
           label={editableEntry ? 'Salvar resenha' : 'Publicar resenha'}
@@ -375,5 +411,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
+  },
+  errorText: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
   },
 });

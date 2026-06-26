@@ -25,4 +25,4 @@ Disallow: /team-rating-criteria
 Disallow: /lineup
 Disallow: /index
 
-Sitemap: https://bocaiuva-app.vercel.app/sitemap.xml
+Sitemap: https://bocaiuva-app.vercel.app/sitemap-main.xml

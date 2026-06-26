@@ -6644,9 +6644,25 @@ export const firebaseRepository: AppRepository = {
     try {
       const firestore = requireFirestore();
       const { membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
-      if (!membership.canManageTeam) {
+
+      const hasManagePermission =
+        membership.canManageTeam === true ||
+        (Array.isArray(membership.roles) && membership.roles.includes('admin'));
+
+      if (__DEV__) {
+        console.log('[finish-match] permission check', {
+          matchId: input.matchId,
+          uid: actorUserId,
+          teamId: activeTeamId,
+          canManageTeam: membership.canManageTeam,
+          roles: membership.roles,
+          hasManagePermission,
+        });
+      }
+
+      if (!hasManagePermission) {
         throw createRepositoryError(
-          'Apenas o administrador do time pode fazer essa acao.',
+          'Seu usuário não tem permissão para encerrar esta partida. Verifique se você é admin deste time.',
           'permission-denied',
         );
       }
@@ -6863,6 +6879,13 @@ export const firebaseRepository: AppRepository = {
 
       return updatedMatch;
     } catch (error) {
+      if (__DEV__) {
+        console.error('[finish-match] save failed', {
+          matchId: input.matchId,
+          code: (error as { code?: string }).code,
+          message: error instanceof Error ? error.message : 'Erro desconhecido',
+        });
+      }
       throw toFriendlyFirestoreError(
         error,
         'Não foi possível encerrar a partida agora.',

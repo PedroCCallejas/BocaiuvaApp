@@ -17,6 +17,7 @@ import { useAppStore } from '@/store/app-store';
 import {
   findMatchById,
   selectCanManageTeam,
+  selectCurrentMembership,
   selectCurrentTeam,
 } from '@/store/selectors';
 
@@ -58,6 +59,8 @@ export default function FinishMatchScreen() {
   const canManage = useAppStore(selectCanManageTeam);
   const finishMatch = useAppStore((state) => state.finishMatch);
   const updateFinishedMatchStats = useAppStore((state) => state.updateFinishedMatchStats);
+  const currentUserId = useAppStore((state) => state.currentUserId);
+  const currentMembership = useAppStore(selectCurrentMembership);
   const currentMatch = match ?? null;
   const confirmedPlayers = useMemo(
     () => (currentMatch ? getConfirmedPlayers(snapshot, currentMatch.id) : []),
@@ -206,7 +209,17 @@ export default function FinishMatchScreen() {
 
     const isReEdit = currentMatch.status === 'finished';
 
-    if (__DEV__) console.log('[finish-match] save button pressed', { matchId: currentMatch.id, mode: isReEdit ? 'edit-finished' : 'finish' });
+    if (__DEV__) {
+      console.log('[finish-match] button pressed', {
+        matchId: currentMatch.id,
+        mode: isReEdit ? 'edit-finished' : 'finish',
+        teamId: currentMatch.teamId,
+        uid: currentUserId,
+        canManageUI: canManage,
+        membershipCanManageTeam: currentMembership?.canManageTeam,
+        membershipRoles: currentMembership?.roles,
+      });
+    }
 
     let nextFieldCost = null;
 
@@ -245,6 +258,7 @@ export default function FinishMatchScreen() {
 
     if (__DEV__) console.log('[finish-match] payload', { ...payload, mode: isReEdit ? 'edit-finished' : 'finish' });
 
+    if (__DEV__) console.log('[finish-match] save start', { matchId: currentMatch.id, mode: isReEdit ? 'edit-finished' : 'finish' });
     setSaving(true);
     setSaveError(null);
     try {
@@ -255,10 +269,27 @@ export default function FinishMatchScreen() {
         if (__DEV__) console.log('[finish-match] mode finish');
         await finishMatch(payload);
       }
+      if (__DEV__) console.log('[finish-match] principal save success', { matchId: currentMatch.id, mode: isReEdit ? 'edit-finished' : 'finish' });
       router.replace(`/matches/${currentMatch.id}`);
     } catch (error) {
-      if (__DEV__) console.error('[finish-match] error', { mode: isReEdit ? 'edit-finished' : 'finish', message: (error as Error)?.message });
-      setSaveError(error instanceof Error ? error.message : 'Não foi possível salvar. Tente novamente.');
+      const errorCode = (error as { code?: string }).code;
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      if (__DEV__) {
+        console.error('[finish-match] save failed', {
+          mode: isReEdit ? 'edit-finished' : 'finish',
+          code: errorCode,
+          message: errorMessage,
+        });
+      }
+      if (errorCode === 'permission-denied') {
+        setSaveError(
+          isReEdit
+            ? 'Seu usuário não tem permissão para editar as estatísticas desta partida. Verifique se você é admin deste time.'
+            : 'Seu usuário não tem permissão para encerrar esta partida. Verifique se você é admin deste time.',
+        );
+      } else {
+        setSaveError(error instanceof Error ? error.message : 'Não foi possível salvar. Tente novamente.');
+      }
     } finally {
       setSaving(false);
     }

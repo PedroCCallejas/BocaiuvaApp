@@ -6900,9 +6900,24 @@ export const firebaseRepository: AppRepository = {
 
       if (__DEV__) console.log('[finish-match] mode edit-finished', { matchId: input.matchId, uid: actorUserId });
 
-      if (!membership.canManageTeam) {
+      const hasManagePermissionForEdit =
+        membership.canManageTeam === true ||
+        (Array.isArray(membership.roles) && membership.roles.includes('admin'));
+
+      if (__DEV__) {
+        console.log('[finish-match] edit permission check', {
+          matchId: input.matchId,
+          uid: actorUserId,
+          teamId: activeTeamId,
+          canManageTeam: membership.canManageTeam,
+          roles: membership.roles,
+          hasManagePermission: hasManagePermissionForEdit,
+        });
+      }
+
+      if (!hasManagePermissionForEdit) {
         throw createRepositoryError(
-          'Apenas o administrador do time pode fazer essa ação.',
+          'Seu usuário não tem permissão para editar as estatísticas desta partida. Verifique se você é admin deste time.',
           'permission-denied',
         );
       }

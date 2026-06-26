@@ -16,7 +16,6 @@ import { calculateMatchResult, getConfirmedPlayers } from '@/lib/match';
 import { useAppStore } from '@/store/app-store';
 import {
   findMatchById,
-  selectCanManageTeam,
   selectCurrentMembership,
   selectCurrentTeam,
 } from '@/store/selectors';
@@ -56,12 +55,26 @@ export default function FinishMatchScreen() {
   const snapshot = useAppStore((state) => state.snapshot);
   const team = useAppStore(selectCurrentTeam);
   const match = useAppStore((state) => findMatchById(state, String(matchId)));
-  const canManage = useAppStore(selectCanManageTeam);
   const finishMatch = useAppStore((state) => state.finishMatch);
   const updateFinishedMatchStats = useAppStore((state) => state.updateFinishedMatchStats);
   const currentUserId = useAppStore((state) => state.currentUserId);
   const currentMembership = useAppStore(selectCurrentMembership);
   const currentMatch = match ?? null;
+
+  const canManage = useMemo(() => {
+    if (!currentMatch) return false;
+    const matchMembership = snapshot.teamMembers.find(
+      (m) =>
+        m.userId === currentUserId &&
+        m.teamId === currentMatch.teamId &&
+        m.status === 'active',
+    );
+    const target = matchMembership ?? currentMembership;
+    return (
+      (target?.canManageTeam === true) ||
+      (Array.isArray(target?.roles) && target.roles.includes('admin'))
+    );
+  }, [currentMatch, currentMembership, currentUserId, snapshot.teamMembers]);
   const confirmedPlayers = useMemo(
     () => (currentMatch ? getConfirmedPlayers(snapshot, currentMatch.id) : []),
     [currentMatch, snapshot],
@@ -282,10 +295,17 @@ export default function FinishMatchScreen() {
         });
       }
       if (errorCode === 'permission-denied') {
+        const matchTeam = snapshot.teams.find((t) => t.id === currentMatch.teamId);
+        const matchTeamName = matchTeam?.name ?? 'este time';
+        const activeTeamName = team?.name ?? null;
+        const teamInfo =
+          activeTeamName && activeTeamName !== matchTeamName
+            ? ` (time ativo: ${activeTeamName})`
+            : '';
         setSaveError(
           isReEdit
-            ? 'Seu usuário não tem permissão para editar as estatísticas desta partida. Verifique se você é admin deste time.'
-            : 'Seu usuário não tem permissão para encerrar esta partida. Verifique se você é admin deste time.',
+            ? `Sem permissão de admin para "${matchTeamName}"${teamInfo}. Se o erro persistir, o administrador deve executar uma sincronização de índice.`
+            : `Sem permissão de admin para "${matchTeamName}"${teamInfo}. Se o erro persistir, o administrador deve executar uma sincronização de índice.`,
         );
       } else {
         setSaveError(error instanceof Error ? error.message : 'Não foi possível salvar. Tente novamente.');

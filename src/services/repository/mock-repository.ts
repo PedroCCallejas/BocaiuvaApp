@@ -149,6 +149,14 @@ export function resetMockRepositoryState() {
   repairingMockUsers.clear();
 }
 
+export function patchMockTeamMember(memberId: string, patch: Partial<TeamMember>) {
+  const member = database.teamMembers.find((m) => m.id === memberId);
+  if (member) {
+    Object.assign(member, patch);
+    syncTeamMembershipIndexDocument(member);
+  }
+}
+
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -972,8 +980,10 @@ function findTeamByInviteCode(inviteCode: string) {
 
 function requireTeamAdmin(actorUserId: string, teamId: string) {
   const { actor, membership } = ensureMembershipContext(actorUserId, teamId);
+  const hasManagePermission =
+    membership.canManageTeam || membership.roles.includes('admin');
 
-  if (!membership.canManageTeam) {
+  if (!hasManagePermission) {
     throw new Error('Apenas o administrador do time pode fazer essa acao.');
   }
 

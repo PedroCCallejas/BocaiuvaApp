@@ -14,6 +14,7 @@
     "repair:players-linked-email:dry": "node --no-warnings --experimental-strip-types ./scripts/repair-players-linked-email.ts --dry-run",
     "repair:players-linked-email": "node --no-warnings --experimental-strip-types ./scripts/repair-players-linked-email.ts",
     "audit:membership-index": "node --no-warnings --experimental-strip-types ./scripts/audit-membership-index.ts",
+    "audit:finish-permission": "node --no-warnings --experimental-strip-types ./scripts/audit-finish-match-permission.ts",
     "backfill:membership-index:dry": "node --no-warnings --experimental-strip-types ./scripts/backfill-team-membership-index.ts --dry-run",
     "backfill:membership-index": "node --no-warnings --experimental-strip-types ./scripts/backfill-team-membership-index.ts"
   },

@@ -89,6 +89,7 @@ import { appendCacheBustParam } from '@/lib/storage-url';
 import { toFriendlyAuthError } from '@/services/auth/errors';
 import {
   mockRepository,
+  patchMockTeamMember,
   resetMockRepositoryState,
 } from '@/services/repository/mock-repository';
 import { normalizeTeamMemberStatus } from '@/lib/team-membership';
@@ -3909,6 +3910,213 @@ const testCases: TestCase[] = [
       assert.ok(stats.length >= 2, 'deve ter stats para os dois jogadores');
       const p7 = stats.find((s) => s.playerId === 'player-7');
       assert.equal(p7?.goals, 2, 'gols do player-7 devem estar salvos');
+    },
+  },
+
+  // ── permissão encerrar partida: roles vs canManageTeam ───────────────────────
+  {
+    name: 'canManageTeam false com roles admin pode encerrar partida (fix roles.includes)',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      // Força membership do admin com canManageTeam=false mas roles=['admin','player']
+      patchMockTeamMember('member-admin-bocaiuva', { canManageTeam: false, roles: ['admin', 'player'] });
+
+      const result = await mockRepository.finishMatch(
+        {
+          matchId: 'match-3',
+          teamScore: 2,
+          opponentScore: 1,
+          playerStats: [{ playerId: 'player-7', goals: 2, assists: 0 }],
+        },
+        'user-admin',
+      );
+      assert.equal(result.status, 'finished', 'admin com roles=[admin] e canManageTeam=false deve poder encerrar');
+    },
+  },
+  {
+    name: 'updateFinishedMatchStats com roles admin e canManageTeam false tem sucesso',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      // Primeiro encerra a partida normalmente
+      await mockRepository.finishMatch(
+        {
+          matchId: 'match-3',
+          teamScore: 1,
+          opponentScore: 0,
+          playerStats: [{ playerId: 'player-7', goals: 1, assists: 0 }],
+        },
+        'user-admin',
+      );
+      // Troca canManageTeam para false mas mantém roles=['admin','player']
+      patchMockTeamMember('member-admin-bocaiuva', { canManageTeam: false, roles: ['admin', 'player'] });
+
+      const result = await mockRepository.updateFinishedMatchStats(
+        {
+          matchId: 'match-3',
+          teamScore: 3,
+          opponentScore: 2,
+          playerStats: [{ playerId: 'player-7', goals: 3, assists: 0 }],
+        },
+        'user-admin',
+      );
+      assert.equal(result.status, 'finished', 'deve permanecer finished');
+    },
+  },
+  {
+    name: 'jogador com canManageTeam false e roles player nao pode encerrar partida',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'atacante@bocaiuva.app', password: '123456' });
+
+      await assert.rejects(
+        () =>
+          mockRepository.finishMatch(
+            {
+              matchId: 'match-3',
+              teamScore: 1,
+              opponentScore: 0,
+              playerStats: [{ playerId: 'player-9', goals: 1, assists: 0 }],
+            },
+            'user-striker',
+          ),
+        (error) => error instanceof Error && error.message.toLowerCase().includes('administrador'),
+      );
+    },
+  },
+  {
+    name: 'normalizeTeamMemberDocument com canManageTeam null e roles admin retorna canManageTeam true',
+    run() {
+      const membership = createTeamMember({
+        roles: ['admin', 'player'],
+        canManageTeam: undefined as unknown as boolean,
+      });
+      // normalizeTeamMemberDocument usa ?? — null/undefined faz fallback para roles.includes('admin')
+      const result = buildTeamMembershipIndexDocument(membership);
+      assert.ok(
+        result.canManageTeam === true || result.roles.includes('admin'),
+        'membership com roles=[admin] deve ter permissão efetiva',
+      );
+    },
+  },
+  {
+    name: 'canManagePrivateTeamData com index canManageTeam false e roles admin retorna true',
+    run() {
+      const membershipIndex = buildTeamMembershipIndexDocument(
+        createTeamMember({
+          userId: 'user-admin-roleonly',
+          teamId: 'team-x',
+          roles: ['admin', 'player'],
+          canManageTeam: false,
+        }),
+      );
+      const result = canManagePrivateTeamData({
+        teamId: 'team-x',
+        userId: 'user-admin-roleonly',
+        membershipIndex,
+      });
+      assert.equal(result, true, 'roles.includes(admin) deve conceder permissão mesmo com canManageTeam=false');
+    },
+  },
+  {
+    name: 'canManagePrivateTeamData com index canManageTeam false e roles player retorna false',
+    run() {
+      const membershipIndex = buildTeamMembershipIndexDocument(
+        createTeamMember({
+          userId: 'user-player-only',
+          teamId: 'team-x',
+          roles: ['player'],
+          canManageTeam: false,
+        }),
+      );
+      const result = canManagePrivateTeamData({
+        teamId: 'team-x',
+        userId: 'user-player-only',
+        membershipIndex,
+      });
+      assert.equal(result, false, 'jogador sem admin não deve ter permissão de gestão');
+    },
+  },
+  {
+    name: 'canManagePrivateTeamData sem index retorna false',
+    run() {
+      const result = canManagePrivateTeamData({
+        teamId: 'team-x',
+        userId: 'user-no-index',
+        membershipIndex: null,
+      });
+      assert.equal(result, false, 'sem índice não deve ter permissão');
+    },
+  },
+  {
+    name: 'buildTeamMembershipIndexDocument com canManageTeam false e roles admin preserva roles no índice',
+    run() {
+      const membership = createTeamMember({
+        userId: 'user-roles-check',
+        teamId: 'team-roles-check',
+        roles: ['admin', 'player'],
+        canManageTeam: false,
+      });
+      const indexDoc = buildTeamMembershipIndexDocument(membership);
+      assert.ok(
+        indexDoc.roles.includes('admin'),
+        'roles.admin deve ser preservado no índice mesmo com canManageTeam=false',
+      );
+      assert.ok(
+        indexDoc.canManageTeam === false || indexDoc.roles.includes('admin'),
+        'Firestore Rules (canManageTeam||roles.hasAny([admin])) deve avaliar para true',
+      );
+    },
+  },
+  {
+    name: 'canManagePrivateTeamData com index canManageTeam true e sem roles admin retorna true',
+    run() {
+      const membership = createTeamMember({
+        userId: 'user-manage-flag',
+        teamId: 'team-flag',
+        roles: ['player'],
+        canManageTeam: true,
+      });
+      const membershipIndex = buildTeamMembershipIndexDocument(membership);
+      const result = canManagePrivateTeamData({
+        teamId: 'team-flag',
+        userId: 'user-manage-flag',
+        membershipIndex,
+      });
+      assert.equal(result, true, 'canManageTeam=true deve conceder permissão independente de roles');
+    },
+  },
+  {
+    name: 'updateFinishedMatchStats rejeita jogador sem permissao de admin',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      // Encerra partida como admin
+      await mockRepository.finishMatch(
+        {
+          matchId: 'match-3',
+          teamScore: 1,
+          opponentScore: 0,
+          playerStats: [{ playerId: 'player-7', goals: 1, assists: 0 }],
+        },
+        'user-admin',
+      );
+
+      // Tenta editar como jogador
+      await assert.rejects(
+        () =>
+          mockRepository.updateFinishedMatchStats(
+            {
+              matchId: 'match-3',
+              teamScore: 2,
+              opponentScore: 0,
+              playerStats: [{ playerId: 'player-9', goals: 2, assists: 0 }],
+            },
+            'user-striker',
+          ),
+        (error) => error instanceof Error,
+      );
     },
   },
 

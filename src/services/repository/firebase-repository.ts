@@ -6122,7 +6122,11 @@ export const firebaseRepository: AppRepository = {
     try {
       const firestore = requireFirestore();
       const { membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
-      if (!membership.canManageTeam) {
+      const hasManagePermissionForUpdate =
+        membership.canManageTeam === true ||
+        (Array.isArray(membership.roles) && membership.roles.includes('admin'));
+
+      if (!hasManagePermissionForUpdate) {
         throw createRepositoryError(
           'Apenas o administrador do time pode fazer essa acao.',
           'permission-denied',
@@ -6180,28 +6184,34 @@ export const firebaseRepository: AppRepository = {
             : currentMatch.finishedAt ?? null,
         updatedAt,
       });
-      const notificationId = buildNotificationId('match-updated', currentMatch.id);
-      const existingNotification = await fetchNotificationByIdForTeam(
-        activeTeamId,
-        notificationId,
-      );
+      // Main batch: apenas o update da partida
       const batch = writeBatch(firestore);
       batch.set(
         doc(firestore, FIRESTORE_COLLECTIONS.matches, currentMatch.id),
         updatedMatch,
       );
-      batch.set(
-        doc(firestore, FIRESTORE_COLLECTIONS.notifications, notificationId),
-        createMatchUpdatedNotification({
-          id: notificationId,
-          teamId: currentMatch.teamId,
-          match: updatedMatch,
-          actorUserId: actorUserId,
-          createdAt: existingNotification?.createdAt,
-          updatedAt,
-        }),
-      );
       await batch.commit();
+
+      // Best-effort: notificação separada do batch principal para não bloquear o save
+      await runBestEffort('updateMatch:notification', async () => {
+        const notificationId = buildNotificationId('match-updated', currentMatch.id);
+        const existingNotification = await fetchNotificationByIdForTeam(
+          activeTeamId,
+          notificationId,
+        ).catch(() => null);
+        await setDoc(
+          doc(firestore, FIRESTORE_COLLECTIONS.notifications, notificationId),
+          createMatchUpdatedNotification({
+            id: notificationId,
+            teamId: currentMatch.teamId,
+            match: updatedMatch,
+            actorUserId: actorUserId,
+            createdAt: existingNotification?.createdAt,
+            updatedAt,
+          }),
+        );
+      });
+
       await runBestEffort('updateMatch:syncPublicTeamProjection', async () => {
         await syncPublicTeamProjection(await fetchTeamById(activeTeamId), updatedAt);
       });
@@ -6775,15 +6785,6 @@ export const firebaseRepository: AppRepository = {
       const finishedNotificationId = buildNotificationId('match-finished', currentMatch.id);
       const votingNotificationId = buildNotificationId('mvp-voting-opened', currentMatch.id);
       const ratingsNotificationId = buildNotificationId('ratings-opened', currentMatch.id);
-      const [
-        existingFinishedNotification,
-        existingVotingNotification,
-        existingRatingsNotification,
-      ] = await Promise.all([
-        fetchNotificationByIdForTeam(activeTeamId, finishedNotificationId),
-        fetchNotificationByIdForTeam(activeTeamId, votingNotificationId),
-        fetchNotificationByIdForTeam(activeTeamId, ratingsNotificationId),
-      ]);
 
       if (__DEV__) console.log('[match-finish] payload', { matchId: currentMatch.id, teamScore: input.teamScore, opponentScore: input.opponentScore, playerCount: confirmedPlayerIds.size });
 
@@ -6831,7 +6832,17 @@ export const firebaseRepository: AppRepository = {
       await batch.commit();
       if (__DEV__) console.log('[match-finish] batch committed', { matchId: currentMatch.id });
 
+      // Best-effort: notificações com pre-reads dentro do bloco para não bloquear o batch principal
       try {
+        const [
+          existingFinishedNotification,
+          existingVotingNotification,
+          existingRatingsNotification,
+        ] = await Promise.all([
+          fetchNotificationByIdForTeam(activeTeamId, finishedNotificationId).catch(() => null),
+          fetchNotificationByIdForTeam(activeTeamId, votingNotificationId).catch(() => null),
+          fetchNotificationByIdForTeam(activeTeamId, ratingsNotificationId).catch(() => null),
+        ]);
         const notifBatch = writeBatch(firestore);
         notifBatch.set(
           doc(firestore, FIRESTORE_COLLECTIONS.notifications, finishedNotificationId),

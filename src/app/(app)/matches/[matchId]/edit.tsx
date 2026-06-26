@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -17,7 +17,7 @@ import { isValidExternalUrl } from '@/lib/url';
 import { useAppStore } from '@/store/app-store';
 import {
   findMatchById,
-  selectCanManageTeam,
+  selectCurrentMembership,
   selectCurrentTeam,
 } from '@/store/selectors';
 import type { MatchType } from '@/types/domain';
@@ -59,12 +59,15 @@ export default function EditMatchScreen() {
   const ready = useAppStore((state) => state.ready);
   const syncStatus = useAppStore((state) => state.syncStatus);
   const team = useAppStore(selectCurrentTeam);
-  const canManage = useAppStore(selectCanManageTeam);
+  const snapshot = useAppStore((state) => state.snapshot);
+  const currentUserId = useAppStore((state) => state.currentUserId);
+  const currentMembership = useAppStore(selectCurrentMembership);
   const rawMatchId = params.matchId;
   const resolvedMatchId =
     typeof rawMatchId === 'string' ? rawMatchId : rawMatchId?.[0] ?? '';
   const match = useAppStore((state) => findMatchById(state, resolvedMatchId));
   const updateMatch = useAppStore((state) => state.updateMatch);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const {
     control,
     handleSubmit,
@@ -102,6 +105,21 @@ export default function EditMatchScreen() {
       linePlayersCount: String(match.linePlayersCount ?? 6),
     });
   }, [match, reset]);
+
+  const canManage = useMemo(() => {
+    if (!match) return false;
+    const matchMembership = snapshot.teamMembers.find(
+      (m) =>
+        m.userId === currentUserId &&
+        m.teamId === match.teamId &&
+        m.status === 'active',
+    );
+    const target = matchMembership ?? currentMembership;
+    return (
+      (target?.canManageTeam === true) ||
+      (Array.isArray(target?.roles) && target.roles.includes('admin'))
+    );
+  }, [match, currentMembership, currentUserId, snapshot.teamMembers]);
 
   const waitingForMatch =
     !ready ||
@@ -150,6 +168,7 @@ export default function EditMatchScreen() {
   const currentMatch = match;
 
   async function onSubmit(values: MatchValues) {
+    setSaveError(null);
     try {
       const keepsPublicOpponent =
         currentMatch.opponentSource === 'public_team' &&
@@ -175,10 +194,21 @@ export default function EditMatchScreen() {
       });
       router.replace(`/matches/${currentMatch.id}`);
     } catch (error) {
-      Alert.alert(
-        'Não foi possível salvar a partida',
-        error instanceof Error ? error.message : 'Tente novamente.',
-      );
+      const errorCode = (error as { code?: string }).code;
+      if (errorCode === 'permission-denied') {
+        const matchTeam = snapshot.teams.find((t) => t.id === currentMatch.teamId);
+        const matchTeamName = matchTeam?.name ?? 'este time';
+        const activeTeamName = team?.name ?? null;
+        const teamInfo =
+          activeTeamName && activeTeamName !== matchTeamName
+            ? ` (time ativo: ${activeTeamName})`
+            : '';
+        setSaveError(
+          `Sem permissão de admin para "${matchTeamName}"${teamInfo}. Verifique se você é administrador deste time.`,
+        );
+      } else {
+        setSaveError(error instanceof Error ? error.message : 'Não foi possível salvar. Tente novamente.');
+      }
     }
   }
 
@@ -325,6 +355,9 @@ export default function EditMatchScreen() {
             />
           )}
         />
+        {saveError ? (
+          <Text style={[styles.saveError, { color: theme.colors.danger }]}>{saveError}</Text>
+        ) : null}
         <AppButton
           label="Salvar alterações"
           onPress={handleSubmit(onSubmit)}
@@ -396,5 +429,11 @@ const styles = StyleSheet.create({
     minHeight: 110,
     textAlignVertical: 'top',
     paddingTop: 16,
+  },
+  saveError: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
   },
 });

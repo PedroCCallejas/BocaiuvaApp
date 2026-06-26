@@ -4900,6 +4900,221 @@ const testCases: TestCase[] = [
       );
     },
   },
+
+  // ── Testes de edit e finish com match.teamId (PARTE 6) ──────────────────────
+
+  {
+    name: 'updateMatch: admin salva alteracoes de venue em partida scheduled',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const match = before.matches.find((m) => m.id === 'match-4');
+      assert.ok(match, 'match-4 deve existir como partida scheduled');
+      assert.equal(match!.status, 'scheduled', 'match-4 deve ter status scheduled');
+      await mockRepository.updateMatch(
+        'match-4',
+        {
+          date: match!.date,
+          time: match!.time,
+          venue: 'Novo Estadio Atualizado',
+          opponentName: match!.opponentName,
+          linePlayersCount: match!.linePlayersCount,
+          matchType: match!.matchType,
+          notes: match!.notes ?? '',
+        },
+        'user-admin',
+      );
+      const after = await mockRepository.getSnapshot();
+      const updated = after.matches.find((m) => m.id === 'match-4');
+      assert.equal(updated?.venue, 'Novo Estadio Atualizado', 'venue deve ser atualizado para partida scheduled');
+      assert.equal(updated?.status, 'scheduled', 'status nao deve mudar para scheduled');
+    },
+  },
+  {
+    name: 'updateMatch: admin com canManageTeam false e roles admin consegue salvar partida',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      patchMockTeamMember('member-admin-bocaiuva', { canManageTeam: false, roles: ['admin', 'player'] });
+      const before = await mockRepository.getSnapshot();
+      const match = before.matches.find((m) => m.id === 'match-4');
+      assert.ok(match, 'match-4 deve existir');
+      await mockRepository.updateMatch(
+        'match-4',
+        {
+          date: match!.date,
+          time: match!.time,
+          venue: 'Arena Roles Admin',
+          opponentName: match!.opponentName,
+          linePlayersCount: match!.linePlayersCount,
+          matchType: match!.matchType,
+          notes: '',
+        },
+        'user-admin',
+      );
+      const after = await mockRepository.getSnapshot();
+      const updated = after.matches.find((m) => m.id === 'match-4');
+      assert.equal(updated?.venue, 'Arena Roles Admin', 'admin com roles.includes(admin) pode salvar mesmo com canManageTeam false');
+    },
+  },
+  {
+    name: 'updateMatch: update de partida encerrada nao altera scoreboard',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const match = before.matches.find((m) => m.id === 'match-1');
+      assert.ok(match, 'match-1 deve existir como partida finished');
+      const originalScoreboard = match!.scoreboard;
+      assert.ok(originalScoreboard, 'match-1 deve ter scoreboard');
+      await mockRepository.updateMatch(
+        'match-1',
+        {
+          date: match!.date,
+          time: match!.time,
+          venue: 'Nova Arena',
+          opponentName: match!.opponentName,
+          linePlayersCount: match!.linePlayersCount,
+          matchType: match!.matchType,
+          notes: '',
+          status: match!.status,
+        },
+        'user-admin',
+      );
+      const after = await mockRepository.getSnapshot();
+      const updated = after.matches.find((m) => m.id === 'match-1');
+      assert.deepEqual(updated?.scoreboard, originalScoreboard, 'scoreboard nao deve ser alterado por updateMatch');
+    },
+  },
+  {
+    name: 'updateMatch: update de partida encerrada nao altera mvpWinnerPlayerIds',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const match = before.matches.find((m) => m.id === 'match-1');
+      assert.ok(match, 'match-1 deve existir como partida finished');
+      const originalMvp = match!.mvpWinnerPlayerIds;
+      assert.ok(Array.isArray(originalMvp) && originalMvp.length > 0, 'match-1 deve ter mvpWinnerPlayerIds');
+      await mockRepository.updateMatch(
+        'match-1',
+        {
+          date: match!.date,
+          time: match!.time,
+          venue: 'Nova Arena',
+          opponentName: 'Adversário Diferente',
+          linePlayersCount: match!.linePlayersCount,
+          matchType: match!.matchType,
+          notes: '',
+          status: match!.status,
+        },
+        'user-admin',
+      );
+      const after = await mockRepository.getSnapshot();
+      const updated = after.matches.find((m) => m.id === 'match-1');
+      assert.deepEqual(updated?.mvpWinnerPlayerIds, originalMvp, 'mvpWinnerPlayerIds nao deve ser alterado por updateMatch');
+    },
+  },
+  {
+    name: 'updateMatch: jogador comum nao pode salvar alteracoes em partida scheduled',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'atacante@bocaiuva.app', password: '123456' });
+      const before = await mockRepository.getSnapshot();
+      const match = before.matches.find((m) => m.id === 'match-4');
+      assert.ok(match, 'match-4 deve existir');
+      await assert.rejects(
+        () =>
+          mockRepository.updateMatch(
+            'match-4',
+            {
+              date: match!.date,
+              time: match!.time,
+              venue: 'Arena Hacker',
+              opponentName: match!.opponentName,
+              linePlayersCount: match!.linePlayersCount,
+              matchType: match!.matchType,
+              notes: '',
+            },
+            'user-striker',
+          ),
+        (error) => error instanceof Error && error.message.toLowerCase().includes('administrador'),
+        'jogador comum nao deve poder salvar alteracoes de partida',
+      );
+    },
+  },
+  {
+    name: 'finishMatch: encerramento de partida confirmed com canManageTeam false e roles admin',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      patchMockTeamMember('member-admin-bocaiuva', { canManageTeam: false, roles: ['admin', 'player'] });
+      const confirmedPlayers = ['player-1', 'player-2', 'player-3', 'player-4', 'player-6', 'player-7', 'player-9', 'player-11'];
+      const result = await mockRepository.finishMatch(
+        {
+          matchId: 'match-3',
+          teamScore: 2,
+          opponentScore: 1,
+          ownGoalsForTeam: 0,
+          fieldCost: null,
+          playerStats: confirmedPlayers.map((id) => ({ playerId: id, goals: 0, assists: 0 })),
+        },
+        'user-admin',
+      );
+      assert.equal(result.status, 'finished', 'partida deve ficar finished mesmo com canManageTeam false se roles.includes(admin)');
+    },
+  },
+  {
+    name: 'finishMatch: match de outro time retorna erro ao usar context do time ativo',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await assert.rejects(
+        () =>
+          mockRepository.finishMatch(
+            {
+              matchId: 'match-serrano-1',
+              teamScore: 3,
+              opponentScore: 0,
+              ownGoalsForTeam: 0,
+              fieldCost: null,
+              playerStats: [],
+            },
+            'user-admin',
+          ),
+        (error) => error instanceof Error,
+        'partida de outro time nao deve ser encontrada pelo context do time ativo',
+      );
+    },
+  },
+  {
+    name: 'updateFinishedMatchStats: gols de jogadores sao recalculados corretamente apos edicao',
+    async run() {
+      resetMockRepositoryState();
+      await mockRepository.login({ email: 'admin@bocaiuva.app', password: '123456' });
+      await mockRepository.updateFinishedMatchStats(
+        {
+          matchId: 'match-1',
+          teamScore: 5,
+          opponentScore: 0,
+          ownGoalsForTeam: 0,
+          fieldCost: null,
+          playerStats: [
+            { playerId: 'player-8', goals: 3, assists: 1 },
+            { playerId: 'player-9', goals: 2, assists: 0 },
+          ],
+        },
+        'user-admin',
+      );
+      const after = await mockRepository.getSnapshot();
+      const stat8 = after.matchStats.find((s) => s.matchId === 'match-1' && s.playerId === 'player-8');
+      const stat9 = after.matchStats.find((s) => s.matchId === 'match-1' && s.playerId === 'player-9');
+      assert.equal(stat8?.goals, 3, 'player-8 deve ter 3 gols');
+      assert.equal(stat8?.assists, 1, 'player-8 deve ter 1 assistencia');
+      assert.equal(stat9?.goals, 2, 'player-9 deve ter 2 gols');
+    },
+  },
 ];
 
 let failed = 0;

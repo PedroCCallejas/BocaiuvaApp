@@ -2,10 +2,8 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 
-import { SafeAd } from '@/components/ads/SafeAd';
 import { ToolPageShell } from '@/components/tools/ToolPageShell';
 import { TOOL_COLORS } from '@/components/tools/tool-theme';
-import { AD_PLACEMENTS } from '@/constants/ads';
 import { fonts } from '@/constants/theme';
 import {
   TIMER_DEFAULTS,
@@ -163,6 +161,8 @@ export default function CronometroScreen() {
     <ToolPageShell
       title="Cronômetro"
       subtitle="Tempo, placar e limite de gols."
+      seoTitle="Cronômetro de Pelada com Placar | Professô FC"
+      seoDescription="Cronômetro online para pelada com placar, limite de gols e alerta de fim de partida. Grátis, sem login, feito para quadra e society."
       compactHero>
 
       {/* Session banner */}
@@ -317,7 +317,8 @@ export default function CronometroScreen() {
         </View>
       ) : null}
 
-      <SafeAd placement={AD_PLACEMENTS.TOOLS_AFTER_RESULT} hasContent={hasResult} />
+      {/* Anúncio removido desta tela: cronômetro é tela de uso comportamental
+          (política AdSense de "telas sem conteúdo do editor"). */}
 
       <View style={styles.tipsSection}>
         <Text style={styles.sectionTitle}>Regras comuns para adaptar</Text>
@@ -344,8 +345,6 @@ export default function CronometroScreen() {
           </View>
         ))}
       </View>
-
-      <SafeAd placement={AD_PLACEMENTS.TOOLS_HUB_AFTER_CARDS} hasContent />
 
       <View style={styles.relatedLinks}>
         <Text style={styles.relatedTitle}>Outras ferramentas</Text>

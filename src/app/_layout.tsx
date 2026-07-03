@@ -23,6 +23,7 @@ function isPublicRoute(segments: string[]) {
     'forgot-password',
     'teams-gallery',
     'teams',
+    'ferramentas',
     'privacidade',
     'termos',
     'suporte',

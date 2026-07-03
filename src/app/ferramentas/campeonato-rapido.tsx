@@ -266,6 +266,8 @@ export default function CampeonatoScreen() {
     <ToolPageShell
       title="Campeonato Rápido"
       subtitle="Monte os confrontos sem planilha."
+      seoTitle="Campeonato Rápido: Tabela e Confrontos | Professô FC"
+      seoDescription="Monte um campeonato rápido entre amigos: confrontos, placar e classificação automática, sem planilha e sem cadastro."
       compactHero>
 
       {phase === 'setup' ? (

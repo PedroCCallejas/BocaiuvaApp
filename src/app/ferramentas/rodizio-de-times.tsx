@@ -139,6 +139,8 @@ export default function RodizioScreen() {
     <ToolPageShell
       title="Rodar Lista"
       subtitle="Quem ganha fica. A fila anda."
+      seoTitle="Rodízio de Times para Pelada | Professô FC"
+      seoDescription="Organize o rodízio de times da pelada: quem ganha fica, a fila anda. Controle de lista automático para society, futsal e rachão."
       compactHero>
 
       {/* Session banner */}

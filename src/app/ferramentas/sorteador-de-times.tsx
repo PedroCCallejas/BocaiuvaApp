@@ -98,6 +98,8 @@ export default function SorteadorScreen() {
     <ToolPageShell
       title="Sortear Times"
       subtitle="Escolha os jogadores e deixa o app dividir."
+      seoTitle="Sorteador de Times Online Grátis | Professô FC"
+      seoDescription="Sorteie times equilibrados para pelada, society e futsal. Divisão simples ou por potes de nível, sem login e direto no navegador."
       compactHero>
 
       {/* Mode selector */}

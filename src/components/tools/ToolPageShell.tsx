@@ -9,6 +9,7 @@ import { fonts } from '@/constants/theme';
 import { ToolBadge } from './ToolBadge';
 import { ToolHero } from './ToolHero';
 import { ToolSection } from './ToolSection';
+import { ToolSeoHead } from './ToolSeoHead';
 import { TOOL_COLORS, TOOL_HERO_BADGES } from './tool-theme';
 
 type ToolAction = {
@@ -46,6 +47,8 @@ interface ToolPageShellProps extends PropsWithChildren {
   heroBadges?: string[];
   eyebrow?: string;
   compactHero?: boolean;
+  seoTitle?: string;
+  seoDescription?: string;
 }
 
 function isActivePath(currentPath: string, href: string) {
@@ -61,6 +64,8 @@ export function ToolPageShell({
   heroBadges = [...TOOL_HERO_BADGES],
   eyebrow,
   compactHero = false,
+  seoTitle,
+  seoDescription,
 }: ToolPageShellProps) {
   const pathname = usePathname();
 
@@ -69,6 +74,11 @@ export function ToolPageShell({
       hideWebHeader
       style={styles.screen}
       contentContainerStyle={styles.contentContainer}>
+      <ToolSeoHead
+        title={seoTitle ?? `${title} | ${APP_NAME}`}
+        description={seoDescription ?? description ?? subtitle}
+        path={pathname}
+      />
       <View style={styles.navCard}>
         <View style={styles.brandRow}>
           <Pressable onPress={() => router.push('/ferramentas' as never)} style={styles.brandBlock}>

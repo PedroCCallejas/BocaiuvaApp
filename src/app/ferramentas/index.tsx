@@ -69,6 +69,8 @@ export default function ToolsHubScreen() {
       title="Ferramentas da Pelada"
       subtitle="Sorteie. Cronometre. Rode a lista."
       description="Tudo direto na quadra, sem login."
+      seoTitle="Ferramentas Grátis para Pelada e Society | Professô FC"
+      seoDescription="Sorteador de times, cronômetro com placar, rodízio de lista e campeonato rápido. Ferramentas grátis para organizar a pelada, sem login."
       actions={[{ label: 'Começar agora', href: '/ferramentas/sorteador-de-times' }]}>
 
       {/* 4 grandes tiles */}

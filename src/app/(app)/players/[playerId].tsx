@@ -19,6 +19,11 @@ import { formatMatchDate, sortMatchesByDate } from '@/lib/date';
 import { isPlayerInactive } from '@/lib/player-management';
 import { canEditOwnPlayerProfile } from '@/lib/player-profile-access';
 import { buildPlayerAchievements, getTopPlayerAchievements } from '@/lib/player-achievements';
+import { buildPlayerStatBreakdown } from '@/lib/player-stat-breakdown';
+import {
+  PlayerStatBreakdownModal,
+  type BreakdownMetricKey,
+} from '@/components/player/PlayerStatBreakdownModal';
 import {
   buildPlayerAggregates,
   buildPlayerProfileMetricCards,
@@ -167,6 +172,9 @@ export default function PlayerDetailsScreen() {
   const [reactivatePlayerModalVisible, setReactivatePlayerModalVisible] = useState(false);
   const [savingRemovePlayer, setSavingRemovePlayer] = useState(false);
   const [savingReactivatePlayer, setSavingReactivatePlayer] = useState(false);
+  const [breakdownMetricKey, setBreakdownMetricKey] = useState<BreakdownMetricKey | null>(
+    null,
+  );
 
   const playerAchievements = useMemo(
     () =>
@@ -200,6 +208,11 @@ export default function PlayerDetailsScreen() {
             (item) => item.player.id === player.id,
           ) ?? null
         : null,
+    [player, team, snapshot],
+  );
+  const statBreakdown = useMemo(
+    () =>
+      team && player ? buildPlayerStatBreakdown(snapshot, team.id, player.id) : null,
     [player, team, snapshot],
   );
   const teamFinishedMatches = useMemo(
@@ -514,11 +527,13 @@ export default function PlayerDetailsScreen() {
               label={aggregateMetricCards[0]?.label ?? 'Jogos'}
               value={aggregateMetricCards[0]?.value ?? '0'}
               helper={aggregateMetricCards[0]?.helper}
+              onPress={statBreakdown ? () => setBreakdownMetricKey('games') : undefined}
             />
             <MetricCard
               label={aggregateMetricCards[1]?.label ?? 'Gols'}
               value={aggregateMetricCards[1]?.value ?? '0'}
               helper={aggregateMetricCards[1]?.helper}
+              onPress={statBreakdown ? () => setBreakdownMetricKey('goals') : undefined}
             />
           </View>
           <View style={styles.metricsRow}>
@@ -526,6 +541,7 @@ export default function PlayerDetailsScreen() {
                 label={aggregateMetricCards[2]?.label ?? 'Assistências'}
               value={aggregateMetricCards[2]?.value ?? '0'}
               helper={aggregateMetricCards[2]?.helper}
+              onPress={statBreakdown ? () => setBreakdownMetricKey('assists') : undefined}
             />
             <MetricCard
                 label={aggregateMetricCards[3]?.label ?? 'Participações em gol'}
@@ -823,6 +839,18 @@ export default function PlayerDetailsScreen() {
         onConfirm={() => void confirmReactivatePlayer()}
         onCancel={() => setReactivatePlayerModalVisible(false)}
         loading={savingReactivatePlayer}
+      />
+      <PlayerStatBreakdownModal
+        visible={breakdownMetricKey !== null}
+        metricKey={breakdownMetricKey}
+        metric={
+          statBreakdown && breakdownMetricKey
+            ? statBreakdown[breakdownMetricKey]
+            : null
+        }
+        playerNickname={currentPlayerRecord.nickname}
+        showAdminDetails={canManageTeam}
+        onClose={() => setBreakdownMetricKey(null)}
       />
     </Screen>
   );

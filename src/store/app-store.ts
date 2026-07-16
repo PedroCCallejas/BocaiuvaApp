@@ -25,6 +25,7 @@ import type {
   CreateTeamInput,
   FinishMatchInput,
   GoogleLoginInput,
+  MatchFieldCostInput,
   RegisterFinishedMatchInput,
   LoginInput,
   RegisterInput,
@@ -106,6 +107,14 @@ export interface AppState {
   updateMatchFieldPayment: (
     matchId: string,
     input: UpdateMatchFieldPaymentInput,
+  ) => Promise<void>;
+  updateMatchFieldCost: (
+    matchId: string,
+    input: MatchFieldCostInput | null,
+  ) => Promise<void>;
+  setTeamDefaultMatchCost: (
+    teamId: string,
+    defaultMatchCostCents: number | null,
   ) => Promise<void>;
   setAttendance: (input: UpdateAttendanceInput) => Promise<void>;
   saveLineup: (input: SaveLineupInput) => Promise<void>;
@@ -757,6 +766,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     await repository.updateMatchFieldPayment(matchId, input, userId);
+    await refreshCurrentSession(set, get);
+  },
+
+  async updateMatchFieldCost(matchId, input) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    await repository.updateMatchFieldCost(matchId, input, userId);
+    await refreshCurrentSession(set, get);
+  },
+
+  async setTeamDefaultMatchCost(teamId, defaultMatchCostCents) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    await repository.setTeamDefaultMatchCost(teamId, defaultMatchCostCents, userId);
     await refreshCurrentSession(set, get);
   },
 

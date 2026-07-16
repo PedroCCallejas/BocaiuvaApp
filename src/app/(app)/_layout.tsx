@@ -47,6 +47,7 @@ export default function AppLayout() {
         options={{ title: 'Critérios de avaliação' }}
       />
       <Stack.Screen name="team-invite" options={{ title: 'Convidar jogadores' }} />
+      <Stack.Screen name="financeiro" options={{ title: 'Financeiro' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notificações' }} />
       <Stack.Screen name="players/create" options={{ title: 'Novo jogador' }} />
       <Stack.Screen name="players/[playerId]" options={{ title: 'Jogador' }} />

@@ -36,6 +36,7 @@ import {
   buildMatchFieldPayment,
   getMatchFieldPaymentSummary,
 } from '@/lib/field-cost';
+import { amountFromCents, isValidCents } from '@/lib/money';
 import {
   normalizeDiaryTitle,
   resolveDiaryEmoji,
@@ -43,6 +44,11 @@ import {
   validateDiaryFields,
 } from '@/lib/match-diary';
 import { buildLegacyMatchImportPreview } from '@/lib/match-import';
+import {
+  findDuplicateMatchStatPlayerId,
+  getDuplicateParticipationMessage,
+  getParticipationRemovalBlocker,
+} from '@/lib/match-participation';
 import {
   buildInactivatedPlayerState,
   buildReactivatedPlayerState,
@@ -173,6 +179,7 @@ import {
   type CreateMatchDiaryEntryInput,
   type FinishMatchInput,
   type GoogleLoginInput,
+  type MatchFieldCostInput,
   type RegisterFinishedMatchInput,
   type SaveLineupInput,
   type SubmitMvpVoteInput,
@@ -747,6 +754,7 @@ function normalizeTeamDocument(
     publicDescription: team.publicDescription?.trim() ?? null,
     allowFriendlyContact: team.allowFriendlyContact ?? false,
     publicRosterEnabled: team.publicRosterEnabled ?? false,
+    defaultMatchCostCents: team.defaultMatchCostCents ?? null,
   };
 }
 
@@ -3894,6 +3902,45 @@ async function ensureTeamAdmin(userId: string, teamId: string) {
   return { actor, membership };
 }
 
+async function assertPlayersCanBeMarkedNotPlayed(input: {
+  teamId: string;
+  match: Match;
+  playerStats: FinishMatchInput['playerStats'];
+  existingMatchStats: MatchStat[];
+}) {
+  const notPlayedIds = input.playerStats
+    .filter((stat) => stat.played === false)
+    .map((stat) => stat.playerId);
+
+  if (notPlayedIds.length === 0) {
+    return;
+  }
+
+  const [ratings, votes] = await Promise.all([
+    fetchPlayerRatingsByMatchIdForTeam(input.teamId, input.match.id),
+    fetchMvpVotesByMatchIdForTeam(input.teamId, input.match.id),
+  ]);
+
+  for (const playerId of notPlayedIds) {
+    const proposedStat = input.playerStats.find((stat) => stat.playerId === playerId)!;
+    const existingStat =
+      input.existingMatchStats.find((stat) => stat.playerId === playerId) ?? null;
+    const blocker = getParticipationRemovalBlocker({
+      playerId,
+      match: input.match,
+      matchStat: existingStat
+        ? { ...existingStat, goals: proposedStat.goals, assists: proposedStat.assists }
+        : null,
+      ratings,
+      votes,
+    });
+
+    if (blocker) {
+      throw createRepositoryError(blocker, 'failed-precondition');
+    }
+  }
+}
+
 async function ensureTeamOwner(userId: string, teamId: string) {
   const { actor } = await ensureMembershipContext(userId, teamId);
   const team = await fetchTeamById(teamId);
@@ -6039,6 +6086,20 @@ export const firebaseRepository: AppRepository = {
       const { actor } = await ensureTeamAdmin(creatorUserId, input.teamId);
       const teamPlayers = (await fetchPlayersByTeamId(input.teamId)).filter(isActivePlayer);
       const createdAt = nowIso();
+      const team = await fetchTeamById(input.teamId);
+      const defaultCostCents = team.defaultMatchCostCents ?? null;
+      const defaultFieldCost =
+        isValidCents(defaultCostCents)
+          ? buildMatchFieldCost({
+              values: {
+                totalAmount: amountFromCents(defaultCostCents),
+                splitCount: Math.max(input.linePlayersCount, 1),
+                note: null,
+              },
+              updatedAt: createdAt,
+              updatedByUserId: actor.id,
+            })
+          : null;
       const matchRef = doc(collection(firestore, FIRESTORE_COLLECTIONS.matches));
       const match = normalizeMatchDocument({
         id: matchRef.id,
@@ -6060,6 +6121,7 @@ export const firebaseRepository: AppRepository = {
         status: 'scheduled',
         createdBy: actor.id,
         scoreboard: null,
+        fieldCost: defaultFieldCost,
         finishedAt: null,
         mvpWinnerPlayerIds: [],
         mvpTotalVotes: 0,
@@ -6336,6 +6398,127 @@ export const firebaseRepository: AppRepository = {
       throw toFriendlyFirestoreError(
         error,
         'Não foi possível salvar o controle do campo agora.',
+      );
+    }
+  },
+
+  async updateMatchFieldCost(
+    matchId: string,
+    input: MatchFieldCostInput | null,
+    actorUserId: string,
+  ) {
+    try {
+      const firestore = requireFirestore();
+      const { membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      const hasManagePermission =
+        membership.canManageTeam === true ||
+        (Array.isArray(membership.roles) && membership.roles.includes('admin'));
+
+      if (!hasManagePermission) {
+        throw createRepositoryError(
+          'Apenas o administrador do time pode alterar o financeiro.',
+          'permission-denied',
+        );
+      }
+
+      const currentMatch = await fetchMatchByIdForTeam(activeTeamId, matchId);
+
+      if (currentMatch.deletedAt) {
+        throw createRepositoryError(
+          'Não é possível alterar o valor de uma partida excluída.',
+          'failed-precondition',
+        );
+      }
+
+      const updatedAt = nowIso();
+      const nextFieldCost = input
+        ? buildMatchFieldCost({
+            values: input,
+            updatedAt,
+            updatedByUserId: actorUserId,
+          })
+        : null;
+
+      if (
+        nextFieldCost &&
+        currentMatch.fieldPayment &&
+        getMatchFieldPaymentSummary(nextFieldCost, currentMatch.fieldPayment)
+          .totalPaidCount > nextFieldCost.splitCount
+      ) {
+        throw createRepositoryError(
+          'A nova divisão do campo não comporta a quantidade de pagantes já marcada.',
+          'failed-precondition',
+        );
+      }
+
+      // Grava apenas o financeiro da partida: presença, escalação e súmula
+      // nunca entram neste write.
+      await updateDoc(doc(firestore, FIRESTORE_COLLECTIONS.matches, currentMatch.id), {
+        fieldCost: nextFieldCost,
+        fieldPayment: nextFieldCost ? currentMatch.fieldPayment ?? null : null,
+        updatedAt,
+      });
+
+      return normalizeMatchDocument({
+        ...currentMatch,
+        fieldCost: nextFieldCost,
+        fieldPayment: nextFieldCost ? currentMatch.fieldPayment ?? null : null,
+        updatedAt,
+      });
+    } catch (error) {
+      throw toFriendlyFirestoreError(
+        error,
+        'Não foi possível salvar o valor da partida agora.',
+      );
+    }
+  },
+
+  async setTeamDefaultMatchCost(
+    teamId: string,
+    defaultMatchCostCents: number | null,
+    actorUserId: string,
+  ) {
+    try {
+      const firestore = requireFirestore();
+      const { membership, activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      const hasManagePermission =
+        membership.canManageTeam === true ||
+        (Array.isArray(membership.roles) && membership.roles.includes('admin'));
+
+      if (!hasManagePermission || activeTeamId !== teamId) {
+        throw createRepositoryError(
+          'Apenas o administrador do time pode alterar o financeiro.',
+          'permission-denied',
+        );
+      }
+
+      if (
+        defaultMatchCostCents != null &&
+        (!Number.isInteger(defaultMatchCostCents) || defaultMatchCostCents < 0)
+      ) {
+        throw createRepositoryError(
+          'Informe um valor padrão em centavos maior ou igual a zero.',
+          'failed-precondition',
+        );
+      }
+
+      const currentTeam = await fetchTeamById(teamId);
+      const updatedAt = nowIso();
+
+      await updateDoc(doc(firestore, FIRESTORE_COLLECTIONS.teams, teamId), {
+        defaultMatchCostCents,
+        updatedAt,
+      });
+
+      return normalizeTeamDocument({
+        ...currentTeam,
+        defaultMatchCostCents,
+        updatedAt,
+      });
+    } catch (error) {
+      throw toFriendlyFirestoreError(
+        error,
+        'Não foi possível salvar o valor padrão do time agora.',
       );
     }
   },
@@ -6724,6 +6907,13 @@ export const firebaseRepository: AppRepository = {
             'failed-precondition',
           );
         }
+
+        if (stat.played === false && (stat.goals > 0 || stat.assists > 0)) {
+          throw createRepositoryError(
+            'Um jogador marcado como não participante não pode receber gols ou assistências.',
+            'failed-precondition',
+          );
+        }
       }
 
       const existingLineup = await fetchLineupByMatchIdForTeam(activeTeamId, currentMatch.id);
@@ -6731,21 +6921,46 @@ export const firebaseRepository: AppRepository = {
         existingLineup?.starters.map((starter) => starter.playerId) ?? [],
       );
       const submittedStats = input.playerStats.reduce<
-        Record<string, { goals: number; assists: number }>
+        Record<string, { goals: number; assists: number; played: boolean }>
       >((acc, stat) => {
         acc[stat.playerId] = {
           goals: stat.goals,
           assists: stat.assists,
+          played: stat.played ?? true,
         };
         return acc;
       }, {});
+      const playedCount = [...confirmedPlayerIds].filter(
+        (playerId) => submittedStats[playerId]?.played ?? true,
+      ).length;
+
+      if (playedCount === 0) {
+        throw createRepositoryError(
+          'A partida precisa ter pelo menos um jogador participante.',
+          'failed-precondition',
+        );
+      }
       const existingMatchStats = await fetchMatchStatsByMatchIdForTeam(
         activeTeamId,
         currentMatch.id,
       );
+      if (findDuplicateMatchStatPlayerId(existingMatchStats)) {
+        throw createRepositoryError(
+          'Existem súmulas duplicadas nesta partida. Revise os dados antes de encerrá-la novamente.',
+          'failed-precondition',
+        );
+      }
+      await assertPlayersCanBeMarkedNotPlayed({
+        teamId: activeTeamId,
+        match: currentMatch,
+        playerStats: input.playerStats,
+        existingMatchStats,
+      });
       const nextMatchStatIds = new Set(
-        [...confirmedPlayerIds].map((playerId) =>
-          buildStableDocumentId(currentMatch.id, playerId),
+        [...confirmedPlayerIds].map(
+          (playerId) =>
+            existingMatchStats.find((item) => item.playerId === playerId)?.id ??
+            buildStableDocumentId(currentMatch.id, playerId),
         ),
       );
       const nextFieldCost = input.fieldCost
@@ -6803,21 +7018,23 @@ export const firebaseRepository: AppRepository = {
       }
 
       for (const playerId of confirmedPlayerIds) {
-        const matchStatId = buildStableDocumentId(currentMatch.id, playerId);
         const existingMatchStat =
-          existingMatchStats.find((item) => item.id === matchStatId) ?? null;
+          existingMatchStats.find((item) => item.playerId === playerId) ?? null;
+        const matchStatId =
+          existingMatchStat?.id ?? buildStableDocumentId(currentMatch.id, playerId);
+        const played = submittedStats[playerId]?.played ?? true;
         const matchStat = normalizeMatchStatDocument({
           id: matchStatId,
           teamId: currentMatch.teamId,
           matchId: currentMatch.id,
           playerId,
-          played: true,
-          started: starterIds.has(playerId),
+          played,
+          started: played && starterIds.has(playerId),
           goals: submittedStats[playerId]?.goals ?? 0,
           assists: submittedStats[playerId]?.assists ?? 0,
-          yellowCards: 0,
-          redCards: 0,
-          notes: '',
+          yellowCards: existingMatchStat?.yellowCards ?? 0,
+          redCards: existingMatchStat?.redCards ?? 0,
+          notes: existingMatchStat?.notes ?? '',
           createdAt: existingMatchStat?.createdAt ?? updatedAt,
           updatedAt,
         });
@@ -6971,21 +7188,59 @@ export const firebaseRepository: AppRepository = {
         if (stat.goals < 0 || stat.assists < 0) {
           throw createRepositoryError('Gols e assistências não podem ser negativos.', 'failed-precondition');
         }
+        if (stat.played === false && (stat.goals > 0 || stat.assists > 0)) {
+          throw createRepositoryError(
+            'Um jogador marcado como não participante não pode receber gols ou assistências.',
+            'failed-precondition',
+          );
+        }
       }
 
       const existingLineup = await fetchLineupByMatchIdForTeam(activeTeamId, currentMatch.id);
       const starterIds = new Set(existingLineup?.starters.map((s) => s.playerId) ?? []);
-      const submittedStats = input.playerStats.reduce<Record<string, { goals: number; assists: number }>>(
+      const submittedStats = input.playerStats.reduce<
+        Record<string, { goals: number; assists: number; played: boolean }>
+      >(
         (acc, stat) => {
-          acc[stat.playerId] = { goals: stat.goals, assists: stat.assists };
+          acc[stat.playerId] = {
+            goals: stat.goals,
+            assists: stat.assists,
+            played: stat.played ?? true,
+          };
           return acc;
         },
         {},
       );
+      const playedCount = [...confirmedPlayerIds].filter(
+        (playerId) => submittedStats[playerId]?.played ?? true,
+      ).length;
+
+      if (playedCount === 0) {
+        throw createRepositoryError(
+          'A partida precisa ter pelo menos um jogador participante.',
+          'failed-precondition',
+        );
+      }
 
       const existingMatchStats = await fetchMatchStatsByMatchIdForTeam(activeTeamId, currentMatch.id);
+      if (findDuplicateMatchStatPlayerId(existingMatchStats)) {
+        throw createRepositoryError(
+          'Existem súmulas duplicadas nesta partida. Revise os dados antes de encerrá-la novamente.',
+          'failed-precondition',
+        );
+      }
+      await assertPlayersCanBeMarkedNotPlayed({
+        teamId: activeTeamId,
+        match: currentMatch,
+        playerStats: input.playerStats,
+        existingMatchStats,
+      });
       const nextMatchStatIds = new Set(
-        [...confirmedPlayerIds].map((id) => buildStableDocumentId(currentMatch.id, id)),
+        [...confirmedPlayerIds].map(
+          (playerId) =>
+            existingMatchStats.find((item) => item.playerId === playerId)?.id ??
+            buildStableDocumentId(currentMatch.id, playerId),
+        ),
       );
 
       const nextFieldCost = input.fieldCost
@@ -7028,20 +7283,22 @@ export const firebaseRepository: AppRepository = {
       }
 
       for (const playerId of confirmedPlayerIds) {
-        const matchStatId = buildStableDocumentId(currentMatch.id, playerId);
-        const existingMatchStat = existingMatchStats.find((s) => s.id === matchStatId) ?? null;
+        const existingMatchStat = existingMatchStats.find((s) => s.playerId === playerId) ?? null;
+        const matchStatId =
+          existingMatchStat?.id ?? buildStableDocumentId(currentMatch.id, playerId);
+        const played = submittedStats[playerId]?.played ?? true;
         const matchStat = normalizeMatchStatDocument({
           id: matchStatId,
           teamId: currentMatch.teamId,
           matchId: currentMatch.id,
           playerId,
-          played: true,
-          started: starterIds.has(playerId),
+          played,
+          started: played && starterIds.has(playerId),
           goals: submittedStats[playerId]?.goals ?? 0,
           assists: submittedStats[playerId]?.assists ?? 0,
-          yellowCards: 0,
-          redCards: 0,
-          notes: '',
+          yellowCards: existingMatchStat?.yellowCards ?? 0,
+          redCards: existingMatchStat?.redCards ?? 0,
+          notes: existingMatchStat?.notes ?? '',
           createdAt: existingMatchStat?.createdAt ?? updatedAt,
           updatedAt,
         });
@@ -7652,6 +7909,7 @@ export const firebaseRepository: AppRepository = {
       }
 
       const currentMatch = await fetchMatchByIdForTeam(activeTeamId, matchId);
+      await fetchPlayerByIdForTeam(activeTeamId, playerId);
 
       if (currentMatch.deletedAt) {
         throw createRepositoryError(
@@ -7673,26 +7931,108 @@ export const firebaseRepository: AppRepository = {
       }
 
       const attendanceItems = await fetchAttendanceByMatchIdForTeam(activeTeamId, matchId);
-      const existingRecord = attendanceItems.find((item) => item.playerId === playerId) ?? null;
+      const playerAttendanceItems = attendanceItems.filter(
+        (item) => item.playerId === playerId,
+      );
+      if (playerAttendanceItems.length > 1) {
+        throw createRepositoryError(
+          getDuplicateParticipationMessage({
+            attendanceCount: playerAttendanceItems.length,
+            matchStatsCount: 0,
+          })!,
+          'failed-precondition',
+        );
+      }
+      const existingRecord = playerAttendanceItems[0] ?? null;
       const attendanceId = buildStableDocumentId(matchId, playerId);
       const now = nowIso();
 
+      // Grava no registro existente quando houver (IDs legados podem fugir do
+      // padrão estável) para nunca criar presença duplicada.
+      const recordId = existingRecord?.id ?? attendanceId;
       const record = normalizeAttendanceDocument({
-        id: attendanceId,
+        id: recordId,
         teamId: activeTeamId,
         matchId,
         playerId,
-        userId: null,
+        userId: existingRecord?.userId ?? null,
         status,
         respondedAt: now,
         createdAt: existingRecord?.createdAt ?? now,
         updatedAt: now,
       });
 
-      await setDoc(
-        doc(firestore, FIRESTORE_COLLECTIONS.attendance, attendanceId),
-        record,
-      );
+      // Em partida encerrada, presença e súmula (matchStats) precisam andar
+      // juntas: sem esta sincronização o jogador aparece na lista da partida
+      // mas não conta jogo (ou deixa um MatchStat órfão para trás).
+      const batch = writeBatch(firestore);
+      batch.set(doc(firestore, FIRESTORE_COLLECTIONS.attendance, recordId), record);
+
+      if (currentMatch.status === 'finished') {
+        const existingMatchStats = await fetchMatchStatsByMatchIdForTeam(
+          activeTeamId,
+          matchId,
+        );
+        const playerMatchStats = existingMatchStats.filter(
+          (item) => item.playerId === playerId,
+        );
+        const duplicateMessage = getDuplicateParticipationMessage({
+          attendanceCount: playerAttendanceItems.length,
+          matchStatsCount: playerMatchStats.length,
+        });
+
+        if (duplicateMessage) {
+          throw createRepositoryError(duplicateMessage, 'failed-precondition');
+        }
+
+        const existingMatchStat = playerMatchStats[0] ?? null;
+
+        if (status !== 'confirmed') {
+          const [ratings, votes] = await Promise.all([
+            fetchPlayerRatingsByMatchIdForTeam(activeTeamId, matchId),
+            fetchMvpVotesByMatchIdForTeam(activeTeamId, matchId),
+          ]);
+          const blocker = getParticipationRemovalBlocker({
+            playerId,
+            match: currentMatch,
+            matchStat: existingMatchStat,
+            ratings,
+            votes,
+          });
+
+          if (blocker) {
+            throw createRepositoryError(blocker, 'failed-precondition');
+          }
+        }
+
+        if (status === 'confirmed' && !existingMatchStat) {
+          const matchStatId = buildStableDocumentId(matchId, playerId);
+          batch.set(
+            doc(firestore, FIRESTORE_COLLECTIONS.matchStats, matchStatId),
+            normalizeMatchStatDocument({
+              id: matchStatId,
+              teamId: currentMatch.teamId,
+              matchId,
+              playerId,
+              played: true,
+              started: false,
+              goals: 0,
+              assists: 0,
+              yellowCards: 0,
+              redCards: 0,
+              notes: '',
+              createdAt: now,
+              updatedAt: now,
+            }),
+          );
+        } else if (status !== 'confirmed' && existingMatchStat) {
+          batch.delete(
+            doc(firestore, FIRESTORE_COLLECTIONS.matchStats, existingMatchStat.id),
+          );
+        }
+      }
+
+      await batch.commit();
 
       if (__DEV__) {
         console.log('[match-players-edit] save success', {

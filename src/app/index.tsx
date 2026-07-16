@@ -94,6 +94,11 @@ export default function IndexScreen() {
 
   return (
     <PublicPageShell
+      seo={{
+        title: 'Professô FC | Gestão de times de futebol amador',
+        description: 'Organize jogadores, partidas, presença, escalações, estatísticas e premiações do seu time de futebol amador com o Professô FC.',
+        canonicalPath: '/',
+      }}
       eyebrow="Organização para futebol amador e society"
       title={`${APP_NAME}: gestão simples para times que querem jogar melhor fora e dentro de campo`}
       description="O Professô FC ajuda administradores e jogadores a organizar elenco, partidas, presença, histórico, estatísticas e perfis públicos sem transformar a rotina do time em improviso."

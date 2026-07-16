@@ -4,6 +4,7 @@ import {
   buildMatchFieldPayment,
   getMatchFieldPaymentSummary,
 } from '@/lib/field-cost';
+import { amountFromCents, isValidCents } from '@/lib/money';
 import {
   normalizeDiaryTitle,
   resolveDiaryEmoji,
@@ -11,6 +12,11 @@ import {
   validateDiaryFields,
 } from '@/lib/match-diary';
 import { buildLegacyMatchImportPreview } from '@/lib/match-import';
+import {
+  findDuplicateMatchStatPlayerId,
+  getDuplicateParticipationMessage,
+  getParticipationRemovalBlocker,
+} from '@/lib/match-participation';
 import {
   buildInactivatedPlayerState,
   buildReactivatedPlayerState,
@@ -112,6 +118,7 @@ import type {
   CreateTeamInput,
   FinishMatchInput,
   GoogleLoginInput,
+  MatchFieldCostInput,
   RegisterFinishedMatchInput,
   LoginInput,
   MockDatabase,
@@ -718,6 +725,35 @@ function findRatingsForMatch(teamId: string, matchId: string) {
   return database.playerRatings.filter(
     (item) => item.teamId === teamId && item.matchId === matchId,
   );
+}
+
+function assertMockPlayersCanBeMarkedNotPlayed(input: {
+  teamId: string;
+  match: Match;
+  playerStats: FinishMatchInput['playerStats'];
+  existingMatchStats: MatchStat[];
+}) {
+  for (const stat of input.playerStats) {
+    if (stat.played !== false) {
+      continue;
+    }
+
+    const existingStat =
+      input.existingMatchStats.find((item) => item.playerId === stat.playerId) ?? null;
+    const blocker = getParticipationRemovalBlocker({
+      playerId: stat.playerId,
+      match: input.match,
+      matchStat: existingStat
+        ? { ...existingStat, goals: stat.goals, assists: stat.assists }
+        : null,
+      ratings: findRatingsForMatch(input.teamId, input.match.id),
+      votes: findMvpVotesForMatch(input.teamId, input.match.id),
+    });
+
+    if (blocker) {
+      throw new Error(blocker);
+    }
+  }
 }
 
 function findMatchDiaryEntriesForTeam(teamId: string) {
@@ -2639,6 +2675,20 @@ export const mockRepository: AppRepository = {
   async createMatch(input: CreateMatchInput, creatorUserId: string) {
     const createdAt = nowIso();
     const creator = requireTeamAdmin(creatorUserId, input.teamId);
+    const team = findTeam(input.teamId);
+    const defaultCostCents = team.defaultMatchCostCents ?? null;
+    const defaultFieldCost =
+      isValidCents(defaultCostCents)
+        ? buildMatchFieldCost({
+            values: {
+              totalAmount: amountFromCents(defaultCostCents),
+              splitCount: Math.max(input.linePlayersCount, 1),
+              note: null,
+            },
+            updatedAt: createdAt,
+            updatedByUserId: creator.id,
+          })
+        : null;
 
     const match: Match = {
       id: createId('match'),
@@ -2659,6 +2709,7 @@ export const mockRepository: AppRepository = {
       notes: input.notes?.trim() ?? '',
       status: 'scheduled',
       createdBy: creator.id,
+      fieldCost: defaultFieldCost,
       createdAt,
       updatedAt: createdAt,
       finishedAt: null,
@@ -2800,6 +2851,73 @@ export const mockRepository: AppRepository = {
     match.updatedAt = updatedAt;
 
     return clone(match);
+  },
+
+  async updateMatchFieldCost(
+    matchId: string,
+    input: MatchFieldCostInput | null,
+    actorUserId: string,
+  ) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    const match = findMatchForTeam(activeTeamId, matchId);
+    requireTeamAdmin(actorUserId, match.teamId);
+
+    if (match.deletedAt) {
+      throw new Error('Não é possível alterar o valor de uma partida excluída.');
+    }
+
+    const updatedAt = nowIso();
+    const nextFieldCost = input
+      ? buildMatchFieldCost({
+          values: input,
+          updatedAt,
+          updatedByUserId: actorUserId,
+        })
+      : null;
+
+    if (
+      nextFieldCost &&
+      match.fieldPayment &&
+      getMatchFieldPaymentSummary(nextFieldCost, match.fieldPayment).totalPaidCount >
+        nextFieldCost.splitCount
+    ) {
+      throw new Error(
+        'A nova divisão do campo não comporta a quantidade de pagantes já marcada.',
+      );
+    }
+
+    match.fieldCost = nextFieldCost;
+    match.fieldPayment = nextFieldCost ? match.fieldPayment ?? null : null;
+    match.updatedAt = updatedAt;
+
+    return clone(match);
+  },
+
+  async setTeamDefaultMatchCost(
+    teamId: string,
+    defaultMatchCostCents: number | null,
+    actorUserId: string,
+  ) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+
+    if (activeTeamId !== teamId) {
+      throw new Error('Apenas o administrador do time pode alterar o financeiro.');
+    }
+
+    requireTeamAdmin(actorUserId, teamId);
+
+    if (
+      defaultMatchCostCents != null &&
+      (!Number.isInteger(defaultMatchCostCents) || defaultMatchCostCents < 0)
+    ) {
+      throw new Error('Informe um valor padrão em centavos maior ou igual a zero.');
+    }
+
+    const team = findTeam(teamId);
+    team.defaultMatchCostCents = defaultMatchCostCents;
+    team.updatedAt = nowIso();
+
+    return clone(team);
   },
 
   async updateAttendance(input: UpdateAttendanceInput, actorUserId: string) {
@@ -3022,40 +3140,77 @@ export const mockRepository: AppRepository = {
       if (stat.goals < 0 || stat.assists < 0) {
         throw new Error('Gols e assistências não podem ser negativos.');
       }
+      if (stat.played === false && (stat.goals > 0 || stat.assists > 0)) {
+        throw new Error(
+          'Um jogador marcado como não participante não pode receber gols ou assistências.',
+        );
+      }
     }
 
-    const submittedMap = input.playerStats.reduce<Record<string, { goals: number; assists: number }>>(
+    const submittedMap = input.playerStats.reduce<
+      Record<string, { goals: number; assists: number; played: boolean }>
+    >(
       (acc, stat) => {
-        acc[stat.playerId] = { goals: stat.goals, assists: stat.assists };
+        acc[stat.playerId] = {
+          goals: stat.goals,
+          assists: stat.assists,
+          played: stat.played ?? true,
+        };
         return acc;
       },
       {},
     );
+    const playedCount = [...confirmedPlayerIds].filter(
+      (playerId) => submittedMap[playerId]?.played ?? true,
+    ).length;
+
+    if (playedCount === 0) {
+      throw new Error('A partida precisa ter pelo menos um jogador participante.');
+    }
+
+    const existingMatchStats = findMatchStatsForMatch(activeTeamId, match.id);
+    if (findDuplicateMatchStatPlayerId(existingMatchStats)) {
+      throw new Error(
+        'Existem súmulas duplicadas nesta partida. Revise os dados antes de encerrá-la novamente.',
+      );
+    }
+
+    assertMockPlayersCanBeMarkedNotPlayed({
+      teamId: activeTeamId,
+      match,
+      playerStats: input.playerStats,
+      existingMatchStats,
+    });
 
     const nextStatIds = new Set(
-      [...confirmedPlayerIds].map((playerId) => buildStableDocumentId(match.id, playerId)),
+      [...confirmedPlayerIds].map(
+        (playerId) =>
+          existingMatchStats.find((item) => item.playerId === playerId)?.id ??
+          buildStableDocumentId(match.id, playerId),
+      ),
     );
     database.matchStats = database.matchStats.filter(
       (item) => item.matchId !== match.id || nextStatIds.has(item.id),
     );
 
     const statsToInsert = [...confirmedPlayerIds].map<MatchStat>((playerId) => {
-      const existing = findMatchStatsForMatch(activeTeamId, match.id).find(
+      const existing = existingMatchStats.find(
         (item) => item.playerId === playerId,
       );
+      const played = submittedMap[playerId]?.played ?? true;
 
       return {
-        id: buildStableDocumentId(match.id, playerId),
+        id: existing?.id ?? buildStableDocumentId(match.id, playerId),
         teamId: match.teamId,
         matchId: match.id,
         playerId,
-        played: true,
-        started: starterIds.has(playerId),
+        played,
+        started: played && starterIds.has(playerId),
         goals: submittedMap[playerId]?.goals ?? 0,
         assists: submittedMap[playerId]?.assists ?? 0,
-        yellowCards: 0,
-        redCards: 0,
-        notes: '',
+        yellowCards: existing?.yellowCards ?? 0,
+        redCards: existing?.redCards ?? 0,
+        notes: existing?.notes ?? '',
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       };
@@ -3188,39 +3343,76 @@ export const mockRepository: AppRepository = {
       if (stat.goals < 0 || stat.assists < 0) {
         throw new Error('Gols e assistências não podem ser negativos.');
       }
+      if (stat.played === false && (stat.goals > 0 || stat.assists > 0)) {
+        throw new Error(
+          'Um jogador marcado como não participante não pode receber gols ou assistências.',
+        );
+      }
     }
 
-    const submittedMap = input.playerStats.reduce<Record<string, { goals: number; assists: number }>>(
+    const submittedMap = input.playerStats.reduce<
+      Record<string, { goals: number; assists: number; played: boolean }>
+    >(
       (acc, stat) => {
-        acc[stat.playerId] = { goals: stat.goals, assists: stat.assists };
+        acc[stat.playerId] = {
+          goals: stat.goals,
+          assists: stat.assists,
+          played: stat.played ?? true,
+        };
         return acc;
       },
       {},
     );
+    const playedCount = [...confirmedPlayerIds].filter(
+      (playerId) => submittedMap[playerId]?.played ?? true,
+    ).length;
+
+    if (playedCount === 0) {
+      throw new Error('A partida precisa ter pelo menos um jogador participante.');
+    }
+
+    const existingMatchStats = findMatchStatsForMatch(activeTeamId, match.id);
+    if (findDuplicateMatchStatPlayerId(existingMatchStats)) {
+      throw new Error(
+        'Existem súmulas duplicadas nesta partida. Revise os dados antes de encerrá-la novamente.',
+      );
+    }
+
+    assertMockPlayersCanBeMarkedNotPlayed({
+      teamId: activeTeamId,
+      match,
+      playerStats: input.playerStats,
+      existingMatchStats,
+    });
 
     const nextStatIds = new Set(
-      [...confirmedPlayerIds].map((playerId) => buildStableDocumentId(match.id, playerId)),
+      [...confirmedPlayerIds].map(
+        (playerId) =>
+          existingMatchStats.find((item) => item.playerId === playerId)?.id ??
+          buildStableDocumentId(match.id, playerId),
+      ),
     );
     database.matchStats = database.matchStats.filter(
       (item) => item.matchId !== match.id || nextStatIds.has(item.id),
     );
 
     const statsToInsert = [...confirmedPlayerIds].map<MatchStat>((playerId) => {
-      const existing = findMatchStatsForMatch(activeTeamId, match.id).find(
+      const existing = existingMatchStats.find(
         (item) => item.playerId === playerId,
       );
+      const played = submittedMap[playerId]?.played ?? true;
       return {
-        id: buildStableDocumentId(match.id, playerId),
+        id: existing?.id ?? buildStableDocumentId(match.id, playerId),
         teamId: match.teamId,
         matchId: match.id,
         playerId,
-        played: true,
-        started: starterIds.has(playerId),
+        played,
+        started: played && starterIds.has(playerId),
         goals: submittedMap[playerId]?.goals ?? 0,
         assists: submittedMap[playerId]?.assists ?? 0,
-        yellowCards: 0,
-        redCards: 0,
-        notes: '',
+        yellowCards: existing?.yellowCards ?? 0,
+        redCards: existing?.redCards ?? 0,
+        notes: existing?.notes ?? '',
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       };
@@ -3525,6 +3717,11 @@ export const mockRepository: AppRepository = {
     const { activeTeamId } = ensureActiveTeamContext(actorUserId);
     const match = findMatchForTeam(activeTeamId, matchId);
     requireTeamAdmin(actorUserId, match.teamId);
+    const player = findPlayer(playerId);
+
+    if (player.teamId !== activeTeamId) {
+      throw new Error('Jogador não encontrado neste time.');
+    }
 
     if (match.deletedAt) {
       throw new Error('Não é possível editar participantes de uma partida excluída.');
@@ -3532,7 +3729,40 @@ export const mockRepository: AppRepository = {
 
     const now = nowIso();
     const attendanceId = buildStableDocumentId(matchId, playerId);
-    const existingIndex = database.attendance.findIndex((item) => item.id === attendanceId);
+    // Localiza por matchId+playerId: registros antigos podem ter IDs fora do
+    // padrão estável e não podem virar duplicata.
+    const playerAttendanceItems = database.attendance.filter(
+      (item) => item.matchId === matchId && item.playerId === playerId,
+    );
+    const playerMatchStats = database.matchStats.filter(
+      (item) => item.matchId === matchId && item.playerId === playerId,
+    );
+    const duplicateMessage = getDuplicateParticipationMessage({
+      attendanceCount: playerAttendanceItems.length,
+      matchStatsCount: match.status === 'finished' ? playerMatchStats.length : 0,
+    });
+
+    if (duplicateMessage) {
+      throw new Error(duplicateMessage);
+    }
+
+    if (match.status === 'finished' && status !== 'confirmed') {
+      const blocker = getParticipationRemovalBlocker({
+        playerId,
+        match,
+        matchStat: playerMatchStats[0] ?? null,
+        ratings: findRatingsForMatch(activeTeamId, matchId),
+        votes: findMvpVotesForMatch(activeTeamId, matchId),
+      });
+
+      if (blocker) {
+        throw new Error(blocker);
+      }
+    }
+
+    const existingIndex = database.attendance.findIndex(
+      (item) => item.id === playerAttendanceItems[0]?.id,
+    );
 
     if (existingIndex >= 0) {
       database.attendance[existingIndex]!.status = status;
@@ -3552,7 +3782,37 @@ export const mockRepository: AppRepository = {
       });
     }
 
-    const record = database.attendance.find((item) => item.id === attendanceId)!;
+    // Em partida encerrada, a súmula (matchStats) acompanha a presença para
+    // que a lista da partida e as estatísticas nunca divirjam.
+    if (match.status === 'finished') {
+      const existingStatIndex = database.matchStats.findIndex(
+        (item) => item.id === playerMatchStats[0]?.id,
+      );
+
+      if (status === 'confirmed' && existingStatIndex < 0) {
+        database.matchStats.push({
+          id: buildStableDocumentId(matchId, playerId),
+          teamId: match.teamId,
+          matchId,
+          playerId,
+          played: true,
+          started: false,
+          goals: 0,
+          assists: 0,
+          yellowCards: 0,
+          redCards: 0,
+          notes: '',
+          createdAt: now,
+          updatedAt: now,
+        });
+      } else if (status !== 'confirmed' && existingStatIndex >= 0) {
+        database.matchStats.splice(existingStatIndex, 1);
+      }
+    }
+
+    const record = database.attendance.find(
+      (item) => item.matchId === matchId && item.playerId === playerId,
+    )!;
 
     return clone(record);
   },

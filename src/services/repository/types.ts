@@ -246,6 +246,8 @@ export interface FinishMatchPlayerStatInput {
   playerId: string;
   goals: number;
   assists: number;
+  /** false = confirmado que não jogou; omitido mantém o comportamento atual (jogou). */
+  played?: boolean;
 }
 
 export interface MatchFieldCostInput {
@@ -392,6 +394,16 @@ export interface AppRepository {
     input: UpdateMatchFieldPaymentInput,
     actorUserId: string,
   ): Promise<Match>;
+  updateMatchFieldCost(
+    matchId: string,
+    input: MatchFieldCostInput | null,
+    actorUserId: string,
+  ): Promise<Match>;
+  setTeamDefaultMatchCost(
+    teamId: string,
+    defaultMatchCostCents: number | null,
+    actorUserId: string,
+  ): Promise<Team>;
   updateAttendance(input: UpdateAttendanceInput, actorUserId: string): Promise<AttendanceRecord>;
   saveLineup(input: SaveLineupInput, actorUserId: string): Promise<Lineup>;
   finishMatch(input: FinishMatchInput, actorUserId: string): Promise<Match>;

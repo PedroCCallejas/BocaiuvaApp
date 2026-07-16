@@ -34,6 +34,11 @@ export default function SupportScreen() {
 
   return (
     <PublicPageShell
+      seo={{
+        title: 'Suporte e ajuda | Professô FC',
+        description: 'Encontre orientações e canais de atendimento para tirar dúvidas sobre o uso do Professô FC.',
+        canonicalPath: '/suporte',
+      }}
       eyebrow="Suporte"
       title="Ajuda pública para conhecer e começar no Professô FC"
       description="Esta página foi pensada para orientar visitantes, atletas e administradores que estão conhecendo o produto antes de entrar em um time."

@@ -449,7 +449,7 @@ export function getPlayerTotalStats(
   );
 }
 
-function buildConfirmedIdsByMatch(snapshot: AppSnapshot, matchIds: Set<string>) {
+export function buildConfirmedIdsByMatch(snapshot: AppSnapshot, matchIds: Set<string>) {
   return snapshot.attendance.reduce<Record<string, Set<string>>>((acc, item) => {
     if (!matchIds.has(item.matchId) || item.status !== 'confirmed') {
       return acc;
@@ -459,6 +459,30 @@ function buildConfirmedIdsByMatch(snapshot: AppSnapshot, matchIds: Set<string>) 
     acc[item.matchId].add(item.playerId);
     return acc;
   }, {});
+}
+
+export function selectEligiblePlayerMatchStats(
+  snapshot: AppSnapshot,
+  playerId: string,
+  matchIds: Set<string>,
+  confirmedIdsByMatch = buildConfirmedIdsByMatch(snapshot, matchIds),
+) {
+  const seenMatchIds = new Set<string>();
+
+  return snapshot.matchStats.filter((item) => {
+    if (
+      item.playerId !== playerId ||
+      !matchIds.has(item.matchId) ||
+      !item.played ||
+      !confirmedIdsByMatch[item.matchId]?.has(playerId) ||
+      seenMatchIds.has(item.matchId)
+    ) {
+      return false;
+    }
+
+    seenMatchIds.add(item.matchId);
+    return true;
+  });
 }
 
 export function calculateMatchMvpBreakdown(input: {
@@ -655,12 +679,11 @@ export function buildPlayerAggregates(
     const playerAttendance = snapshot.attendance.filter(
       (item) => item.playerId === player.id && matchIds.has(item.matchId),
     );
-    const playerStats = snapshot.matchStats.filter(
-      (item) =>
-        item.playerId === player.id &&
-        matchIds.has(item.matchId) &&
-        item.played &&
-        confirmedIdsByMatch[item.matchId]?.has(player.id),
+    const playerStats = selectEligiblePlayerMatchStats(
+      snapshot,
+      player.id,
+      matchIds,
+      confirmedIdsByMatch,
     );
     const playerRatings = snapshot.playerRatings.filter(
       (item) =>

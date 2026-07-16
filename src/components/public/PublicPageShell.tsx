@@ -4,6 +4,8 @@ import { router, usePathname } from 'expo-router';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { Screen } from '@/components/ui/Screen';
+import { PublicSeoHead } from '@/components/seo/PublicSeoHead';
+import type { PublicSeoMetadata } from '@/lib/public-seo';
 import { APP_NAME } from '@/constants/branding';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -34,6 +36,7 @@ interface PublicPageShellProps extends PropsWithChildren {
   eyebrow?: string;
   title: string;
   description: string;
+  seo?: PublicSeoMetadata;
   actions?: PublicAction[];
 }
 
@@ -49,6 +52,7 @@ export function PublicPageShell({
   eyebrow,
   title,
   description,
+  seo,
   actions,
   children,
 }: PublicPageShellProps) {
@@ -62,6 +66,7 @@ export function PublicPageShell({
 
   return (
     <Screen hideWebHeader contentContainerStyle={styles.screen}>
+      {seo ? <PublicSeoHead {...seo} /> : null}
       <View
         style={[
           styles.navCard,

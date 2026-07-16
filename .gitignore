@@ -69,3 +69,7 @@ dist/
 .claude/logs/
 .claude/cache/
 .claude/tmp/
+
+AGENTS.md
+.agents
+.codex

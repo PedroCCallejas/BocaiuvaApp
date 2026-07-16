@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 import {
   addPlayerToQueue,
@@ -34,6 +35,9 @@ import {
   resolveOwnPlayerProfileAccess,
 } from '@/lib/player-profile-access';
 import { buildPublicTeamProfile, buildPublicTeamSummary } from '@/lib/public-team';
+import { isLiteralRouteParam } from '@/lib/route-params';
+import { isIndexablePublicRoute } from '@/lib/seo-routes';
+import { buildCanonicalUrl, SITE_URL } from '@/lib/public-seo';
 import { getActiveRatingCriteria } from '@/lib/rating-criteria';
 import {
   canSelfEditPlayerProfileWithMembershipLink,
@@ -115,6 +119,7 @@ import {
   createTeamMember,
   createUser,
 } from './test-helpers';
+import { statsBreakdownFinanceTestCases } from './stats-breakdown-finance-cases';
 
 type TestCase = {
   name: string;
@@ -122,6 +127,110 @@ type TestCase = {
 };
 
 const testCases: TestCase[] = [
+  ...statsBreakdownFinanceTestCases,
+  {
+    name: 'sitemap oficial contem somente as dez URLs publicas canonicas',
+    run() {
+      assert.equal(fs.existsSync('public/sitemap.xml'), true);
+      assert.equal(fs.existsSync('public/sitemap-main.xml'), false);
+      const xml = fs.readFileSync('public/sitemap.xml', 'utf8');
+      assert.match(xml, /^<\?xml version="1\.0" encoding="UTF-8"\?>/);
+      assert.match(xml, /<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9">/);
+      const urls = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
+      const expected = [
+        `${SITE_URL}/`,
+        `${SITE_URL}/ferramentas`,
+        `${SITE_URL}/ferramentas/sorteador-de-times`,
+        `${SITE_URL}/ferramentas/cronometro-pelada`,
+        `${SITE_URL}/ferramentas/rodizio-de-times`,
+        `${SITE_URL}/ferramentas/campeonato-rapido`,
+        `${SITE_URL}/teams-gallery`,
+        `${SITE_URL}/privacidade`,
+        `${SITE_URL}/termos`,
+        `${SITE_URL}/suporte`,
+      ];
+      assert.deepEqual(urls, expected);
+      assert.equal(new Set(urls).size, 10);
+      for (const url of urls) {
+        const parsed = new URL(url);
+        assert.equal(parsed.protocol, 'https:');
+        assert.equal(parsed.origin, SITE_URL);
+        assert.equal(parsed.search, '');
+        assert.equal(parsed.hash, '');
+        assert.doesNotMatch(url, /\[|%5B|\.html|undefined|null/i);
+        if (url !== `${SITE_URL}/`) assert.equal(url.endsWith('/'), false);
+      }
+      assert.doesNotMatch(xml, /login|register|forgot-password|\/home|\/matches|\/players|\/profile|\/stats|\/rankings|\/notifications|\/team-/);
+    },
+  },
+  {
+    name: 'robots anuncia somente o sitemap oficial e permite leitura do noindex',
+    run() {
+      const robots = fs.readFileSync('public/robots.txt', 'utf8');
+      assert.match(robots, /User-agent:\s*\*/i);
+      assert.match(robots, /Allow:\s*\//i);
+      assert.doesNotMatch(robots, /^Disallow:/im);
+      const sitemapLines = robots.match(/^Sitemap:.*$/gim) ?? [];
+      assert.deepEqual(sitemapLines, [`Sitemap: ${SITE_URL}/sitemap.xml`]);
+      assert.doesNotMatch(robots, /sitemap-main\.xml/i);
+    },
+  },
+  {
+    name: 'canonical publico usa dominio central e normaliza barra, query e hash',
+    run() {
+      assert.equal(buildCanonicalUrl('/'), `${SITE_URL}/`);
+      assert.equal(buildCanonicalUrl('/ferramentas/'), `${SITE_URL}/ferramentas`);
+      assert.equal(buildCanonicalUrl('/teams-gallery?origem=teste#times'), `${SITE_URL}/teams-gallery`);
+    },
+  },
+  {
+    name: 'metadata publica central possui conjunto completo de OG e Twitter',
+    run() {
+      const source = fs.readFileSync('src/components/seo/PublicSeoHead.tsx', 'utf8');
+      for (const marker of ['<title>', 'name="description"', 'rel="canonical"', 'property="og:title"', 'property="og:description"', 'property="og:url"', 'property="og:type"', 'property="og:site_name"', 'property="og:locale"', 'name="twitter:card"', 'name="twitter:title"', 'name="twitter:description"']) {
+        assert.match(source, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      }
+    },
+  },
+  {
+    name: 'documento global nao disputa title, description, OG ou Twitter das paginas',
+    run() {
+      const source = fs.readFileSync('src/app/+html.tsx', 'utf8');
+      assert.doesNotMatch(source, /<title>|name="description"|property="og:|name="twitter:/);
+    },
+  },
+  {
+    name: 'parametro literal reconhece valores crus e codificados',
+    run() {
+      for (const value of ['[matchId]', '[playerId]', '[teamId]', '%5BmatchId%5D', '%5BplayerId%5D', '%5BteamId%5D']) {
+        assert.equal(isLiteralRouteParam(value), true, `${value} deve ser literal`);
+      }
+      for (const value of [undefined, '', 'match-1', 'team-123', '%invalid']) {
+        assert.equal(isLiteralRouteParam(value), false, `${String(value)} nao deve ser literal`);
+      }
+    },
+  },
+  {
+    name: 'politica SEO central classifica rotas privadas, autenticacao e publicas',
+    run() {
+      assert.equal(isIndexablePublicRoute(['(app)', '(tabs)', 'home']), false);
+      assert.equal(isIndexablePublicRoute(['(app)', 'matches', 'create']), false);
+      assert.equal(isIndexablePublicRoute(['(auth)', 'login']), false);
+      assert.equal(isIndexablePublicRoute(['+not-found']), false);
+      assert.equal(isIndexablePublicRoute([]), true);
+      assert.equal(isIndexablePublicRoute(['ferramentas']), true);
+      assert.equal(isIndexablePublicRoute(['teams-gallery']), true);
+    },
+  },
+  {
+    name: 'componente noindex define robots e googlebot uma unica vez',
+    run() {
+      const source = fs.readFileSync('src/components/seo/NoIndexHead.tsx', 'utf8');
+      assert.equal((source.match(/name="robots"/g) ?? []).length, 1);
+      assert.equal((source.match(/name="googlebot"/g) ?? []).length, 1);
+      assert.match(source, /noindex, nofollow/);
+    },
+  },
   {
     name: 'inativar jogador preserva historico e apenas muda o estado do cadastro',
     run() {

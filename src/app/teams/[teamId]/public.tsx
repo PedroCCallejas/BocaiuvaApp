@@ -3,6 +3,7 @@ import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { PublicPageShell } from '@/components/public/PublicPageShell';
+import { NoIndexHead } from '@/components/seo/NoIndexHead';
 import { TeamHeroCard } from '@/components/cards/TeamHeroCard';
 import { AppButton } from '@/components/ui/AppButton';
 import { Avatar } from '@/components/ui/Avatar';
@@ -19,6 +20,7 @@ import {
   formatPublicPhone,
 } from '@/lib/public-team';
 import { openExternalUrl } from '@/lib/external-url';
+import { isLiteralRouteParam } from '@/lib/route-params';
 import { useAppStore } from '@/store/app-store';
 import type { PublicTeamProfile } from '@/types/domain';
 
@@ -104,6 +106,8 @@ export default function PublicTeamProfileScreen() {
   );
   const rawTeamId = params.teamId;
   const teamId = typeof rawTeamId === 'string' ? rawTeamId : rawTeamId?.[0] ?? '';
+  const hasLiteralTeamId = isLiteralRouteParam(teamId);
+  const shouldNoIndex = hasLiteralTeamId || (!loading && (Boolean(loadError) || !profile));
   const publicVideoAccent = profile
     ? pickBrightestColor(
         [profile.secondaryColor, profile.accentColor, profile.primaryColor, theme.colors.secondary],
@@ -112,9 +116,9 @@ export default function PublicTeamProfileScreen() {
     : theme.colors.secondary;
 
   async function loadProfile() {
-    if (!teamId) {
+    if (!teamId || hasLiteralTeamId) {
       setProfile(null);
-      setLoadError('O identificador do time não foi informado.');
+      setLoadError('O identificador do time não é válido.');
       setLoading(false);
       return;
     }
@@ -187,7 +191,14 @@ export default function PublicTeamProfileScreen() {
   }
 
   return (
-    <PublicPageShell
+    <>
+      {shouldNoIndex ? <NoIndexHead /> : null}
+      <PublicPageShell
+      seo={profile && !hasLiteralTeamId ? {
+        title: `${profile.name} | Professô FC`,
+        description: `Conheça o perfil público do ${profile.name} no Professô FC.`,
+        canonicalPath: `/teams/${teamId}/public`,
+      } : undefined}
       eyebrow="Perfil público"
       title={profile ? profile.name : 'Perfil público do time'}
       description="Este perfil mostra apenas informações públicas liberadas pelo próprio time. Dados internos, rotinas protegidas e informações administrativas continuam fora desta área."
@@ -398,7 +409,8 @@ export default function PublicTeamProfileScreen() {
           </Modal>
         </>
       )}
-    </PublicPageShell>
+      </PublicPageShell>
+    </>
   );
 }
 

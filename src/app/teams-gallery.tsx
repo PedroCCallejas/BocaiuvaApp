@@ -122,6 +122,11 @@ export default function TeamsGalleryScreen() {
 
   return (
     <PublicPageShell
+      seo={{
+        title: 'Galeria de times de futebol amador | Professô FC',
+        description: 'Conheça times de futebol amador que optaram por compartilhar publicamente seu perfil no Professô FC.',
+        canonicalPath: '/teams-gallery',
+      }}
       eyebrow="Galeria pública"
       title="Times que escolheram aparecer publicamente"
       description="Aqui aparecem apenas perfis públicos liberados pelos próprios administradores. Dados privados, partidas internas, presença, notas, rankings protegidos e informações administrativas não são exibidos."

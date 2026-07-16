@@ -854,6 +854,27 @@ export default function TeamSettingsScreen() {
           />
         </View>
 
+        <View
+          style={[
+            styles.secondaryCard,
+            {
+              backgroundColor: theme.colors.backgroundElevated,
+              borderColor: theme.colors.border,
+            },
+          ]}>
+          <Text style={[styles.secondaryTitle, { color: theme.colors.text }]}>
+            Financeiro
+          </Text>
+          <Text style={[styles.secondaryText, { color: theme.colors.textMuted }]}>
+            Controle o valor de cada partida, os totais por período e o valor padrão do time.
+          </Text>
+          <AppButton
+            label="Abrir financeiro"
+            variant="secondary"
+            onPress={() => router.push('/financeiro' as never)}
+          />
+        </View>
+
         <AppButton
           label="Salvar alterações"
           onPress={handleSubmit(onSubmit)}

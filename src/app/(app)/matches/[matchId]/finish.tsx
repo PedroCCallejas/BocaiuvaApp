@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Switch, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { MetricCard } from '@/components/cards/MetricCard';
@@ -20,27 +20,33 @@ import {
   selectCurrentTeam,
 } from '@/store/selectors';
 
+type PlayerStatDraft = { goals: number; assists: number; played: boolean };
+
 function buildPlayerStatsState(
   playerIds: string[],
-  existingStats: Array<{ playerId: string; goals: number; assists: number }>,
+  existingStats: Array<{ playerId: string; goals: number; assists: number; played?: boolean }>,
 ) {
-  return playerIds.reduce<Record<string, { goals: number; assists: number }>>((acc, playerId) => {
+  return playerIds.reduce<Record<string, PlayerStatDraft>>((acc, playerId) => {
     const stat = existingStats.find((item) => item.playerId === playerId);
     acc[playerId] = {
       goals: stat?.goals ?? 0,
       assists: stat?.assists ?? 0,
+      played: stat ? stat.played !== false : true,
     };
     return acc;
   }, {});
 }
 
-function sumGoals(playerStats: Record<string, { goals: number; assists: number }>) {
-  return Object.values(playerStats).reduce((sum, item) => sum + Math.max(item.goals, 0), 0);
+function sumGoals(playerStats: Record<string, PlayerStatDraft>) {
+  return Object.values(playerStats).reduce(
+    (sum, item) => sum + (item.played ? Math.max(item.goals, 0) : 0),
+    0,
+  );
 }
 
-function sumAssists(playerStats: Record<string, { goals: number; assists: number }>) {
+function sumAssists(playerStats: Record<string, PlayerStatDraft>) {
   return Object.values(playerStats).reduce(
-    (sum, item) => sum + Math.max(item.assists, 0),
+    (sum, item) => sum + (item.played ? Math.max(item.assists, 0) : 0),
     0,
   );
 }
@@ -199,11 +205,34 @@ export default function FinishMatchScreen() {
         [playerId]: {
           goals: key === 'goals' ? value : current[playerId]?.goals ?? 0,
           assists: key === 'assists' ? value : current[playerId]?.assists ?? 0,
+          played: current[playerId]?.played ?? true,
         },
       }));
     },
     [],
   );
+
+  const togglePlayerPlayed = useCallback((playerId: string, played: boolean) => {
+    setPlayerStats((current) => {
+      const currentStat = current[playerId] ?? { goals: 0, assists: 0, played: true };
+
+      if (!played && (currentStat.goals > 0 || currentStat.assists > 0)) {
+        setSaveError(
+          'Remova explicitamente os gols e assistências antes de marcar que o jogador não participou.',
+        );
+        return current;
+      }
+
+      setSaveError(null);
+      return {
+        ...current,
+        [playerId]: {
+          ...currentStat,
+          played,
+        },
+      };
+    });
+  }, []);
 
   const handleTeamScoreChange = useCallback((value: number) => {
     setTeamScoreManuallyEdited(true);
@@ -266,8 +295,14 @@ export default function FinishMatchScreen() {
         playerId: player.id,
         goals: playerStats[player.id]?.goals ?? 0,
         assists: playerStats[player.id]?.assists ?? 0,
+        played: playerStats[player.id]?.played ?? true,
       })),
     };
+
+    if (payload.playerStats.every((stat) => !stat.played)) {
+      setSaveError('A partida precisa ter pelo menos um jogador participante.');
+      return;
+    }
 
     if (__DEV__) console.log('[finish-match] payload', { ...payload, mode: isReEdit ? 'edit-finished' : 'finish' });
 
@@ -500,40 +535,67 @@ export default function FinishMatchScreen() {
 
       <SectionHeader title="Resultado" subtitle={resultLabel} />
 
-      {confirmedPlayers.map((player) => (
-        <View
-          key={player.id}
-          style={[
-            styles.playerRow,
-            {
-              backgroundColor: theme.colors.surface,
-              borderColor: theme.colors.border,
-            },
-          ]}>
-          <View style={styles.playerCopy}>
-            <Text style={[styles.playerName, { color: theme.colors.text }]}>
-              #{player.jerseyNumber} {player.nickname}
-            </Text>
-            <Text style={[styles.playerSub, { color: theme.colors.textMuted }]}>
-              {player.fullName}
-            </Text>
+      {confirmedPlayers.map((player) => {
+        const played = playerStats[player.id]?.played ?? true;
+
+        return (
+          <View
+            key={player.id}
+            style={[
+              styles.playerRow,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+                opacity: played ? 1 : 0.72,
+              },
+            ]}>
+            <View style={styles.playerHeaderRow}>
+              <View style={styles.playerCopy}>
+                <Text style={[styles.playerName, { color: theme.colors.text }]}>
+                  #{player.jerseyNumber} {player.nickname}
+                </Text>
+                <Text style={[styles.playerSub, { color: theme.colors.textMuted }]}>
+                  {player.fullName}
+                </Text>
+              </View>
+              <View style={styles.playedToggle}>
+                <Text style={[styles.playedToggleLabel, { color: theme.colors.textMuted }]}>
+                  Jogou
+                </Text>
+                <Switch
+                  accessibilityLabel={`Participou da partida: ${player.nickname}`}
+                  value={played}
+                  onValueChange={(value) => togglePlayerPlayed(player.id, value)}
+                  trackColor={{
+                    false: theme.colors.border,
+                    true: theme.colors.secondary,
+                  }}
+                />
+              </View>
+            </View>
+            {played ? (
+              <View style={styles.counterRow}>
+                <CounterField
+                  label="Gols"
+                  value={playerStats[player.id]?.goals ?? 0}
+                  min={0}
+                  onChange={(value) => updatePlayerStat(player.id, 'goals', value)}
+                />
+                <CounterField
+                  label="Assistências"
+                  value={playerStats[player.id]?.assists ?? 0}
+                  min={0}
+                  onChange={(value) => updatePlayerStat(player.id, 'assists', value)}
+                />
+              </View>
+            ) : (
+              <Text style={[styles.playerSub, { color: theme.colors.textMuted }]}>
+                Confirmou presença, mas não entra na contagem de jogos desta partida.
+              </Text>
+            )}
           </View>
-          <View style={styles.counterRow}>
-            <CounterField
-              label="Gols"
-              value={playerStats[player.id]?.goals ?? 0}
-              min={0}
-              onChange={(value) => updatePlayerStat(player.id, 'goals', value)}
-            />
-            <CounterField
-              label="Assistências"
-              value={playerStats[player.id]?.assists ?? 0}
-              min={0}
-              onChange={(value) => updatePlayerStat(player.id, 'assists', value)}
-            />
-          </View>
-        </View>
-      ))}
+        );
+      })}
 
       {saveError ? (
         <Text style={[styles.saveError, { color: theme.colors.danger }]}>{saveError}</Text>
@@ -629,6 +691,22 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     padding: 16,
     gap: 14,
+  },
+  playerHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  playedToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  playedToggleLabel: {
+    fontFamily: fonts.heading,
+    fontSize: 13,
+    fontWeight: '700',
   },
   playerCopy: {
     gap: 4,

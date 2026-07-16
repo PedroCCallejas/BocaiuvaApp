@@ -42,6 +42,11 @@ export default function PrivacyScreen() {
 
   return (
     <PublicPageShell
+      seo={{
+        title: 'Política de Privacidade | Professô FC',
+        description: 'Saiba como o Professô FC coleta, utiliza, protege e permite o gerenciamento dos dados dos usuários.',
+        canonicalPath: '/privacidade',
+      }}
       eyebrow="Privacidade"
       title="Política de privacidade do Professô FC"
       description="Este resumo público foi feito para explicar com clareza o uso de dados no contexto do produto, da galeria pública e das áreas protegidas do time."

@@ -42,6 +42,11 @@ export default function TermsScreen() {
 
   return (
     <PublicPageShell
+      seo={{
+        title: 'Termos de Uso | Professô FC',
+        description: 'Consulte os termos e condições para utilização do aplicativo Professô FC e de seus recursos.',
+        canonicalPath: '/termos',
+      }}
       eyebrow="Termos"
       title="Termos de uso do Professô FC"
       description="Esta versão pública resume as regras básicas para uso do produto, da galeria pública e do fluxo de organização dos times."

@@ -131,6 +131,7 @@ export interface Team extends BaseEntity {
   coachName: string;
   adminUserId: string;
   activeSeasonId?: string | null;
+  defaultMatchCostCents?: number | null;
 }
 
 export interface TeamRatingCriterion extends BaseEntity {

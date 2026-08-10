@@ -4,9 +4,12 @@ import { Platform } from 'react-native';
 
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { useAppStore } from '@/store/app-store';
+import { selectCanManageTeam } from '@/store/selectors';
 
 export default function TabsLayout() {
   const theme = useAppTheme();
+  const canManageTeam = useAppStore(selectCanManageTeam);
 
   return (
     <Tabs
@@ -15,15 +18,24 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: theme.colors.backgroundElevated,
           borderTopColor: theme.colors.border,
-          height: Platform.OS === 'web' ? 70 : undefined,
+          borderTopWidth: 1,
+          height: Platform.OS === 'web' ? 72 : undefined,
           paddingBottom: Platform.OS === 'web' ? 10 : undefined,
           paddingTop: Platform.OS === 'web' ? 8 : undefined,
         },
-        tabBarActiveTintColor: theme.colors.secondary,
+        tabBarItemStyle: {
+          borderRadius: 14,
+          marginHorizontal: Platform.OS === 'web' ? 4 : 2,
+          marginVertical: 5,
+        },
+        tabBarActiveBackgroundColor: theme.colors.primaryFaint,
+        tabBarActiveTintColor: theme.colors.action,
         tabBarInactiveTintColor: theme.colors.textMuted,
+        tabBarHideOnKeyboard: true,
         tabBarLabelStyle: {
           fontFamily: fonts.heading,
-          fontWeight: '700',
+          fontSize: 10,
+          fontWeight: '800',
         },
       }}>
       <Tabs.Screen
@@ -61,6 +73,16 @@ export default function TabsLayout() {
         options={{
           title: 'Rankings',
           tabBarIcon: ({ color, size }) => <Ionicons name="trophy" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="financeiro"
+        options={{
+          title: 'Financeiro',
+          // `href: null` remove a aba da barra para quem não administra o time.
+          // A própria tela já redireciona quem não tem permissão.
+          href: canManageTeam ? undefined : null,
+          tabBarIcon: ({ color, size }) => <Ionicons name="wallet" color={color} size={size} />,
         }}
       />
       <Tabs.Screen

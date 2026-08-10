@@ -11,6 +11,7 @@ import { initializeAdMob } from '@/services/ads/admob-service';
 import { setupNotificationHandler } from '@/services/notifications';
 import { isIndexablePublicRoute } from '@/lib/seo-routes';
 import { useAppStore } from '@/store/app-store';
+import { baseTheme } from '@/constants/theme';
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -62,7 +63,7 @@ export default function RootLayout() {
         screenOptions={{
           headerShown: false,
           contentStyle: {
-            backgroundColor: '#051108',
+            backgroundColor: baseTheme.colors.background,
           },
         }}
       />

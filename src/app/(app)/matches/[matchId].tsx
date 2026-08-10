@@ -132,18 +132,25 @@ export default function MatchDetailsScreen() {
     setManualMvpDraftPlayerId(undefined);
   }, [match?.id]);
 
+  // `payerPlayerIds` é um array: a referência muda a cada atualização do snapshot,
+  // mesmo sem mudança real de conteúdo. Usar a referência como dependência fazia o
+  // efeito rodar e descartar as marcações que o admin ainda não tinha salvado.
+  // A chave serializada só muda quando o conteúdo realmente muda.
+  const persistedPayerPlayerIdsKey = (match?.fieldPayment?.payerPlayerIds ?? []).join('|');
+
   useEffect(() => {
     const fp = match?.fieldPayment ?? null;
     setPayerPlayerIdsDraft(fp?.payerPlayerIds ?? []);
     setPaidGuestCountDraft(String(fp?.paidGuestCount ?? 0));
     setPixKeyDraft(fp?.pixKey ?? '');
     setResponsibleNameDraft(fp?.responsibleName ?? '');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     match?.id,
     match?.fieldPayment?.paidGuestCount,
     match?.fieldPayment?.pixKey,
     match?.fieldPayment?.responsibleName,
-    match?.fieldPayment?.payerPlayerIds,
+    persistedPayerPlayerIdsKey,
   ]);
 
   const paidGuestCountValue = useMemo(() => {
@@ -160,6 +167,25 @@ export default function MatchDetailsScreen() {
         })
       : null;
   }, [match?.fieldCost, paidGuestCountValue, payerPlayerIdsDraft]);
+
+  // As marcações ficam em rascunho até o admin salvar. Sinalizar isso evita
+  // a impressão de que o botão "Marcar como pago" não funcionou.
+  const hasUnsavedFieldPayment = useMemo(() => {
+    const fp = match?.fieldPayment ?? null;
+
+    return (
+      [...payerPlayerIdsDraft].sort().join('|') !== [...(fp?.payerPlayerIds ?? [])].sort().join('|') ||
+      paidGuestCountValue !== (fp?.paidGuestCount ?? 0) ||
+      pixKeyDraft.trim() !== (fp?.pixKey ?? '') ||
+      responsibleNameDraft.trim() !== (fp?.responsibleName ?? '')
+    );
+  }, [
+    match?.fieldPayment,
+    paidGuestCountValue,
+    payerPlayerIdsDraft,
+    pixKeyDraft,
+    responsibleNameDraft,
+  ]);
 
   if (!match) {
     if (__DEV__) console.log('[match-detail] match missing', { matchId: resolvedMatchId });
@@ -790,7 +816,11 @@ export default function MatchDetailsScreen() {
               <View style={styles.fieldPaymentAdminSection}>
                 <SectionHeader
                   title="Marcar como pago"
-                  subtitle="Somente jogadores confirmados entram na lista de pagamento."
+                  subtitle={
+                    hasUnsavedFieldPayment
+                      ? 'Alterações ainda não salvas. Toque em "Salvar controle do campo" para confirmar.'
+                      : 'Somente jogadores confirmados entram na lista de pagamento.'
+                  }
                 />
                 {confirmedPlayers.map((player) => {
                   const isPaid = payerPlayerIdsDraft.includes(player.id);
@@ -862,7 +892,11 @@ export default function MatchDetailsScreen() {
                 </View>
                 <View style={styles.buttonRow}>
                   <AppButton
-                    label="Salvar controle do campo"
+                    label={
+                      hasUnsavedFieldPayment
+                        ? 'Salvar controle do campo *'
+                        : 'Salvar controle do campo'
+                    }
                     onPress={() => void handleSaveFieldPayment()}
                     loading={savingFieldPayment}
                   />

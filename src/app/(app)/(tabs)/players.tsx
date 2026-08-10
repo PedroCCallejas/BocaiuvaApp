@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
 import { PlayerCard } from '@/components/cards/PlayerCard';
 import { SyncStatusCard } from '@/components/cards/SyncStatusCard';
@@ -32,6 +33,15 @@ const PLAYER_FILTER_LABELS: Record<PlayerRosterFilter, string> = {
   all: 'Todos',
 };
 
+// Busca tolerante a acento e caixa: "jose" encontra "José".
+function normalizeSearchText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 export default function PlayersScreen() {
   const isWeb = Platform.OS === 'web';
   const theme = useAppTheme();
@@ -44,6 +54,7 @@ export default function PlayersScreen() {
   const syncMessage = useAppStore(selectSyncStatusMessage);
   const syncHint = useAppStore(selectSyncStatusHint);
   const [rosterFilter, setRosterFilter] = useState<PlayerRosterFilter>('active');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const stats = useMemo(
     () => team ? buildPlayerAggregates(snapshot, team.id, { playerScope: 'all' }) : [],
@@ -78,7 +89,7 @@ export default function PlayersScreen() {
   const injuredPlayers = players.filter((player) => player.status === 'injured' && !player.deletedAt);
   const inactivePlayers = players.filter((player) => player.status === 'inactive' || Boolean(player.deletedAt));
   const suspendedPlayers = players.filter((player) => player.status === 'suspended' && !player.deletedAt);
-  const visiblePlayers = useMemo(() => {
+  const playersInFilter = useMemo(() => {
     if (!canManagePlayers) {
       return activePlayers;
     }
@@ -98,6 +109,23 @@ export default function PlayersScreen() {
     }
   }, [activePlayers, injuredPlayers, inactivePlayers, suspendedPlayers, canManagePlayers, players, rosterFilter]);
 
+  const normalizedQuery = normalizeSearchText(searchQuery);
+  const isSearching = normalizedQuery.length > 0;
+
+  const visiblePlayers = useMemo(() => {
+    if (!normalizedQuery) {
+      return playersInFilter;
+    }
+
+    return playersInFilter.filter((player) => {
+      const haystack = normalizeSearchText(
+        `${player.nickname} ${player.fullName} ${player.jerseyNumber} ${player.primaryPosition}`,
+      );
+
+      return haystack.includes(normalizedQuery);
+    });
+  }, [normalizedQuery, playersInFilter]);
+
   if (!team) {
     return null;
   }
@@ -108,9 +136,11 @@ export default function PlayersScreen() {
         <SectionHeader
           title="Elenco"
           subtitle={
-            visiblePlayers.length > 0
-              ? `${visiblePlayers.length} jogador(es) em ${PLAYER_FILTER_LABELS[canManagePlayers ? rosterFilter : 'active'].toLowerCase()}`
-              : `Monte o elenco de ${team.name}`
+            isSearching
+              ? `${visiblePlayers.length} resultado(s) para "${searchQuery.trim()}"`
+              : visiblePlayers.length > 0
+                ? `${visiblePlayers.length} jogador(es) em ${PLAYER_FILTER_LABELS[canManagePlayers ? rosterFilter : 'active'].toLowerCase()}`
+                : `Monte o elenco de ${team.name}`
           }
           actionLabel={canManagePlayers ? 'Adicionar jogador' : undefined}
           onAction={canManagePlayers ? () => router.push('/players/create') : undefined}
@@ -122,6 +152,36 @@ export default function PlayersScreen() {
         message={syncMessage}
         onRefresh={() => void refreshData()}
       />
+
+      <View
+        style={[
+          styles.searchField,
+          {
+            backgroundColor: theme.colors.backgroundElevated,
+            borderColor: theme.colors.borderStrong,
+          },
+        ]}>
+        <Ionicons name="search" size={18} color={theme.colors.textMuted} />
+        <TextInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Buscar por nome, apelido ou número"
+          placeholderTextColor={theme.colors.textMuted}
+          selectionColor={theme.colors.action}
+          autoCorrect={false}
+          returnKeyType="search"
+          style={[styles.searchInput, { color: theme.colors.text }]}
+        />
+        {isSearching ? (
+          <Pressable
+            onPress={() => setSearchQuery('')}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Limpar busca">
+            <Ionicons name="close-circle" size={18} color={theme.colors.textMuted} />
+          </Pressable>
+        ) : null}
+      </View>
 
       {canManagePlayers ? (
         <>
@@ -165,7 +225,16 @@ export default function PlayersScreen() {
         </>
       ) : null}
 
-      {visiblePlayers.length === 0 ? (
+      {visiblePlayers.length === 0 && isSearching ? (
+        <EmptyState
+          title="Nenhum jogador encontrado"
+          description={`Nada corresponde a "${searchQuery.trim()}" neste filtro. Tente outro termo ou troque o filtro.`}
+          actionLabel="Limpar busca"
+          onAction={() => setSearchQuery('')}
+        />
+      ) : null}
+
+      {visiblePlayers.length === 0 && !isSearching ? (
         <EmptyState
           title={
             players.length === 0
@@ -222,6 +291,22 @@ export default function PlayersScreen() {
 }
 
 const styles = StyleSheet.create({
+  searchField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 15,
+    paddingVertical: 0,
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' as never } : null),
+  },
   filterRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',

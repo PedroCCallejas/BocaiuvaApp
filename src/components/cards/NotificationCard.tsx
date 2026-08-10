@@ -60,7 +60,7 @@ export function NotificationCard({
         <Ionicons
           name={iconNameForType(notification.type)}
           size={20}
-          color={theme.colors.secondary}
+          color={theme.colors.action}
         />
       </View>
       <View style={styles.copy}>
@@ -74,7 +74,7 @@ export function NotificationCard({
                 styles.badge,
                 { backgroundColor: theme.colors.secondarySoft },
               ]}>
-              <Text style={[styles.badgeText, { color: theme.colors.secondary }]}>
+              <Text style={[styles.badgeText, { color: theme.colors.action }]}>
                 Nova
               </Text>
             </View>
@@ -115,7 +115,7 @@ export function NotificationCard({
             <Text
               style={[
                 styles.action,
-                { color: theme.colors.accent ?? theme.colors.secondary },
+                { color: theme.colors.action },
               ]}>
               Marcar como lida
             </Text>
@@ -129,7 +129,7 @@ export function NotificationCard({
 const styles = StyleSheet.create({
   container: {
     borderWidth: 1,
-    borderRadius: 22,
+    borderRadius: 24,
     padding: 18,
     gap: 14,
   },
@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
   iconWrap: {
     width: 42,
     height: 42,
-    borderRadius: 21,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },

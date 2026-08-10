@@ -22,10 +22,11 @@ export function MetricCard({
 
   const content = (
     <>
+      <View style={[styles.accentLine, { backgroundColor: theme.colors.action }]} />
       <Text style={[styles.label, { color: theme.colors.textMuted }]}>{label}</Text>
       <Text style={[styles.value, { color: theme.colors.text }]}>{value}</Text>
       {helper ? (
-        <Text style={[styles.helper, { color: theme.colors.accent ?? theme.colors.secondary }]}>
+        <Text style={[styles.helper, { color: theme.colors.action }]}>
           {helper}
         </Text>
       ) : null}
@@ -43,7 +44,7 @@ export function MetricCard({
           styles.container,
           {
             backgroundColor: theme.colors.surface,
-            borderColor: pressed ? theme.colors.secondary : theme.colors.border,
+            borderColor: pressed ? theme.colors.focus : theme.colors.border,
             opacity: pressed ? 0.85 : 1,
           },
         ]}>
@@ -71,9 +72,16 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 148,
     borderWidth: 1,
-    borderRadius: 20,
-    padding: 16,
-    gap: 8,
+    borderRadius: 22,
+    padding: 18,
+    gap: 7,
+    overflow: 'hidden',
+  },
+  accentLine: {
+    width: 28,
+    height: 3,
+    borderRadius: 999,
+    marginBottom: 3,
   },
   label: {
     fontFamily: fonts.heading,
@@ -84,7 +92,7 @@ const styles = StyleSheet.create({
   },
   value: {
     fontFamily: fonts.display,
-    fontSize: 28,
+    fontSize: 30,
     fontWeight: '900',
   },
   helper: {

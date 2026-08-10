@@ -33,7 +33,22 @@ export function RankingList({ title, items }: RankingListProps) {
       {items.map((item, index) => (
         <View key={item.id} style={styles.row}>
           <View style={styles.rowHeader}>
-            <Text style={[styles.rank, { color: theme.colors.secondary }]}>{index + 1}</Text>
+            <View
+              style={[
+                styles.rankBadge,
+                {
+                  backgroundColor: index === 0 ? theme.colors.action : theme.colors.primaryFaint,
+                  borderColor: index === 0 ? theme.colors.action : theme.colors.borderStrong,
+                },
+              ]}>
+              <Text
+                style={[
+                  styles.rank,
+                  { color: index === 0 ? theme.colors.actionText : theme.colors.text },
+                ]}>
+                {index + 1}
+              </Text>
+            </View>
             <View style={styles.rowCopy}>
               <Text style={[styles.name, { color: theme.colors.text }]}>{item.label}</Text>
               {item.subtitle ? (
@@ -54,7 +69,7 @@ export function RankingList({ title, items }: RankingListProps) {
                   width: `${(item.value / max) * 100}%`,
                   backgroundColor:
                     index === 0
-                      ? theme.colors.accent ?? theme.colors.secondary
+                      ? theme.colors.action
                       : theme.colors.primary,
                 },
               ]}
@@ -69,8 +84,8 @@ export function RankingList({ title, items }: RankingListProps) {
 const styles = StyleSheet.create({
   container: {
     borderWidth: 1,
-    borderRadius: 24,
-    padding: 18,
+    borderRadius: 26,
+    padding: 20,
     gap: 16,
   },
   title: {
@@ -87,10 +102,17 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   rank: {
-    width: 18,
     fontFamily: fonts.heading,
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  rankBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   rowCopy: {
     flex: 1,
@@ -110,7 +132,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   track: {
-    height: 8,
+    height: 6,
     borderRadius: 999,
     overflow: 'hidden',
   },

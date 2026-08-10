@@ -30,21 +30,28 @@ export function AppButton({
 }: AppButtonProps) {
   const theme = useAppTheme();
   const contentColor =
-    variant === 'ghost' ? theme.colors.text : variant === 'secondary' ? theme.colors.text : '#041008';
+    variant === 'primary'
+      ? theme.colors.actionText
+      : variant === 'danger'
+        ? theme.colors.danger
+        : theme.colors.text;
 
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: Boolean(disabled || loading), busy: Boolean(loading) }}
       onPress={onPress}
       disabled={disabled || loading}
       style={({ pressed }) => [
         styles.pressable,
         fullWidth && styles.fullWidth,
+        variant === 'primary' ? styles.primaryShadow : null,
         pressed && !disabled && !loading ? styles.pressed : null,
         disabled ? styles.disabled : null,
       ]}>
       {variant === 'primary' ? (
         <LinearGradient
-          colors={[theme.colors.primary, theme.colors.secondary]}
+          colors={[theme.colors.action, theme.colors.actionPressed]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.gradient}>
@@ -57,16 +64,16 @@ export function AppButton({
             {
               backgroundColor:
                 variant === 'danger'
-                  ? `${theme.colors.danger}20`
+                  ? `${theme.colors.danger}14`
                   : variant === 'secondary'
-                    ? theme.colors.backgroundElevated
-                    : theme.colors.backgroundElevated,
+                    ? theme.colors.surfaceRaised
+                    : 'transparent',
               borderColor:
                 variant === 'danger'
-                  ? `${theme.colors.danger}66`
+                  ? `${theme.colors.danger}52`
                   : variant === 'ghost'
-                    ? 'rgba(255,255,255,0.14)'
-                    : 'rgba(255,255,255,0.14)',
+                    ? theme.colors.border
+                    : theme.colors.borderStrong,
             },
           ]}>
           <ButtonLabel
@@ -100,12 +107,13 @@ function ButtonLabel({
 const styles = StyleSheet.create({
   pressable: {
     minWidth: 120,
+    borderRadius: 16,
   },
   fullWidth: {
     width: '100%',
   },
   gradient: {
-    minHeight: 52,
+    minHeight: 50,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
@@ -114,7 +122,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   fallback: {
-    minHeight: 52,
+    minHeight: 50,
     borderRadius: 16,
     borderWidth: 1,
     alignItems: 'center',
@@ -125,11 +133,20 @@ const styles = StyleSheet.create({
   },
   label: {
     fontFamily: fonts.heading,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
+    letterSpacing: 0.15,
+  },
+  primaryShadow: {
+    shadowColor: '#D7FF64',
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 3,
   },
   pressed: {
-    opacity: 0.86,
+    opacity: 0.9,
+    transform: [{ scale: 0.985 }],
   },
   disabled: {
     opacity: 0.5,

@@ -26,8 +26,8 @@ export function Pill({
         styles.container,
         {
           backgroundColor:
-            backgroundColor ?? (color ? `${color}26` : theme.colors.backgroundElevated),
-          borderColor: borderColor ?? (color ? `${color}66` : 'rgba(255,255,255,0.12)'),
+            backgroundColor ?? (color ? `${color}1C` : theme.colors.backgroundElevated),
+          borderColor: borderColor ?? (color ? `${color}4D` : theme.colors.borderStrong),
         },
       ]}>
       <Text
@@ -47,12 +47,13 @@ const styles = StyleSheet.create({
   container: {
     borderWidth: 1,
     borderRadius: 999,
-    paddingHorizontal: 11,
+    paddingHorizontal: 10,
     paddingVertical: 6,
   },
   label: {
     fontFamily: fonts.heading,
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
 });

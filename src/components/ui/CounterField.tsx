@@ -27,8 +27,8 @@ export function CounterField({
         style={[
           styles.row,
           {
-            backgroundColor: theme.colors.surface,
-            borderColor: theme.colors.border,
+            backgroundColor: theme.colors.backgroundElevated,
+            borderColor: theme.colors.borderStrong,
           },
         ]}>
         <CounterButton
@@ -65,7 +65,7 @@ function CounterButton({
       style={[
         styles.button,
         {
-          backgroundColor: disabled ? theme.colors.surfaceMuted : theme.colors.primarySoft,
+          backgroundColor: disabled ? theme.colors.surfaceMuted : theme.colors.surfaceRaised,
           opacity: disabled ? 0.5 : 1,
         },
       ]}>
@@ -89,7 +89,7 @@ const styles = StyleSheet.create({
     minWidth: 120,
     minHeight: 52,
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

@@ -71,7 +71,7 @@ export function PublicPageShell({
         style={[
           styles.navCard,
           {
-            backgroundColor: theme.colors.surface,
+            backgroundColor: theme.colors.backgroundElevated,
             borderColor: theme.colors.border,
           },
         ]}>
@@ -112,7 +112,15 @@ export function PublicPageShell({
         </View>
       </View>
 
-      <View style={styles.hero}>
+      <View
+        style={[
+          styles.hero,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.border,
+          },
+        ]}>
+        <View style={[styles.heroAccent, { backgroundColor: theme.colors.action }]} />
         {eyebrow ? (
           <Text style={[styles.eyebrow, { color: theme.colors.secondary }]}>{eyebrow}</Text>
         ) : null}
@@ -181,6 +189,11 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     padding: 18,
     gap: 18,
+    shadowColor: '#000000',
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
   },
   brandBlock: {
     gap: 4,
@@ -212,7 +225,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   hero: {
-    gap: 10,
+    minHeight: 300,
+    borderWidth: 1,
+    borderRadius: 30,
+    paddingHorizontal: 26,
+    paddingVertical: 32,
+    justifyContent: 'center',
+    gap: 12,
+    overflow: 'hidden',
+  },
+  heroAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 32,
+    bottom: 32,
+    width: 4,
+    borderTopRightRadius: 999,
+    borderBottomRightRadius: 999,
   },
   eyebrow: {
     fontFamily: fonts.heading,
@@ -223,9 +252,10 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: fonts.display,
-    fontSize: 42,
+    fontSize: 46,
     fontWeight: '900',
-    lineHeight: 46,
+    lineHeight: 49,
+    maxWidth: 920,
   },
   description: {
     fontFamily: fonts.body,

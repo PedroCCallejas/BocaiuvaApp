@@ -31,9 +31,9 @@ export function SyncStatusCard({
       ]}>
       <View style={styles.copyRow}>
         {loading ? (
-          <ActivityIndicator color={theme.colors.primary} size="small" />
+          <ActivityIndicator color={theme.colors.action} size="small" />
         ) : (
-          <View style={[styles.dot, { backgroundColor: theme.colors.secondary }]} />
+          <View style={[styles.dot, { backgroundColor: theme.colors.action }]} />
         )}
         <View style={styles.copy}>
           <Text style={[styles.title, { color: theme.colors.text }]}>{message}</Text>
@@ -55,7 +55,7 @@ export function SyncStatusCard({
 const styles = StyleSheet.create({
   card: {
     borderWidth: 1,
-    borderRadius: 22,
+    borderRadius: 24,
     padding: 16,
     gap: 14,
   },

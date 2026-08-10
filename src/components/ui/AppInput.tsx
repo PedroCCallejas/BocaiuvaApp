@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import type { TextInputProps } from 'react-native';
 import {
   Platform,
@@ -23,12 +23,14 @@ export function AppInput({
   label,
   error,
   style,
+  onBlur,
   onFocus,
   ...props
 }: AppInputProps) {
   const theme = useAppTheme();
   const keyboardContext = useContext(ScreenKeyboardContext);
   const inputRef = useRef<TextInput>(null);
+  const [focused, setFocused] = useState(false);
   const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -51,12 +53,17 @@ export function AppInput({
           styles.input,
           {
             color: theme.colors.text,
-            backgroundColor: theme.colors.surface,
-            borderColor: error ? theme.colors.danger : theme.colors.border,
+            backgroundColor: theme.colors.backgroundElevated,
+            borderColor: error
+              ? theme.colors.danger
+              : focused
+                ? theme.colors.focus
+                : theme.colors.borderStrong,
           },
           style,
         ]}
         onFocus={(event) => {
+          setFocused(true);
           onFocus?.(event);
 
           if (Platform.OS === 'web') {
@@ -75,6 +82,11 @@ export function AppInput({
             }
           }, 90);
         }}
+        onBlur={(event) => {
+          setFocused(false);
+          onBlur?.(event);
+        }}
+        selectionColor={theme.colors.action}
         {...props}
       />
       {error ? <Text style={[styles.error, { color: theme.colors.danger }]}>{error}</Text> : null}

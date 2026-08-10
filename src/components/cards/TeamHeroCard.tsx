@@ -85,6 +85,12 @@ export function TeamHeroCard({
           />
         ) : null}
 
+        <View pointerEvents="none" style={styles.pitchLine} />
+        <View
+          pointerEvents="none"
+          style={[styles.accentRail, { backgroundColor: accent }]}
+        />
+
         <View style={styles.content}>
           {modeLabel ? (
             <View style={styles.modePill}>
@@ -92,35 +98,37 @@ export function TeamHeroCard({
             </View>
           ) : null}
 
-          <View
-            style={[
-              styles.logoFrame,
-              {
-                borderColor: 'rgba(255,255,255,0.24)',
-                shadowColor: accent,
-              },
-            ]}>
-            <Avatar
-              name={team.name}
-              photoUrl={team.logoUrl}
-              size={logoSize}
-              accent="rgba(255,255,255,0.16)"
-            />
-          </View>
+          <View style={styles.identityRow}>
+            <View
+              style={[
+                styles.logoFrame,
+                {
+                  borderColor: 'rgba(255,255,255,0.24)',
+                  shadowColor: accent,
+                },
+              ]}>
+              <Avatar
+                name={team.name}
+                photoUrl={team.logoUrl}
+                size={logoSize}
+                accent="rgba(255,255,255,0.16)"
+              />
+            </View>
 
-          <View style={styles.identityBlock}>
-            <Text style={styles.name}>{team.name}</Text>
-            {resolvedLocationLabel ? (
-              <Text style={styles.location}>{resolvedLocationLabel}</Text>
-            ) : null}
-            {resolvedDescription ? (
-              <Text numberOfLines={compact ? 3 : 4} style={styles.description}>
-                {resolvedDescription}
-              </Text>
-            ) : null}
-            {supportingText ? (
-              <Text style={styles.supportingText}>{supportingText}</Text>
-            ) : null}
+            <View style={styles.identityBlock}>
+              <Text style={styles.name}>{team.name}</Text>
+              {resolvedLocationLabel ? (
+                <Text style={styles.location}>{resolvedLocationLabel}</Text>
+              ) : null}
+              {resolvedDescription ? (
+                <Text numberOfLines={compact ? 3 : 4} style={styles.description}>
+                  {resolvedDescription}
+                </Text>
+              ) : null}
+              {supportingText ? (
+                <Text style={styles.supportingText}>{supportingText}</Text>
+              ) : null}
+            </View>
           </View>
 
           {children ? <View style={styles.footer}>{children}</View> : null}
@@ -132,14 +140,16 @@ export function TeamHeroCard({
 
 const styles = StyleSheet.create({
   shell: {
-    borderRadius: 32,
+    borderRadius: 30,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
   gradient: {
-    minHeight: 348,
+    minHeight: 328,
     justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 28,
+    paddingHorizontal: 26,
+    paddingVertical: 30,
   },
   compactGradient: {
     minHeight: 300,
@@ -169,13 +179,32 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     opacity: 0.7,
   },
+  pitchLine: {
+    position: 'absolute',
+    right: -92,
+    bottom: -132,
+    width: 330,
+    height: 330,
+    borderRadius: 165,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  accentRail: {
+    position: 'absolute',
+    left: 0,
+    top: 32,
+    bottom: 32,
+    width: 4,
+    borderTopRightRadius: 999,
+    borderBottomRightRadius: 999,
+  },
   content: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
-    gap: 18,
+    gap: 20,
   },
   modePill: {
-    alignSelf: 'center',
+    alignSelf: 'flex-start',
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -201,18 +230,26 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 12 },
     elevation: 10,
   },
-  identityBlock: {
-    maxWidth: 760,
+  identityRow: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
+    gap: 22,
+  },
+  identityBlock: {
+    flex: 1,
+    minWidth: 190,
+    maxWidth: 760,
+    alignItems: 'flex-start',
     gap: 8,
   },
   name: {
     color: heroText,
     fontFamily: fonts.display,
-    fontSize: 40,
+    fontSize: 42,
     fontWeight: '900',
-    lineHeight: 42,
-    textAlign: 'center',
+    lineHeight: 44,
   },
   location: {
     color: heroText,
@@ -220,7 +257,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: 0.4,
-    textAlign: 'center',
     textTransform: 'uppercase',
   },
   description: {
@@ -228,18 +264,16 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 15,
     lineHeight: 22,
-    textAlign: 'center',
   },
   supportingText: {
     color: 'rgba(255,255,255,0.74)',
     fontFamily: fonts.body,
     fontSize: 13,
     lineHeight: 19,
-    textAlign: 'center',
   },
   footer: {
     width: '100%',
     gap: 10,
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
 });

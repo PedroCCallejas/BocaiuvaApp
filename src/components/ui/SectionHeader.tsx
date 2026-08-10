@@ -21,7 +21,10 @@ export function SectionHeader({
   return (
     <View style={styles.container}>
       <View style={styles.copy}>
-        <Text style={[styles.title, { color: theme.colors.text }]}>{title}</Text>
+        <View style={styles.titleRow}>
+          <View style={[styles.accent, { backgroundColor: theme.colors.action }]} />
+          <Text style={[styles.title, { color: theme.colors.text }]}>{title}</Text>
+        </View>
         {subtitle ? (
           <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>{subtitle}</Text>
         ) : null}
@@ -33,7 +36,7 @@ export function SectionHeader({
             styles.actionWrap,
             {
               backgroundColor: theme.colors.backgroundElevated,
-              borderColor: theme.colors.border,
+              borderColor: theme.colors.borderStrong,
             },
           ]}>
           <Text style={[styles.action, { color: theme.colors.text }]}>
@@ -56,10 +59,20 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 4,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  accent: {
+    width: 5,
+    height: 18,
+    borderRadius: 999,
+  },
   title: {
     fontFamily: fonts.heading,
-    fontSize: 20,
-    fontWeight: '800',
+    fontSize: 21,
+    fontWeight: '900',
   },
   subtitle: {
     fontFamily: fonts.body,
@@ -74,6 +87,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 9,
   },
 });

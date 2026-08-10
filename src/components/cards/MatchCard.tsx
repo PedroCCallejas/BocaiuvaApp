@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from '@expo/vector-icons';
 
 import { MATCH_STATUS_LABELS, MATCH_TYPE_LABELS } from "@/constants/options";
 import { fonts } from "@/constants/theme";
@@ -47,11 +48,29 @@ export function MatchCard({ match, attendance, onPress }: MatchCardProps) {
           {match.opponentName}
         </Text>
       ) : null}
-      {attendance ? (
-        <Text style={[styles.attendance, { color: theme.colors.textMuted }]}>
-          {attendance.confirmed} confirmados - {attendance.absent} ausentes -{" "}
-          {attendance.pending} pendentes
-        </Text>
+      {attendance || onPress ? (
+        <View style={styles.footerRow}>
+          {attendance ? (
+            <Text style={[styles.attendance, { color: theme.colors.textMuted }]}>
+              {attendance.confirmed} confirmados - {attendance.absent} ausentes -{" "}
+              {attendance.pending} pendentes
+            </Text>
+          ) : (
+            <View />
+          )}
+          {onPress ? (
+            <View
+              style={[
+                styles.openIndicator,
+                {
+                  backgroundColor: theme.colors.primaryFaint,
+                  borderColor: theme.colors.borderStrong,
+                },
+              ]}>
+              <Ionicons name="arrow-forward" size={15} color={theme.colors.action} />
+            </View>
+          ) : null}
+        </View>
       ) : null}
     </>
   );
@@ -69,7 +88,10 @@ export function MatchCard({ match, attendance, onPress }: MatchCardProps) {
   }
 
   return (
-    <Pressable onPress={onPress} style={sharedStyle}>
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [sharedStyle, pressed ? styles.pressed : null]}>
       {content}
     </Pressable>
   );
@@ -78,8 +100,8 @@ export function MatchCard({ match, attendance, onPress }: MatchCardProps) {
 const styles = StyleSheet.create({
   container: {
     borderWidth: 1,
-    borderRadius: 22,
-    padding: 18,
+    borderRadius: 24,
+    padding: 20,
     gap: 12,
   },
   topRow: {
@@ -112,9 +134,28 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   attendance: {
+    flex: 1,
     fontFamily: fonts.body,
     fontSize: 13,
     lineHeight: 18,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  openIndicator: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.992 }],
   },
   pill: {
     alignSelf: "flex-start",

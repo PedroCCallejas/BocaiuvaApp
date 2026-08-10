@@ -32,7 +32,7 @@ export function Avatar({ name, photoUrl, size = 44, accent }: AvatarProps) {
           height: size,
           borderRadius: size / 2,
           backgroundColor: accent ?? theme.colors.primarySoft,
-          borderColor: theme.colors.border,
+          borderColor: theme.colors.borderStrong,
         },
       ]}>
       {photoUrl ? (
@@ -61,7 +61,7 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
+    borderWidth: 2,
     overflow: 'hidden',
   },
   text: {

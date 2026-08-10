@@ -35,7 +35,7 @@ export function ConfirmModal({
         <Pressable
           style={[
             styles.card,
-            { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
+            { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong },
           ]}
           onPress={() => {}}>
           <Text style={[styles.title, { color: theme.colors.text }]}>{title}</Text>
@@ -63,7 +63,7 @@ export function ConfirmModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(2,4,6,0.82)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -71,15 +71,15 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 400,
-    borderRadius: 20,
+    borderRadius: 26,
     borderWidth: 1,
     padding: 24,
     gap: 16,
   },
   title: {
     fontFamily: fonts.heading,
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 21,
+    fontWeight: '900',
   },
   description: {
     fontFamily: fonts.body,

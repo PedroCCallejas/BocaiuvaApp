@@ -17,6 +17,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { useAppTheme } from '@/hooks/use-app-theme';
 
@@ -114,8 +115,8 @@ export function Screen({
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={theme.colors.primary}
-            colors={[theme.colors.primary]}
+            tintColor={theme.colors.action}
+            colors={[theme.colors.action]}
             progressBackgroundColor={theme.colors.surface}
           />
         ) : undefined
@@ -138,13 +139,19 @@ export function Screen({
     <SafeAreaView
       edges={['top', 'left', 'right']}
       style={[styles.safeArea, { backgroundColor: theme.colors.background }, style]}>
-      <View
+      <LinearGradient
         pointerEvents="none"
-        style={[styles.orbTop, { backgroundColor: theme.colors.primarySoft }]}
+        colors={[theme.colors.primaryFaint, 'rgba(7,10,13,0)']}
+        start={{ x: 1, y: 0 }}
+        end={{ x: 0.25, y: 1 }}
+        style={styles.ambientTop}
       />
-      <View
+      <LinearGradient
         pointerEvents="none"
-        style={[styles.orbBottom, { backgroundColor: theme.colors.secondarySoft }]}
+        colors={['rgba(7,10,13,0)', theme.colors.secondaryFaint]}
+        start={{ x: 0.35, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.ambientBottom}
       />
       <KeyboardAvoidingView
         behavior="padding"
@@ -172,25 +179,24 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: Platform.OS === 'web' ? 1200 : 1080,
     alignSelf: 'center',
-    padding: Platform.OS === 'web' ? 24 : 20,
-    gap: 20,
+    paddingHorizontal: Platform.OS === 'web' ? 28 : 18,
+    paddingTop: Platform.OS === 'web' ? 28 : 20,
+    gap: Platform.OS === 'web' ? 24 : 20,
   },
-  orbTop: {
+  ambientTop: {
     position: 'absolute',
-    top: -80,
-    right: -40,
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    opacity: 0.35,
+    top: 0,
+    right: 0,
+    width: '72%',
+    height: 420,
+    opacity: 0.72,
   },
-  orbBottom: {
+  ambientBottom: {
     position: 'absolute',
-    bottom: -100,
-    left: -40,
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    opacity: 0.2,
+    bottom: 0,
+    left: 0,
+    width: '62%',
+    height: 360,
+    opacity: 0.34,
   },
 });

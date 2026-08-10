@@ -74,7 +74,7 @@ export function WebScreenHeader() {
       style={[
         styles.shell,
         {
-          backgroundColor: theme.colors.surface,
+          backgroundColor: theme.colors.backgroundElevated,
           borderBottomColor: theme.colors.border,
         },
       ]}>
@@ -160,7 +160,7 @@ export function WebScreenHeader() {
           {meta.action ? (
             <AppButton
               label={meta.action.label}
-              variant="secondary"
+              variant="primary"
               onPress={() => router.push(meta.action!.href as never)}
             />
           ) : null}
@@ -539,13 +539,18 @@ function resolveWebRouteMeta(input: {
 const styles = StyleSheet.create({
   shell: {
     borderBottomWidth: 1,
+    shadowColor: '#000000',
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
   },
   inner: {
     width: '100%',
     maxWidth: 1200,
     alignSelf: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 18,
+    paddingVertical: 20,
     gap: 14,
   },
   topRow: {
@@ -610,9 +615,9 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: fonts.display,
-    fontSize: 30,
+    fontSize: 34,
     fontWeight: '900',
-    lineHeight: 32,
+    lineHeight: 36,
   },
   subtitle: {
     fontFamily: fonts.body,

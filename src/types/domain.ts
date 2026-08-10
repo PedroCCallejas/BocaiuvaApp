@@ -239,6 +239,43 @@ export interface MatchFieldPayment {
   updatedByUserId?: string;
 }
 
+/**
+ * Categoria de despesa criada livremente pelo admin ("Cerveja", "Bola",
+ * "Churrasco pós-jogo"). Arquivar em vez de apagar preserva o histórico
+ * das despesas antigas que apontam para ela.
+ */
+export interface ExpenseCategory extends BaseEntity {
+  teamId: string;
+  label: string;
+  archivedAt?: string | null;
+}
+
+/** `equal` divide igual entre os participantes; `manual` usa valores por pessoa. */
+export type ExpenseSplitMode = 'equal' | 'manual';
+
+/**
+ * Despesa do time. Nasce solta: `matchId` é opcional e só é preenchido
+ * quando o admin escolhe vincular a despesa a uma partida.
+ * Os participantes são sempre definidos à mão — quem consumiu não é
+ * necessariamente quem jogou.
+ */
+export interface Expense extends BaseEntity {
+  teamId: string;
+  categoryId: string;
+  matchId?: string | null;
+  description?: string | null;
+  date: string;
+  totalAmountCents: number;
+  paidByPlayerId?: string | null;
+  splitMode: ExpenseSplitMode;
+  participantPlayerIds: string[];
+  extraSharesCount?: number;
+  manualSharesCents?: Record<string, number>;
+  settledPlayerIds: string[];
+  createdBy?: string | null;
+  deletedAt?: string | null;
+}
+
 export interface Match extends BaseEntity {
   teamId: string;
   seasonId?: string | null;

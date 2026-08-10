@@ -119,7 +119,9 @@ import {
   createTeamMember,
   createUser,
 } from './test-helpers';
+import { expensesTestCases } from './expenses-cases';
 import { statsBreakdownFinanceTestCases } from './stats-breakdown-finance-cases';
+import { themeContrastTestCases } from './theme-contrast-cases';
 
 type TestCase = {
   name: string;
@@ -128,6 +130,8 @@ type TestCase = {
 
 const testCases: TestCase[] = [
   ...statsBreakdownFinanceTestCases,
+  ...themeContrastTestCases,
+  ...expensesTestCases,
   {
     name: 'sitemap oficial contem somente as dez URLs publicas canonicas',
     run() {

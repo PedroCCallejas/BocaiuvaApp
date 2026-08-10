@@ -101,6 +101,26 @@ service cloud.firestore {
       return isTeamAdminNowOrAfter(teamId) || canManageTeamMembership(teamId);
     }
 
+    // Valores monetarios trafegam em centavos inteiros e nao negativos.
+    // Barrar float aqui evita que um erro de tela grave R$ 10,999 no banco.
+    function isValidCents(value) {
+      return value is int && value >= 0;
+    }
+
+    function isValidExpensePayload(data) {
+      return data.teamId is string &&
+        data.teamId.size() > 0 &&
+        data.categoryId is string &&
+        data.categoryId.size() > 0 &&
+        data.date is string &&
+        isValidCents(data.totalAmountCents) &&
+        data.splitMode in ['equal', 'manual'] &&
+        data.participantPlayerIds is list &&
+        data.settledPlayerIds is list &&
+        (!('extraSharesCount' in data.keys()) || isValidCents(data.extraSharesCount)) &&
+        (!('matchId' in data.keys()) || data.matchId == null || data.matchId is string);
+    }
+
     function canManagePlayersData(teamId) {
       return canManageTeamData(teamId) ||
         (hasActiveTeamMembership(teamId) &&
@@ -530,6 +550,29 @@ service cloud.firestore {
       allow create: if request.resource.data.id == seasonId &&
         canManageTeamDataNowOrAfter(request.resource.data.teamId);
       allow update, delete: if canManageTeamData(resource.data.teamId);
+    }
+
+    // Financeiro: categorias e despesas do time.
+    // Diferente das demais colecoes com escopo de time, a LEITURA tambem exige
+    // permissao de gestao — nesta versao o financeiro e visivel apenas para quem
+    // administra o time. E mais seguro comecar restrito e afrouxar depois.
+    match /expenseCategories/{categoryId} {
+      allow get, list: if canManageTeamData(resource.data.teamId);
+      allow create: if request.resource.data.id == categoryId &&
+        canManageTeamDataNowOrAfter(request.resource.data.teamId);
+      allow update, delete: if canManageTeamData(resource.data.teamId) &&
+        request.resource.data.teamId == resource.data.teamId;
+    }
+
+    match /expenses/{expenseId} {
+      allow get, list: if canManageTeamData(resource.data.teamId);
+      allow create: if request.resource.data.id == expenseId &&
+        canManageTeamDataNowOrAfter(request.resource.data.teamId) &&
+        isValidExpensePayload(request.resource.data);
+      allow update: if canManageTeamData(resource.data.teamId) &&
+        request.resource.data.teamId == resource.data.teamId &&
+        isValidExpensePayload(request.resource.data);
+      allow delete: if canManageTeamData(resource.data.teamId);
     }
   }
 }

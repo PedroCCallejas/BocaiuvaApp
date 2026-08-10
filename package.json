@@ -45,6 +45,7 @@
     "expo-web-browser": "~55.0.16",
     "firebase": "^12.12.1",
     "firebase-admin": "^13.10.0",
+    "html2canvas": "1.4.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-hook-form": "^7.62.0",

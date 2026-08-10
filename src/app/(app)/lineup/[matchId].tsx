@@ -646,6 +646,9 @@ export default function LineupScreen() {
             logging: false,
             backgroundColor: null,
             scale,
+            // Sem timeout explícito, uma foto de jogador que não responde
+            // trava a exportação por tempo indefinido.
+            imageTimeout: 15000,
           });
 
           if (__DEV__) {
@@ -655,6 +658,10 @@ export default function LineupScreen() {
             });
           }
 
+          if (!rawCanvas.width || !rawCanvas.height) {
+            throw new Error('A arte foi capturada vazia. Recarregue a página e tente de novo.');
+          }
+
           // Redimensionar para EXPORT_WIDTH × EXPORT_HEIGHT exatos
           const aspectH = Math.round(EXPORT_WIDTH * (rawCanvas.height / rawCanvas.width));
           const exportH = Math.abs(aspectH) > 0 ? aspectH : EXPORT_HEIGHT;
@@ -662,7 +669,12 @@ export default function LineupScreen() {
           out.width = EXPORT_WIDTH;
           out.height = exportH;
           const ctx = out.getContext('2d');
-          ctx?.drawImage(rawCanvas, 0, 0, EXPORT_WIDTH, exportH);
+
+          if (!ctx) {
+            throw new Error('O navegador não permitiu gerar a imagem (canvas 2D indisponível).');
+          }
+
+          ctx.drawImage(rawCanvas, 0, 0, EXPORT_WIDTH, exportH);
 
           const blob = await new Promise<Blob>((resolve, reject) => {
             out.toBlob(

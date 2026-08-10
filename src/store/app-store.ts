@@ -21,6 +21,8 @@ import type {
   CreateMatchInput,
   CreateMatchDiaryEntryInput,
   CreatePlayerInput,
+  CreateExpenseInput,
+  CreateExpenseCategoryInput,
   CreateRatingCriterionInput,
   CreateTeamInput,
   FinishMatchInput,
@@ -36,6 +38,8 @@ import type {
   UpdateMatchMetadataInput,
   UpdateMatchFieldPaymentInput,
   UpdateMatchDiaryEntryInput,
+  UpdateExpenseInput,
+  UpdateExpenseCategoryInput,
   UpdateRatingCriterionInput,
   UpdateTeamInput,
   UpdateAttendanceInput,
@@ -90,6 +94,20 @@ export interface AppState {
   createRatingCriterion: (input: CreateRatingCriterionInput) => Promise<void>;
   updateRatingCriterion: (criterionId: string, input: UpdateRatingCriterionInput) => Promise<void>;
   deleteRatingCriterion: (criterionId: string) => Promise<void>;
+  createExpenseCategory: (input: CreateExpenseCategoryInput) => Promise<string>;
+  updateExpenseCategory: (
+    categoryId: string,
+    input: UpdateExpenseCategoryInput,
+  ) => Promise<void>;
+  deleteExpenseCategory: (categoryId: string) => Promise<void>;
+  createExpense: (input: CreateExpenseInput) => Promise<string>;
+  updateExpense: (expenseId: string, input: UpdateExpenseInput) => Promise<void>;
+  deleteExpense: (expenseId: string) => Promise<void>;
+  setExpenseSettlement: (
+    expenseId: string,
+    playerId: string,
+    settled: boolean,
+  ) => Promise<void>;
   setActiveTeam: (teamId: string) => Promise<void>;
   joinTeamWithInviteCode: (
     inviteCode: string,
@@ -630,6 +648,78 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     await repository.deleteRatingCriterion(criterionId, userId);
+    await refreshCurrentSession(set, get);
+  },
+
+  async createExpenseCategory(input) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    const category = await repository.createExpenseCategory(input, userId);
+    await refreshCurrentSession(set, get);
+    return category.id;
+  },
+
+  async updateExpenseCategory(categoryId, input) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    await repository.updateExpenseCategory(categoryId, input, userId);
+    await refreshCurrentSession(set, get);
+  },
+
+  async deleteExpenseCategory(categoryId) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    await repository.deleteExpenseCategory(categoryId, userId);
+    await refreshCurrentSession(set, get);
+  },
+
+  async createExpense(input) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    const expense = await repository.createExpense(input, userId);
+    await refreshCurrentSession(set, get);
+    return expense.id;
+  },
+
+  async updateExpense(expenseId, input) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    await repository.updateExpense(expenseId, input, userId);
+    await refreshCurrentSession(set, get);
+  },
+
+  async deleteExpense(expenseId) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    await repository.deleteExpense(expenseId, userId);
+    await refreshCurrentSession(set, get);
+  },
+
+  async setExpenseSettlement(expenseId, playerId, settled) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    await repository.setExpenseSettlement(expenseId, playerId, settled, userId);
     await refreshCurrentSession(set, get);
   },
 

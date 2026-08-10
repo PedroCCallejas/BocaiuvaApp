@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Redirect } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 
 import { MetricCard } from '@/components/cards/MetricCard';
+import { DebtDashboard } from '@/components/finance/DebtDashboard';
+import { ExpenseFormModal, type ExpenseFormValues } from '@/components/finance/ExpenseFormModal';
+import { ExpenseList } from '@/components/finance/ExpenseList';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -12,6 +15,11 @@ import { MATCH_STATUS_LABELS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatDateBR } from '@/lib/date';
+import {
+  buildExpensesSummary,
+  buildPlayerDebtReport,
+  collectTeamExpenses,
+} from '@/lib/expenses';
 import {
   buildFinanceSummary,
   getAvailableFinanceYears,
@@ -30,6 +38,7 @@ import {
   selectCanManageTeam,
   selectCurrentTeam,
   selectTeamMatches,
+  selectTeamPlayers,
 } from '@/store/selectors';
 
 const STATUS_FILTER_OPTIONS: Array<{ key: FinanceStatusFilter; label: string }> = [
@@ -37,6 +46,14 @@ const STATUS_FILTER_OPTIONS: Array<{ key: FinanceStatusFilter; label: string }> 
   { key: 'finished', label: 'Encerradas' },
   { key: 'open', label: 'Abertas' },
   { key: 'canceled', label: 'Canceladas' },
+];
+
+type FinanceSection = 'cobranca' | 'despesas' | 'partidas';
+
+const SECTION_OPTIONS: Array<{ key: FinanceSection; label: string }> = [
+  { key: 'cobranca', label: 'Cobrança' },
+  { key: 'despesas', label: 'Despesas' },
+  { key: 'partidas', label: 'Partidas' },
 ];
 
 const MONTH_LABELS = [
@@ -87,6 +104,14 @@ export default function FinanceiroScreen() {
   const team = useAppStore(selectCurrentTeam);
   const canManageTeam = useAppStore(selectCanManageTeam);
   const teamMatches = useAppStore(selectTeamMatches);
+  const teamPlayers = useAppStore(selectTeamPlayers);
+  const expenses = useAppStore((state) => state.snapshot.expenses);
+  const expenseCategories = useAppStore((state) => state.snapshot.expenseCategories);
+  const createExpense = useAppStore((state) => state.createExpense);
+  const updateExpense = useAppStore((state) => state.updateExpense);
+  const deleteExpense = useAppStore((state) => state.deleteExpense);
+  const setExpenseSettlement = useAppStore((state) => state.setExpenseSettlement);
+  const createExpenseCategory = useAppStore((state) => state.createExpenseCategory);
   const updateMatchFieldCost = useAppStore((state) => state.updateMatchFieldCost);
   const setTeamDefaultMatchCost = useAppStore((state) => state.setTeamDefaultMatchCost);
 
@@ -118,6 +143,160 @@ export default function FinanceiroScreen() {
         : null,
     [team, teamMatches, selectedYear, selectedMonth, statusFilter],
   );
+
+  // ── Despesas por categoria ──────────────────────────────────────────────
+  const [activeSection, setActiveSection] = useState<FinanceSection>('cobranca');
+  const [expenseModalVisible, setExpenseModalVisible] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [savingExpense, setSavingExpense] = useState(false);
+  const [expenseError, setExpenseError] = useState<string | null>(null);
+
+  const playerNames = useMemo(
+    () =>
+      Object.fromEntries(teamPlayers.map((player) => [player.id, player.nickname])) as Record<
+        string,
+        string
+      >,
+    [teamPlayers],
+  );
+
+  const matchLabels = useMemo(
+    () =>
+      Object.fromEntries(
+        teamMatches.map((match) => [
+          match.id,
+          `${formatDateBR(match.date)} · ${match.opponentName}`,
+        ]),
+      ) as Record<string, string>,
+    [teamMatches],
+  );
+
+  const categoryLabels = useMemo(
+    () =>
+      Object.fromEntries(
+        expenseCategories.map((category) => [category.id, category.label]),
+      ) as Record<string, string>,
+    [expenseCategories],
+  );
+
+  const unifiedExpenses = useMemo(
+    () =>
+      team
+        ? collectTeamExpenses({
+            teamId: team.id,
+            expenses,
+            matches: teamMatches,
+            categoryLabels,
+            filters: {
+              year: selectedYear,
+              month: selectedYear != null ? selectedMonth : null,
+            },
+          })
+        : [],
+    [categoryLabels, expenses, selectedMonth, selectedYear, team, teamMatches],
+  );
+
+  const expensesSummary = useMemo(
+    () => buildExpensesSummary(unifiedExpenses),
+    [unifiedExpenses],
+  );
+
+  const debtReport = useMemo(
+    () => buildPlayerDebtReport(unifiedExpenses, { playerNames, matchLabels }),
+    [matchLabels, playerNames, unifiedExpenses],
+  );
+
+  const editingExpense = editingExpenseId
+    ? expenses.find((item) => item.id === editingExpenseId) ?? null
+    : null;
+
+  function openExpenseModal(expenseId: string | null) {
+    setEditingExpenseId(expenseId);
+    setExpenseError(null);
+    setExpenseModalVisible(true);
+  }
+
+  async function handleSubmitExpense(values: ExpenseFormValues) {
+    const totalAmountCents = parseCurrencyInputToCents(values.amountInput);
+
+    if (totalAmountCents == null || totalAmountCents <= 0) {
+      setExpenseError('Informe um valor maior que zero.');
+      return;
+    }
+
+    try {
+      setSavingExpense(true);
+      setExpenseError(null);
+
+      // Categoria nova digitada no formulário é criada antes da despesa,
+      // para o admin não precisar cadastrar em duas etapas.
+      let categoryId = values.categoryId;
+      const newLabel = values.newCategoryLabel.trim();
+
+      if (newLabel) {
+        categoryId = await createExpenseCategory({ label: newLabel });
+      }
+
+      if (!categoryId) {
+        setExpenseError('Escolha ou crie uma categoria.');
+        return;
+      }
+
+      const payload = {
+        categoryId,
+        date: values.date.trim(),
+        totalAmountCents,
+        description: values.description.trim() || null,
+        matchId: values.matchId,
+        paidByPlayerId: values.paidByPlayerId,
+        splitMode: values.splitMode,
+        participantPlayerIds: values.participantPlayerIds,
+        extraSharesCount: Number(values.extraSharesCount.replace(/[^\d]/g, '') || '0'),
+      };
+
+      if (editingExpenseId) {
+        await updateExpense(editingExpenseId, payload);
+      } else {
+        await createExpense(payload);
+      }
+
+      setExpenseModalVisible(false);
+      setEditingExpenseId(null);
+    } catch (error) {
+      setExpenseError(
+        error instanceof Error ? error.message : 'Não foi possível salvar a despesa.',
+      );
+    } finally {
+      setSavingExpense(false);
+    }
+  }
+
+  function handleDeleteExpense(expenseId: string) {
+    Alert.alert('Remover despesa', 'Essa despesa sai dos relatórios. Deseja continuar?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Remover',
+        style: 'destructive',
+        onPress: () => {
+          void deleteExpense(expenseId).catch((error: unknown) => {
+            Alert.alert(
+              'Não foi possível remover',
+              error instanceof Error ? error.message : 'Tente novamente.',
+            );
+          });
+        },
+      },
+    ]);
+  }
+
+  function handleToggleSettlement(expenseId: string, playerId: string, settled: boolean) {
+    void setExpenseSettlement(expenseId, playerId, settled).catch((error: unknown) => {
+      Alert.alert(
+        'Não foi possível atualizar',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    });
+  }
 
   if (!team) {
     return (
@@ -260,10 +439,87 @@ export default function FinanceiroScreen() {
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Financeiro</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          Controle o valor de cada partida do time sem precisar encerrar o jogo.
+          Cobranças, despesas do time e o custo de cada partida em um lugar só.
         </Text>
       </View>
 
+      <View style={styles.sectionTabs}>
+        {SECTION_OPTIONS.map((option) => (
+          <FilterChip
+            key={option.key}
+            label={option.label}
+            selected={activeSection === option.key}
+            onPress={() => setActiveSection(option.key)}
+          />
+        ))}
+      </View>
+
+      {activeSection === 'cobranca' ? (
+        <DebtDashboard
+          report={debtReport}
+          pendingTotalCents={expensesSummary.pendingCents}
+          onPressPlayer={(playerId) => router.push(`/players/${playerId}`)}
+        />
+      ) : null}
+
+      {activeSection === 'despesas' ? (
+        <View style={styles.expensesSection}>
+          <SectionHeader
+            title="Despesas do time"
+            subtitle="Categoria livre, rateio manual e vínculo opcional com um jogo."
+            actionLabel="Nova despesa"
+            onAction={() => openExpenseModal(null)}
+          />
+
+          <View style={styles.metricsRow}>
+            <MetricCard
+              label="Total no período"
+              value={formatCentsBRL(expensesSummary.totalCents)}
+              helper={`${expensesSummary.expenseCount} lançamento(s)`}
+            />
+            <MetricCard
+              label="Ainda pendente"
+              value={formatCentsBRL(expensesSummary.pendingCents)}
+              helper={`${formatCentsBRL(expensesSummary.settledCents)} já acertado`}
+            />
+          </View>
+
+          {expensesSummary.byCategory.length > 0 ? (
+            <View style={styles.categoryRow}>
+              {expensesSummary.byCategory.map((entry) => (
+                <View
+                  key={entry.categoryId ?? entry.categoryLabel ?? 'sem-categoria'}
+                  style={[
+                    styles.categoryPill,
+                    {
+                      backgroundColor: theme.colors.surfaceMuted,
+                      borderColor: theme.colors.border,
+                    },
+                  ]}>
+                  <Text style={[styles.categoryLabel, { color: theme.colors.text }]}>
+                    {entry.categoryLabel ?? 'Sem categoria'}
+                  </Text>
+                  <Text style={[styles.categoryValue, { color: theme.colors.textMuted }]}>
+                    {formatCentsBRL(entry.totalCents)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          <ExpenseList
+            expenses={unifiedExpenses}
+            playerNames={playerNames}
+            matchLabels={matchLabels}
+            onEdit={(expenseId) => openExpenseModal(expenseId)}
+            onDelete={handleDeleteExpense}
+            onToggleSettlement={handleToggleSettlement}
+          />
+        </View>
+      ) : null}
+
+      {activeSection !== 'partidas' ? null : (
+      <>
       <View style={styles.metricsRow}>
         <MetricCard
           label="Partidas no período"
@@ -426,6 +682,23 @@ export default function FinanceiroScreen() {
           </View>
         </View>
       ))}
+      </>
+      )}
+
+      <ExpenseFormModal
+        visible={expenseModalVisible}
+        expense={editingExpense}
+        categories={expenseCategories}
+        players={teamPlayers}
+        matches={teamMatches}
+        saving={savingExpense}
+        error={expenseError}
+        onClose={() => {
+          setExpenseModalVisible(false);
+          setEditingExpenseId(null);
+        }}
+        onSubmit={(values) => void handleSubmitExpense(values)}
+      />
 
       <Modal
         visible={editingRow !== null}
@@ -518,6 +791,35 @@ export default function FinanceiroScreen() {
 }
 
 const styles = StyleSheet.create({
+  sectionTabs: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  expensesSection: {
+    gap: 12,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  categoryPill: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 1,
+  },
+  categoryLabel: {
+    fontFamily: fonts.heading,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  categoryValue: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+  },
   hero: {
     gap: 8,
   },

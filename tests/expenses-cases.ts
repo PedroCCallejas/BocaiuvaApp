@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import {
   buildExpensesSummary,
   buildPlayerBalances,
+  buildPlayerDebtReport,
   calculateExpenseShares,
   collectTeamExpenses,
   fieldCostToUnifiedExpense,
@@ -423,6 +424,109 @@ export const expensesTestCases: TestCase[] = [
         summary.byCategory.reduce((sum, entry) => sum + entry.totalCents, 0),
         summary.totalCents,
       );
+    },
+  },
+  {
+    name: 'painel de cobranca lista quem deve, quanto e em qual jogo',
+    run() {
+      const report = buildPlayerDebtReport(
+        collectTeamExpenses({
+          teamId: 'team-1',
+          expenses: [
+            createExpense({
+              id: 'cerveja',
+              date: '2026-08-10',
+              totalAmountCents: 10000,
+              participantPlayerIds: ['player-1', 'player-2'],
+              settledPlayerIds: ['player-2'],
+            }),
+            createExpense({
+              id: 'churrasco',
+              date: '2026-08-12',
+              matchId: 'match-1',
+              totalAmountCents: 6000,
+              participantPlayerIds: ['player-1'],
+              settledPlayerIds: [],
+            }),
+          ],
+          categoryLabels: { 'cat-cerveja': 'Cerveja' },
+        }),
+        {
+          playerNames: { 'player-1': 'Pedro', 'player-2': 'Ana' },
+          matchLabels: { 'match-1': 'vs Adversario · 12/08' },
+        },
+      );
+
+      // Ana quitou tudo: nao aparece na lista de cobranca.
+      assert.equal(report.rows.length, 1);
+
+      const pedro = report.rows[0];
+      assert.equal(pedro?.playerName, 'Pedro');
+      assert.equal(pedro?.totalOwedCents, 5000 + 6000);
+      assert.equal(pedro?.pendingItems.length, 2);
+      assert.equal(report.playersInDebtCount, 1);
+
+      // Pendencias vem da mais recente para a mais antiga, com o jogo identificado.
+      assert.equal(pedro?.pendingItems[0]?.expenseId, 'churrasco');
+      assert.equal(pedro?.pendingItems[0]?.matchLabel, 'vs Adversario · 12/08');
+      assert.equal(pedro?.pendingItems[1]?.matchLabel, null);
+    },
+  },
+  {
+    name: 'painel ordena pelo maior devedor e sabe incluir quem ja quitou',
+    run() {
+      const unified = collectTeamExpenses({
+        teamId: 'team-1',
+        expenses: [
+          createExpense({
+            id: 'pequena',
+            totalAmountCents: 2000,
+            participantPlayerIds: ['player-1'],
+          }),
+          createExpense({
+            id: 'grande',
+            totalAmountCents: 50000,
+            participantPlayerIds: ['player-2'],
+          }),
+          createExpense({
+            id: 'quitada',
+            totalAmountCents: 1000,
+            participantPlayerIds: ['player-3'],
+            settledPlayerIds: ['player-3'],
+          }),
+        ],
+      });
+
+      const somenteDevedores = buildPlayerDebtReport(unified);
+      assert.deepEqual(
+        somenteDevedores.rows.map((row) => row.playerId),
+        ['player-2', 'player-1'],
+      );
+
+      const todos = buildPlayerDebtReport(unified, { includeSettledPlayers: true });
+      assert.equal(todos.rows.length, 3);
+      assert.equal(
+        todos.rows.find((row) => row.playerId === 'player-3')?.totalSettledCents,
+        1000,
+      );
+    },
+  },
+  {
+    name: 'painel considera custo de campo antigo como pendencia de quem nao pagou',
+    run() {
+      const report = buildPlayerDebtReport(
+        collectTeamExpenses({
+          teamId: 'team-1',
+          expenses: [],
+          matches: [createMatchWithFieldCost()],
+        }),
+        { matchLabels: { 'match-1': 'vs Adversario' } },
+      );
+
+      // No modelo legado, quem esta na lista de pagantes ja quitou:
+      // ninguem fica devendo e o painel sai vazio.
+      assert.deepEqual(report.rows, []);
+      assert.equal(report.totalOwedCents, 0);
     },
   },
   {

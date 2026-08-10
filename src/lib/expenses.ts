@@ -391,6 +391,104 @@ export function buildPlayerBalances(expenses: UnifiedExpense[]): PlayerBalance[]
     .sort((a, b) => b.owedCents - a.owedCents);
 }
 
+/** Uma pendência específica: o que o jogador deve, de qual despesa e de qual jogo. */
+export interface PlayerDebtItem {
+  expenseId: string;
+  source: UnifiedExpenseSource;
+  categoryLabel: string | null;
+  description: string | null;
+  date: string;
+  matchId: string | null;
+  matchLabel: string | null;
+  shareCents: number;
+}
+
+/** Linha do painel de cobrança: um jogador e tudo que ele deve. */
+export interface PlayerDebtReportRow {
+  playerId: string;
+  playerName: string;
+  totalOwedCents: number;
+  totalSettledCents: number;
+  paidForGroupCents: number;
+  netCents: number;
+  pendingItems: PlayerDebtItem[];
+}
+
+export interface PlayerDebtReport {
+  rows: PlayerDebtReportRow[];
+  totalOwedCents: number;
+  playersInDebtCount: number;
+}
+
+/**
+ * Monta o painel de cobrança do admin: quem deve, quanto, e exatamente em quais
+ * despesas e jogos. Ordena pelo maior devedor — a informação que o admin
+ * procura primeiro é quem está mais atrasado.
+ */
+export function buildPlayerDebtReport(
+  expenses: UnifiedExpense[],
+  options: {
+    playerNames?: Record<string, string>;
+    matchLabels?: Record<string, string>;
+    includeSettledPlayers?: boolean;
+  } = {},
+): PlayerDebtReport {
+  const { playerNames = {}, matchLabels = {}, includeSettledPlayers = false } = options;
+  const balances = buildPlayerBalances(expenses);
+  const expensesById = new Map(expenses.map((expense) => [expense.id, expense]));
+
+  const rows: PlayerDebtReportRow[] = balances.map((balance) => {
+    const pendingItems: PlayerDebtItem[] = [];
+
+    for (const expenseId of balance.expenseIds) {
+      const expense = expensesById.get(expenseId);
+
+      if (!expense || expense.settledPlayerIds.includes(balance.playerId)) {
+        continue;
+      }
+
+      const shareCents = expense.sharesCents[balance.playerId] ?? 0;
+
+      if (shareCents <= 0) {
+        continue;
+      }
+
+      pendingItems.push({
+        expenseId: expense.id,
+        source: expense.source,
+        categoryLabel: expense.categoryLabel,
+        description: expense.description,
+        date: expense.date,
+        matchId: expense.matchId,
+        matchLabel: expense.matchId ? matchLabels[expense.matchId] ?? null : null,
+        shareCents,
+      });
+    }
+
+    pendingItems.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+    return {
+      playerId: balance.playerId,
+      playerName: playerNames[balance.playerId] ?? 'Jogador',
+      totalOwedCents: balance.owedCents,
+      totalSettledCents: balance.settledCents,
+      paidForGroupCents: balance.paidForGroupCents,
+      netCents: balance.netCents,
+      pendingItems,
+    };
+  });
+
+  const visibleRows = includeSettledPlayers
+    ? rows
+    : rows.filter((row) => row.totalOwedCents > 0);
+
+  return {
+    rows: visibleRows.sort((a, b) => b.totalOwedCents - a.totalOwedCents),
+    totalOwedCents: rows.reduce((sum, row) => sum + row.totalOwedCents, 0),
+    playersInDebtCount: rows.filter((row) => row.totalOwedCents > 0).length,
+  };
+}
+
 /** Resumo pronto para a tela: totais, quebra por categoria e saldos. */
 export function buildExpensesSummary(expenses: UnifiedExpense[]): ExpensesSummary {
   let totalCents = 0;

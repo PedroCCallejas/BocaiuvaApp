@@ -705,6 +705,8 @@ export function createSeedDatabase(): MockDatabase {
       { id: 'rating-8', teamId: 'team-bocaiuva', matchId: 'match-2', raterPlayerId: 'player-3', targetPlayerId: 'player-10', criteria: makeCriteria(4, { qualidade: 4.5, marra: 4.4, preciosismo: 4.2 }), overall: 4.2, createdAt: stamp('2026-04-24'), updatedAt: stamp('2026-04-24') },
     ],
     matchDiaryEntries: [],
+    expenseCategories: [],
+    expenses: [],
     notifications: [
       {
         id: 'notification__match-created__match-3',

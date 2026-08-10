@@ -92,6 +92,8 @@ import type {
   AppNotification,
   AttendanceRecord,
   AttendanceStatus,
+  Expense,
+  ExpenseCategory,
   Match,
   MatchDiaryEntry,
   MatchType,
@@ -111,6 +113,8 @@ import { emptySnapshot } from '@/services/repository/types';
 import type {
   AppRepository,
   AppSnapshot,
+  CreateExpenseInput,
+  CreateExpenseCategoryInput,
   CreateMatchInput,
   CreateMatchDiaryEntryInput,
   CreatePlayerInput,
@@ -130,6 +134,8 @@ import type {
   UpdateMatchMetadataInput,
   UpdateMatchFieldPaymentInput,
   UpdateMatchDiaryEntryInput,
+  UpdateExpenseInput,
+  UpdateExpenseCategoryInput,
   UpdateRatingCriterionInput,
   UpdateTeamInput,
   UpdateAttendanceInput,
@@ -288,6 +294,10 @@ function snapshotFromDatabase(source: MockDatabase, currentUserId: string | null
   const activeMembership =
     memberships.find((membership) => membership.teamId === currentUser.activeTeamId) ?? null;
   const activeTeamId = activeMembership?.teamId ?? null;
+  const activeMembershipCanManageTeam = Boolean(
+    activeMembership &&
+      (activeMembership.canManageTeam || activeMembership.roles.includes('admin')),
+  );
   const teams = memberships
     .map((membership) => source.teams.find((team) => team.id === membership.teamId) ?? null)
     .filter((team): team is Team => Boolean(team));
@@ -335,6 +345,18 @@ function snapshotFromDatabase(source: MockDatabase, currentUserId: string | null
     seasons: activeTeamId
       ? source.seasons.filter((season) => season.teamId === activeTeamId)
       : [],
+    // Financeiro e visao exclusiva de admin nesta versao: quem nao administra
+    // o time nem sequer recebe as despesas no snapshot.
+    expenseCategories:
+      activeTeamId && activeMembershipCanManageTeam
+        ? source.expenseCategories.filter((category) => category.teamId === activeTeamId)
+        : [],
+    expenses:
+      activeTeamId && activeMembershipCanManageTeam
+        ? source.expenses.filter(
+            (expense) => expense.teamId === activeTeamId && !expense.deletedAt,
+          )
+        : [],
     accessNotice: null,
   });
 }
@@ -355,7 +377,94 @@ function snapshotForTeam(teamId: string): AppSnapshot {
     playerRatings: database.playerRatings.filter((rating) => rating.teamId === teamId),
     notifications: database.notifications.filter((notification) => notification.teamId === teamId),
     seasons: database.seasons.filter((season) => season.teamId === teamId),
+    expenseCategories: database.expenseCategories.filter(
+      (category) => category.teamId === teamId,
+    ),
+    expenses: database.expenses.filter(
+      (expense) => expense.teamId === teamId && !expense.deletedAt,
+    ),
   });
+}
+
+// ── Financeiro: despesas e categorias ────────────────────────────────────
+
+function findExpenseCategoryForTeam(teamId: string, categoryId: string) {
+  return (
+    database.expenseCategories.find(
+      (category) => category.teamId === teamId && category.id === categoryId,
+    ) ?? null
+  );
+}
+
+function findExpenseForTeam(teamId: string, expenseId: string) {
+  return (
+    database.expenses.find(
+      (expense) =>
+        expense.teamId === teamId && expense.id === expenseId && !expense.deletedAt,
+    ) ?? null
+  );
+}
+
+function requireExpenseLabel(label: string) {
+  const trimmed = label.trim();
+
+  if (!trimmed) {
+    throw new Error('Informe o nome da categoria.');
+  }
+
+  if (trimmed.length > 60) {
+    throw new Error('O nome da categoria deve ter no máximo 60 caracteres.');
+  }
+
+  return trimmed;
+}
+
+function requireExpenseCents(value: number) {
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+    throw new Error('Informe um valor válido para a despesa.');
+  }
+
+  return value;
+}
+
+function requireExpenseDate(date: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
+    throw new Error('Informe uma data válida no formato AAAA-MM-DD.');
+  }
+
+  return date.trim();
+}
+
+/** Ids repetidos inflariam as cotas e o rateio nunca fecharia o total. */
+function normalizeExpensePlayerIds(playerIds: string[] | undefined, teamId: string) {
+  const unique = [...new Set(playerIds ?? [])].filter((id) => typeof id === 'string' && id);
+  const teamPlayerIds = new Set(
+    database.players.filter((player) => player.teamId === teamId).map((player) => player.id),
+  );
+
+  const unknown = unique.filter((id) => !teamPlayerIds.has(id));
+
+  if (unknown.length > 0) {
+    throw new Error('Um dos jogadores informados não pertence a este time.');
+  }
+
+  return unique;
+}
+
+function normalizeExpenseMatchId(matchId: string | null | undefined, teamId: string) {
+  if (matchId == null || matchId === '') {
+    return null;
+  }
+
+  const match = database.matches.find(
+    (item) => item.id === matchId && item.teamId === teamId && !item.deletedAt,
+  );
+
+  if (!match) {
+    throw new Error('A partida informada não pertence a este time.');
+  }
+
+  return match.id;
 }
 
 function createId(prefix: string) {
@@ -2166,6 +2275,270 @@ export const mockRepository: AppRepository = {
     );
     validateActiveRatingCriteria(nextCriteria);
     replaceTeamRatingCriteria(activeTeamId, normalizeRatingCriteriaOrder(nextCriteria));
+  },
+
+  async createExpenseCategory(input: CreateExpenseCategoryInput, actorUserId: string) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+
+    const label = requireExpenseLabel(input.label);
+    const duplicated = database.expenseCategories.find(
+      (category) =>
+        category.teamId === activeTeamId &&
+        !category.archivedAt &&
+        category.label.toLowerCase() === label.toLowerCase(),
+    );
+
+    if (duplicated) {
+      throw new Error('Já existe uma categoria com esse nome.');
+    }
+
+    const now = nowIso();
+    const category: ExpenseCategory = {
+      id: createId('expense-category'),
+      teamId: activeTeamId,
+      label,
+      archivedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    database.expenseCategories = [...database.expenseCategories, category];
+    return clone(category);
+  },
+
+  async updateExpenseCategory(
+    categoryId: string,
+    input: UpdateExpenseCategoryInput,
+    actorUserId: string,
+  ) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+
+    const category = findExpenseCategoryForTeam(activeTeamId, categoryId);
+
+    if (!category) {
+      throw new Error('Categoria não encontrada.');
+    }
+
+    const nextCategory: ExpenseCategory = {
+      ...category,
+      label: input.label !== undefined ? requireExpenseLabel(input.label) : category.label,
+      archivedAt:
+        input.archived === undefined
+          ? category.archivedAt ?? null
+          : input.archived
+            ? category.archivedAt ?? nowIso()
+            : null,
+      updatedAt: nowIso(),
+    };
+
+    database.expenseCategories = database.expenseCategories.map((item) =>
+      item.id === category.id ? nextCategory : item,
+    );
+
+    return clone(nextCategory);
+  },
+
+  async deleteExpenseCategory(categoryId: string, actorUserId: string) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+
+    const category = findExpenseCategoryForTeam(activeTeamId, categoryId);
+
+    if (!category) {
+      throw new Error('Categoria não encontrada.');
+    }
+
+    // Apagar uma categoria em uso deixaria despesas orfas: arquiva no lugar.
+    const inUse = database.expenses.some(
+      (expense) =>
+        expense.teamId === activeTeamId &&
+        expense.categoryId === category.id &&
+        !expense.deletedAt,
+    );
+
+    if (inUse) {
+      database.expenseCategories = database.expenseCategories.map((item) =>
+        item.id === category.id
+          ? { ...item, archivedAt: item.archivedAt ?? nowIso(), updatedAt: nowIso() }
+          : item,
+      );
+      return;
+    }
+
+    database.expenseCategories = database.expenseCategories.filter(
+      (item) => item.id !== category.id,
+    );
+  },
+
+  async createExpense(input: CreateExpenseInput, actorUserId: string) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+
+    const category = findExpenseCategoryForTeam(activeTeamId, input.categoryId);
+
+    if (!category) {
+      throw new Error('Escolha uma categoria válida para a despesa.');
+    }
+
+    const now = nowIso();
+    const participantPlayerIds = normalizeExpensePlayerIds(
+      input.participantPlayerIds,
+      activeTeamId,
+    );
+    const settledPlayerIds = normalizeExpensePlayerIds(
+      input.settledPlayerIds,
+      activeTeamId,
+    ).filter((playerId) => participantPlayerIds.includes(playerId));
+
+    const expense: Expense = {
+      id: createId('expense'),
+      teamId: activeTeamId,
+      categoryId: category.id,
+      matchId: normalizeExpenseMatchId(input.matchId, activeTeamId),
+      description: normalizeOptionalString(input.description),
+      date: requireExpenseDate(input.date),
+      totalAmountCents: requireExpenseCents(input.totalAmountCents),
+      paidByPlayerId: input.paidByPlayerId
+        ? (normalizeExpensePlayerIds([input.paidByPlayerId], activeTeamId)[0] ?? null)
+        : null,
+      splitMode: input.splitMode ?? 'equal',
+      participantPlayerIds,
+      extraSharesCount: requireExpenseCents(input.extraSharesCount ?? 0),
+      manualSharesCents: input.manualSharesCents ?? undefined,
+      settledPlayerIds,
+      createdBy: actorUserId,
+      deletedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    database.expenses = [...database.expenses, expense];
+    return clone(expense);
+  },
+
+  async updateExpense(expenseId: string, input: UpdateExpenseInput, actorUserId: string) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+
+    const expense = findExpenseForTeam(activeTeamId, expenseId);
+
+    if (!expense) {
+      throw new Error('Despesa não encontrada.');
+    }
+
+    if (input.categoryId !== undefined && !findExpenseCategoryForTeam(activeTeamId, input.categoryId)) {
+      throw new Error('Escolha uma categoria válida para a despesa.');
+    }
+
+    const participantPlayerIds =
+      input.participantPlayerIds !== undefined
+        ? normalizeExpensePlayerIds(input.participantPlayerIds, activeTeamId)
+        : expense.participantPlayerIds;
+
+    // Quem sai da lista de participantes nao pode continuar marcado como quitado.
+    const settledPlayerIds = (
+      input.settledPlayerIds !== undefined
+        ? normalizeExpensePlayerIds(input.settledPlayerIds, activeTeamId)
+        : expense.settledPlayerIds
+    ).filter((playerId) => participantPlayerIds.includes(playerId));
+
+    const nextExpense: Expense = {
+      ...expense,
+      categoryId: input.categoryId ?? expense.categoryId,
+      matchId:
+        input.matchId !== undefined
+          ? normalizeExpenseMatchId(input.matchId, activeTeamId)
+          : expense.matchId ?? null,
+      description:
+        input.description !== undefined
+          ? normalizeOptionalString(input.description)
+          : expense.description ?? null,
+      date: input.date !== undefined ? requireExpenseDate(input.date) : expense.date,
+      totalAmountCents:
+        input.totalAmountCents !== undefined
+          ? requireExpenseCents(input.totalAmountCents)
+          : expense.totalAmountCents,
+      paidByPlayerId:
+        input.paidByPlayerId !== undefined
+          ? input.paidByPlayerId
+            ? (normalizeExpensePlayerIds([input.paidByPlayerId], activeTeamId)[0] ?? null)
+            : null
+          : expense.paidByPlayerId ?? null,
+      splitMode: input.splitMode ?? expense.splitMode,
+      participantPlayerIds,
+      extraSharesCount:
+        input.extraSharesCount !== undefined
+          ? requireExpenseCents(input.extraSharesCount)
+          : expense.extraSharesCount ?? 0,
+      manualSharesCents:
+        input.manualSharesCents !== undefined
+          ? input.manualSharesCents ?? undefined
+          : expense.manualSharesCents,
+      settledPlayerIds,
+      updatedAt: nowIso(),
+    };
+
+    database.expenses = database.expenses.map((item) =>
+      item.id === expense.id ? nextExpense : item,
+    );
+
+    return clone(nextExpense);
+  },
+
+  async deleteExpense(expenseId: string, actorUserId: string) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+
+    const expense = findExpenseForTeam(activeTeamId, expenseId);
+
+    if (!expense) {
+      throw new Error('Despesa não encontrada.');
+    }
+
+    // Soft-delete: o historico financeiro continua auditavel.
+    database.expenses = database.expenses.map((item) =>
+      item.id === expense.id
+        ? { ...item, deletedAt: nowIso(), updatedAt: nowIso() }
+        : item,
+    );
+  },
+
+  async setExpenseSettlement(
+    expenseId: string,
+    playerId: string,
+    settled: boolean,
+    actorUserId: string,
+  ) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    requireTeamAdmin(actorUserId, activeTeamId);
+
+    const expense = findExpenseForTeam(activeTeamId, expenseId);
+
+    if (!expense) {
+      throw new Error('Despesa não encontrada.');
+    }
+
+    if (!expense.participantPlayerIds.includes(playerId)) {
+      throw new Error('Esse jogador não participa desta despesa.');
+    }
+
+    const settledPlayerIds = settled
+      ? [...new Set([...expense.settledPlayerIds, playerId])]
+      : expense.settledPlayerIds.filter((item) => item !== playerId);
+
+    const nextExpense: Expense = {
+      ...expense,
+      settledPlayerIds,
+      updatedAt: nowIso(),
+    };
+
+    database.expenses = database.expenses.map((item) =>
+      item.id === expense.id ? nextExpense : item,
+    );
+
+    return clone(nextExpense);
   },
 
   async setActiveTeam(teamId: string, userId: string) {

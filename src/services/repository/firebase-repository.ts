@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -151,6 +152,8 @@ import type {
   AppNotification,
   AttendanceRecord,
   AttendanceStatus,
+  Expense,
+  ExpenseCategory,
   MatchType,
   Lineup,
   Match,
@@ -175,6 +178,8 @@ import {
   type CreatePlayerInput,
   type CreateRatingCriterionInput,
   type CreateTeamInput,
+  type CreateExpenseInput,
+  type CreateExpenseCategoryInput,
   type CreateMatchInput,
   type CreateMatchDiaryEntryInput,
   type FinishMatchInput,
@@ -190,6 +195,8 @@ import {
   type UpdateMatchMetadataInput,
   type UpdateMatchFieldPaymentInput,
   type UpdateMatchDiaryEntryInput,
+  type UpdateExpenseInput,
+  type UpdateExpenseCategoryInput,
   type UpdateRatingCriterionInput,
   type UpdateTeamInput,
   type UpdatePlayerInput,
@@ -1810,6 +1817,89 @@ async function fetchSeasonsByTeamId(teamId: string) {
   return snapshot.docs.map((item) => parseDoc<FirestoreSeasonDocument>(item)) as Season[];
 }
 
+function requireExpenseLabel(label: string) {
+  const trimmed = label.trim();
+
+  if (!trimmed) {
+    throw createRepositoryError('Informe o nome da categoria.', 'invalid-argument');
+  }
+
+  if (trimmed.length > 60) {
+    throw createRepositoryError(
+      'O nome da categoria deve ter no máximo 60 caracteres.',
+      'invalid-argument',
+    );
+  }
+
+  return trimmed;
+}
+
+function requireExpenseCents(value: number) {
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+    throw createRepositoryError(
+      'Informe um valor válido para a despesa.',
+      'invalid-argument',
+    );
+  }
+
+  return value;
+}
+
+function requireExpenseDate(date: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) {
+    throw createRepositoryError(
+      'Informe uma data válida no formato AAAA-MM-DD.',
+      'invalid-argument',
+    );
+  }
+
+  return date.trim();
+}
+
+async function fetchExpenseCategoriesByTeamId(teamId: string) {
+  const snapshot = await runLoggedBootstrapQuery(
+    {
+      collection: FIRESTORE_COLLECTIONS.expenseCategories,
+      query: 'fetchExpenseCategoriesByTeamId',
+      teamId,
+    },
+    async () => {
+      const firestore = requireFirestore();
+      return await getDocs(
+        query(
+          collection(firestore, FIRESTORE_COLLECTIONS.expenseCategories),
+          where('teamId', '==', teamId),
+        ),
+      );
+    },
+  );
+
+  return snapshot.docs.map((item) => parseDoc<ExpenseCategory>(item)) as ExpenseCategory[];
+}
+
+async function fetchExpensesByTeamId(teamId: string) {
+  const snapshot = await runLoggedBootstrapQuery(
+    {
+      collection: FIRESTORE_COLLECTIONS.expenses,
+      query: 'fetchExpensesByTeamId',
+      teamId,
+    },
+    async () => {
+      const firestore = requireFirestore();
+      return await getDocs(
+        query(
+          collection(firestore, FIRESTORE_COLLECTIONS.expenses),
+          where('teamId', '==', teamId),
+        ),
+      );
+    },
+  );
+
+  return (snapshot.docs.map((item) => parseDoc<Expense>(item)) as Expense[]).filter(
+    (expense) => !expense.deletedAt,
+  );
+}
+
 async function fetchPublicTeamById(teamId: string) {
   const firestore = requireFirestore();
   const snapshot = await getDoc(doc(firestore, FIRESTORE_COLLECTIONS.publicTeams, teamId));
@@ -2930,6 +3020,21 @@ async function buildSnapshotForResolvedUser(currentUser: User): Promise<AppSnaps
       fetchSeasonsByTeamId(activeTeamId),
     ]);
 
+    // O financeiro so e legivel por quem administra o time (regra do Firestore).
+    // Buscar sem essa checagem geraria permission-denied e derrubaria todo o
+    // bootstrap de um jogador comum.
+    const canReadFinance = Boolean(
+      activeMembership &&
+        (activeMembership.canManageTeam || activeMembership.roles.includes('admin')),
+    );
+
+    const [expenseCategories, expenses] = canReadFinance
+      ? await Promise.all([
+          fetchExpenseCategoriesByTeamId(activeTeamId),
+          fetchExpensesByTeamId(activeTeamId),
+        ])
+      : [[], []];
+
     return {
       ...emptySnapshot,
       users: [user],
@@ -2946,6 +3051,8 @@ async function buildSnapshotForResolvedUser(currentUser: User): Promise<AppSnaps
       playerRatings,
       notifications,
       seasons,
+      expenseCategories,
+      expenses,
       accessNotice: resolvedMemberships.accessNotice,
     };
   } catch (error) {
@@ -5334,6 +5441,287 @@ export const firebaseRepository: AppRepository = {
         error,
         'Não foi possível remover o critério agora.',
       );
+    }
+  },
+
+  async createExpenseCategory(input: CreateExpenseCategoryInput, actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      const { activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      await ensureTeamAdmin(actorUserId, activeTeamId);
+
+      const label = requireExpenseLabel(input.label);
+      const existing = await fetchExpenseCategoriesByTeamId(activeTeamId);
+
+      if (
+        existing.some(
+          (category) =>
+            !category.archivedAt && category.label.toLowerCase() === label.toLowerCase(),
+        )
+      ) {
+        throw createRepositoryError('Já existe uma categoria com esse nome.', 'already-exists');
+      }
+
+      const now = nowIso();
+      const categoryRef = doc(collection(firestore, FIRESTORE_COLLECTIONS.expenseCategories));
+      const category: ExpenseCategory = {
+        id: categoryRef.id,
+        teamId: activeTeamId,
+        label,
+        archivedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await setDoc(categoryRef, category);
+      return category;
+    } catch (error) {
+      throw toFriendlyFirestoreError(error, 'Não foi possível criar a categoria agora.');
+    }
+  },
+
+  async updateExpenseCategory(
+    categoryId: string,
+    input: UpdateExpenseCategoryInput,
+    actorUserId: string,
+  ) {
+    try {
+      const firestore = requireFirestore();
+      const { activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      await ensureTeamAdmin(actorUserId, activeTeamId);
+
+      const categoryRef = doc(firestore, FIRESTORE_COLLECTIONS.expenseCategories, categoryId);
+      const snapshot = await getDoc(categoryRef);
+      const category = snapshot.exists() ? (parseDoc<ExpenseCategory>(snapshot) as ExpenseCategory) : null;
+
+      if (!category || category.teamId !== activeTeamId) {
+        throw createRepositoryError('Categoria não encontrada.', 'not-found');
+      }
+
+      const nextCategory: ExpenseCategory = {
+        ...category,
+        label: input.label !== undefined ? requireExpenseLabel(input.label) : category.label,
+        archivedAt:
+          input.archived === undefined
+            ? category.archivedAt ?? null
+            : input.archived
+              ? category.archivedAt ?? nowIso()
+              : null,
+        updatedAt: nowIso(),
+      };
+
+      await setDoc(categoryRef, nextCategory);
+      return nextCategory;
+    } catch (error) {
+      throw toFriendlyFirestoreError(error, 'Não foi possível salvar a categoria agora.');
+    }
+  },
+
+  async deleteExpenseCategory(categoryId: string, actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      const { activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      await ensureTeamAdmin(actorUserId, activeTeamId);
+
+      const categoryRef = doc(firestore, FIRESTORE_COLLECTIONS.expenseCategories, categoryId);
+      const snapshot = await getDoc(categoryRef);
+      const category = snapshot.exists() ? (parseDoc<ExpenseCategory>(snapshot) as ExpenseCategory) : null;
+
+      if (!category || category.teamId !== activeTeamId) {
+        throw createRepositoryError('Categoria não encontrada.', 'not-found');
+      }
+
+      // Apagar categoria em uso deixaria despesas orfas: arquiva no lugar.
+      const expenses = await fetchExpensesByTeamId(activeTeamId);
+      const inUse = expenses.some((expense) => expense.categoryId === category.id);
+
+      if (inUse) {
+        await setDoc(categoryRef, {
+          ...category,
+          archivedAt: category.archivedAt ?? nowIso(),
+          updatedAt: nowIso(),
+        });
+        return;
+      }
+
+      await deleteDoc(categoryRef);
+    } catch (error) {
+      throw toFriendlyFirestoreError(error, 'Não foi possível remover a categoria agora.');
+    }
+  },
+
+  async createExpense(input: CreateExpenseInput, actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      const { activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      await ensureTeamAdmin(actorUserId, activeTeamId);
+
+      const categories = await fetchExpenseCategoriesByTeamId(activeTeamId);
+
+      if (!categories.some((category) => category.id === input.categoryId)) {
+        throw createRepositoryError(
+          'Escolha uma categoria válida para a despesa.',
+          'failed-precondition',
+        );
+      }
+
+      const now = nowIso();
+      const expenseRef = doc(collection(firestore, FIRESTORE_COLLECTIONS.expenses));
+      const participantPlayerIds = [...new Set<string>(input.participantPlayerIds ?? [])];
+      const expense: Expense = {
+        id: expenseRef.id,
+        teamId: activeTeamId,
+        categoryId: input.categoryId,
+        matchId: input.matchId ?? null,
+        description: input.description?.trim() || null,
+        date: requireExpenseDate(input.date),
+        totalAmountCents: requireExpenseCents(input.totalAmountCents),
+        paidByPlayerId: input.paidByPlayerId ?? null,
+        splitMode: input.splitMode ?? 'equal',
+        participantPlayerIds,
+        extraSharesCount: requireExpenseCents(input.extraSharesCount ?? 0),
+        manualSharesCents: input.manualSharesCents ?? undefined,
+        settledPlayerIds: [...new Set<string>(input.settledPlayerIds ?? [])].filter((playerId) =>
+          participantPlayerIds.includes(playerId),
+        ),
+        createdBy: actorUserId,
+        deletedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await setDoc(expenseRef, expense);
+      return expense;
+    } catch (error) {
+      throw toFriendlyFirestoreError(error, 'Não foi possível salvar a despesa agora.');
+    }
+  },
+
+  async updateExpense(expenseId: string, input: UpdateExpenseInput, actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      const { activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      await ensureTeamAdmin(actorUserId, activeTeamId);
+
+      const expenseRef = doc(firestore, FIRESTORE_COLLECTIONS.expenses, expenseId);
+      const snapshot = await getDoc(expenseRef);
+      const expense = snapshot.exists() ? (parseDoc<Expense>(snapshot) as Expense) : null;
+
+      if (!expense || expense.teamId !== activeTeamId || expense.deletedAt) {
+        throw createRepositoryError('Despesa não encontrada.', 'not-found');
+      }
+
+      const participantPlayerIds =
+        input.participantPlayerIds !== undefined
+          ? [...new Set<string>(input.participantPlayerIds)]
+          : expense.participantPlayerIds;
+
+      // Quem sai da lista de participantes nao pode seguir marcado como quitado.
+      const settledPlayerIds = (
+        input.settledPlayerIds !== undefined
+          ? [...new Set<string>(input.settledPlayerIds)]
+          : expense.settledPlayerIds
+      ).filter((playerId) => participantPlayerIds.includes(playerId));
+
+      const nextExpense: Expense = {
+        ...expense,
+        categoryId: input.categoryId ?? expense.categoryId,
+        matchId: input.matchId !== undefined ? input.matchId ?? null : expense.matchId ?? null,
+        description:
+          input.description !== undefined
+            ? input.description?.trim() || null
+            : expense.description ?? null,
+        date: input.date !== undefined ? requireExpenseDate(input.date) : expense.date,
+        totalAmountCents:
+          input.totalAmountCents !== undefined
+            ? requireExpenseCents(input.totalAmountCents)
+            : expense.totalAmountCents,
+        paidByPlayerId:
+          input.paidByPlayerId !== undefined
+            ? input.paidByPlayerId ?? null
+            : expense.paidByPlayerId ?? null,
+        splitMode: input.splitMode ?? expense.splitMode,
+        participantPlayerIds,
+        extraSharesCount:
+          input.extraSharesCount !== undefined
+            ? requireExpenseCents(input.extraSharesCount)
+            : expense.extraSharesCount ?? 0,
+        manualSharesCents:
+          input.manualSharesCents !== undefined
+            ? input.manualSharesCents ?? undefined
+            : expense.manualSharesCents,
+        settledPlayerIds,
+        updatedAt: nowIso(),
+      };
+
+      await setDoc(expenseRef, nextExpense);
+      return nextExpense;
+    } catch (error) {
+      throw toFriendlyFirestoreError(error, 'Não foi possível salvar a despesa agora.');
+    }
+  },
+
+  async deleteExpense(expenseId: string, actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      const { activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      await ensureTeamAdmin(actorUserId, activeTeamId);
+
+      const expenseRef = doc(firestore, FIRESTORE_COLLECTIONS.expenses, expenseId);
+      const snapshot = await getDoc(expenseRef);
+      const expense = snapshot.exists() ? (parseDoc<Expense>(snapshot) as Expense) : null;
+
+      if (!expense || expense.teamId !== activeTeamId) {
+        throw createRepositoryError('Despesa não encontrada.', 'not-found');
+      }
+
+      // Soft-delete: o historico financeiro continua auditavel.
+      await updateDoc(expenseRef, { deletedAt: nowIso(), updatedAt: nowIso() });
+    } catch (error) {
+      throw toFriendlyFirestoreError(error, 'Não foi possível remover a despesa agora.');
+    }
+  },
+
+  async setExpenseSettlement(
+    expenseId: string,
+    playerId: string,
+    settled: boolean,
+    actorUserId: string,
+  ) {
+    try {
+      const firestore = requireFirestore();
+      const { activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      await ensureTeamAdmin(actorUserId, activeTeamId);
+
+      const expenseRef = doc(firestore, FIRESTORE_COLLECTIONS.expenses, expenseId);
+      const snapshot = await getDoc(expenseRef);
+      const expense = snapshot.exists() ? (parseDoc<Expense>(snapshot) as Expense) : null;
+
+      if (!expense || expense.teamId !== activeTeamId || expense.deletedAt) {
+        throw createRepositoryError('Despesa não encontrada.', 'not-found');
+      }
+
+      if (!expense.participantPlayerIds.includes(playerId)) {
+        throw createRepositoryError(
+          'Esse jogador não participa desta despesa.',
+          'failed-precondition',
+        );
+      }
+
+      const settledPlayerIds = settled
+        ? [...new Set([...expense.settledPlayerIds, playerId])]
+        : expense.settledPlayerIds.filter((item) => item !== playerId);
+
+      const nextExpense: Expense = {
+        ...expense,
+        settledPlayerIds,
+        updatedAt: nowIso(),
+      };
+
+      await setDoc(expenseRef, nextExpense);
+      return nextExpense;
+    } catch (error) {
+      throw toFriendlyFirestoreError(error, 'Não foi possível atualizar o pagamento agora.');
     }
   },
 

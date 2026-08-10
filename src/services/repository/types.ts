@@ -8,6 +8,9 @@ import type {
   AppNotification,
   AttendanceRecord,
   AttendanceStatus,
+  Expense,
+  ExpenseCategory,
+  ExpenseSplitMode,
   FootPreference,
   Lineup,
   LineupNode,
@@ -56,6 +59,8 @@ export interface AppSnapshot {
   ratingCriteria: TeamRatingCriterion[];
   notifications: AppNotification[];
   seasons: Season[];
+  expenseCategories: ExpenseCategory[];
+  expenses: Expense[];
   accessNotice?: string | null;
 }
 
@@ -87,6 +92,8 @@ export const emptySnapshot: AppSnapshot = {
   ratingCriteria: [],
   notifications: [],
   seasons: [],
+  expenseCategories: [],
+  expenses: [],
   accessNotice: null,
 };
 
@@ -345,6 +352,43 @@ export interface UpdateRatingCriterionInput {
   order?: number;
 }
 
+export interface CreateExpenseCategoryInput {
+  label: string;
+}
+
+export interface UpdateExpenseCategoryInput {
+  label?: string;
+  archived?: boolean;
+}
+
+export interface CreateExpenseInput {
+  categoryId: string;
+  date: string;
+  totalAmountCents: number;
+  description?: string | null;
+  matchId?: string | null;
+  paidByPlayerId?: string | null;
+  splitMode?: ExpenseSplitMode;
+  participantPlayerIds?: string[];
+  extraSharesCount?: number;
+  manualSharesCents?: Record<string, number> | null;
+  settledPlayerIds?: string[];
+}
+
+export interface UpdateExpenseInput {
+  categoryId?: string;
+  date?: string;
+  totalAmountCents?: number;
+  description?: string | null;
+  matchId?: string | null;
+  paidByPlayerId?: string | null;
+  splitMode?: ExpenseSplitMode;
+  participantPlayerIds?: string[];
+  extraSharesCount?: number;
+  manualSharesCents?: Record<string, number> | null;
+  settledPlayerIds?: string[];
+}
+
 export interface AppRepository {
   getMode(): RepositoryMode;
   getInitialSnapshot(): Promise<AppSnapshot>;
@@ -379,6 +423,29 @@ export interface AppRepository {
     criterionId: string,
     actorUserId: string,
   ): Promise<void>;
+  createExpenseCategory(
+    input: CreateExpenseCategoryInput,
+    actorUserId: string,
+  ): Promise<ExpenseCategory>;
+  updateExpenseCategory(
+    categoryId: string,
+    input: UpdateExpenseCategoryInput,
+    actorUserId: string,
+  ): Promise<ExpenseCategory>;
+  deleteExpenseCategory(categoryId: string, actorUserId: string): Promise<void>;
+  createExpense(input: CreateExpenseInput, actorUserId: string): Promise<Expense>;
+  updateExpense(
+    expenseId: string,
+    input: UpdateExpenseInput,
+    actorUserId: string,
+  ): Promise<Expense>;
+  deleteExpense(expenseId: string, actorUserId: string): Promise<void>;
+  setExpenseSettlement(
+    expenseId: string,
+    playerId: string,
+    settled: boolean,
+    actorUserId: string,
+  ): Promise<Expense>;
   setActiveTeam(teamId: string, userId: string): Promise<User>;
   joinTeamWithInviteCode(inviteCode: string, userId: string): Promise<JoinTeamResult>;
   createPlayer(input: CreatePlayerInput, actorUserId: string): Promise<Player>;

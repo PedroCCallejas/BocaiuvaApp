@@ -133,6 +133,8 @@ export function buildBootstrapRecoverySnapshot(
     notifications: [],
     matchDiaryEntries: [],
     seasons: [],
+    expenseCategories: [],
+    expenses: [],
     accessNotice: partialSnapshot?.accessNotice ?? LOST_TEAM_ACCESS_MESSAGE,
   } satisfies AppSnapshot;
 }

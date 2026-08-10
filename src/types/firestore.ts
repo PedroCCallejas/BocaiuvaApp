@@ -35,6 +35,8 @@ export const FIRESTORE_COLLECTIONS = {
   ratingCriteria: 'ratingCriteria',
   notifications: 'notifications',
   seasons: 'seasons',
+  expenseCategories: 'expenseCategories',
+  expenses: 'expenses',
 } as const;
 
 export const FIRESTORE_POST_MATCH_COLLECTIONS = {

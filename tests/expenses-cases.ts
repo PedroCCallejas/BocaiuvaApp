@@ -11,7 +11,7 @@ import {
   splitEqualCents,
   toUnifiedExpense,
 } from '@/lib/expenses';
-import type { Expense, Match } from '@/types/domain';
+import type { AttendanceRecord, Expense, Match } from '@/types/domain';
 
 type TestCase = {
   name: string;
@@ -62,6 +62,18 @@ function createMatchWithFieldCost(overrides: Partial<Match> = {}): Match {
     },
     ...overrides,
   } as Match;
+}
+
+function createConfirmedAttendance(matchId: string, playerIds: string[]): AttendanceRecord[] {
+  return playerIds.map((playerId, index) => ({
+    id: `attendance-${matchId}-${index}`,
+    teamId: 'team-1',
+    matchId,
+    playerId,
+    status: 'confirmed',
+    createdAt: '2026-08-09T12:00:00.000Z',
+    updatedAt: '2026-08-09T12:00:00.000Z',
+  })) as AttendanceRecord[];
 }
 
 export const expensesTestCases: TestCase[] = [
@@ -512,19 +524,114 @@ export const expensesTestCases: TestCase[] = [
     },
   },
   {
-    name: 'painel considera custo de campo antigo como pendencia de quem nao pagou',
+    name: 'quem confirmou presenca e nao pagou o campo aparece como devedor',
     run() {
+      // 4 confirmados, 2 ja pagaram: os outros 2 precisam aparecer devendo.
+      const unified = collectTeamExpenses({
+        teamId: 'team-1',
+        matches: [
+          createMatchWithFieldCost({
+            fieldCost: { totalAmount: 200, splitCount: 4, amountPerPlayer: 50, currency: 'BRL' },
+            fieldPayment: { payerPlayerIds: ['player-1', 'player-2'], paidGuestCount: 0 },
+          }),
+        ],
+        attendance: createConfirmedAttendance('match-1', [
+          'player-1',
+          'player-2',
+          'player-3',
+          'player-4',
+        ]),
+      });
+
+      const campo = unified[0];
+      assert.equal(campo?.participantPlayerIds.length, 4);
+      assert.deepEqual(campo?.settledPlayerIds, ['player-1', 'player-2']);
+      assert.equal(campo?.extraSharesCount, 0);
+      assert.equal(campo?.sharesCents['player-3'], 5000);
+
+      const report = buildPlayerDebtReport(unified, {
+        playerNames: { 'player-3': 'Pedro', 'player-4': 'Ana' },
+      });
+
+      assert.equal(report.playersInDebtCount, 2);
+      assert.equal(report.totalOwedCents, 10000);
+      assert.deepEqual(
+        report.rows.map((row) => row.playerId).sort(),
+        ['player-3', 'player-4'],
+      );
+    },
+  },
+  {
+    name: 'cotas de convidados sobram apenas depois dos jogadores confirmados',
+    run() {
+      // 16 cotas, 10 confirmados: as 6 restantes sao convidados sem cadastro.
+      const confirmedIds = Array.from({ length: 10 }, (_, index) => `player-${index + 1}`);
+      const unified = collectTeamExpenses({
+        teamId: 'team-1',
+        matches: [
+          createMatchWithFieldCost({
+            fieldCost: { totalAmount: 150, splitCount: 16, amountPerPlayer: 9.38, currency: 'BRL' },
+            fieldPayment: { payerPlayerIds: confirmedIds.slice(0, 4), paidGuestCount: 0 },
+          }),
+        ],
+        attendance: createConfirmedAttendance('match-1', confirmedIds),
+      });
+
+      const campo = unified[0];
+      assert.equal(campo?.participantPlayerIds.length, 10);
+      assert.equal(campo?.extraSharesCount, 6);
+
+      // Nenhum centavo se perde entre jogadores e convidados.
+      const somaJogadores = Object.values(campo?.sharesCents ?? {}).reduce(
+        (sum, value) => sum + value,
+        0,
+      );
+      assert.equal(somaJogadores + (campo?.extraSharesCents ?? 0), 15000);
+
+      // 6 confirmados ainda devem.
+      const report = buildPlayerDebtReport(unified);
+      assert.equal(report.playersInDebtCount, 6);
+    },
+  },
+  {
+    name: 'quem pagou sem ter confirmado presenca continua contando como participante',
+    run() {
+      const unified = collectTeamExpenses({
+        teamId: 'team-1',
+        matches: [
+          createMatchWithFieldCost({
+            fieldCost: { totalAmount: 100, splitCount: 2, amountPerPlayer: 50, currency: 'BRL' },
+            // player-9 entrou de ultima hora: pagou mas nao consta confirmado.
+            fieldPayment: { payerPlayerIds: ['player-9'], paidGuestCount: 0 },
+          }),
+        ],
+        attendance: createConfirmedAttendance('match-1', ['player-1']),
+      });
+
+      const campo = unified[0];
+      assert.equal(campo?.participantPlayerIds.includes('player-9'), true);
+      assert.equal(campo?.participantPlayerIds.length, 2);
+      assert.equal(campo?.extraSharesCount, 0);
+
+      const report = buildPlayerDebtReport(unified);
+      assert.deepEqual(
+        report.rows.map((row) => row.playerId),
+        ['player-1'],
+      );
+    },
+  },
+  {
+    name: 'partida sem presenca registrada nao inventa dividas',
+    run() {
+      // Sem attendance nao ha como saber quem faltou pagar: so os pagantes
+      // entram, todos quitados, e o painel fica vazio.
       const report = buildPlayerDebtReport(
         collectTeamExpenses({
           teamId: 'team-1',
-          expenses: [],
           matches: [createMatchWithFieldCost()],
         }),
-        { matchLabels: { 'match-1': 'vs Adversario' } },
       );
 
-      // No modelo legado, quem esta na lista de pagantes ja quitou:
-      // ninguem fica devendo e o painel sai vazio.
       assert.deepEqual(report.rows, []);
       assert.equal(report.totalOwedCents, 0);
     },

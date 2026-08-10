@@ -14,7 +14,7 @@
  * eventual migração futura muda apenas o adaptador, não as telas.
  */
 
-import type { Expense, Match } from '@/types/domain';
+import type { AttendanceRecord, Expense, Match } from '@/types/domain';
 
 import { centsFromAmount } from '@/lib/money';
 
@@ -223,8 +223,16 @@ export function toUnifiedExpense(
  *
  * Este é o único ponto que conhece o modelo legado. Retorna `null` quando a
  * partida não tem custo lançado.
+ *
+ * Quem **deve** é quem confirmou presença; quem **já acertou** é quem está na
+ * lista de pagantes. Sem `confirmedPlayerIds`, não há como saber quem faltou
+ * pagar, e caímos no comportamento conservador de tratar só os pagantes como
+ * participantes — melhor não mostrar dívida nenhuma do que inventar uma.
  */
-export function fieldCostToUnifiedExpense(match: Match): UnifiedExpense | null {
+export function fieldCostToUnifiedExpense(
+  match: Match,
+  confirmedPlayerIds: string[] = [],
+): UnifiedExpense | null {
   const fieldCost = match.fieldCost;
 
   if (!fieldCost || !Number.isFinite(fieldCost.totalAmount) || fieldCost.totalAmount <= 0) {
@@ -234,16 +242,24 @@ export function fieldCostToUnifiedExpense(match: Match): UnifiedExpense | null {
   const totalAmountCents = centsFromAmount(fieldCost.totalAmount);
   const payment = match.fieldPayment ?? null;
   const payerPlayerIds = sanitizeParticipants(payment?.payerPlayerIds ?? []);
-  const splitCount = isPositiveInteger(fieldCost.splitCount) ? fieldCost.splitCount : 0;
+  const confirmed = sanitizeParticipants(confirmedPlayerIds);
 
-  // No modelo legado não existe lista de participantes: o que se sabe é
-  // quantas cotas foram divididas e quem já pagou. As cotas sem dono viram
-  // "extras", preservando o total.
-  const extraSharesCount = Math.max(0, splitCount - payerPlayerIds.length);
-  const parts = splitEqualCents(totalAmountCents, splitCount || payerPlayerIds.length || 1);
+  // Um jogador pode ter pago sem constar como confirmado (entrou de última
+  // hora). Ele também é participante — senão a cota dele sumiria do total.
+  const participantPlayerIds = confirmed.length > 0
+    ? [...new Set([...confirmed, ...payerPlayerIds])]
+    : payerPlayerIds;
+
+  const splitCount = isPositiveInteger(fieldCost.splitCount) ? fieldCost.splitCount : 0;
+  const shareCount = Math.max(splitCount, participantPlayerIds.length) || 1;
+
+  // Cotas que sobram depois dos jogadores identificados são de convidados
+  // sem cadastro. Preserva o total mesmo quando o rateio foi feito por cabeça.
+  const extraSharesCount = Math.max(0, shareCount - participantPlayerIds.length);
+  const parts = splitEqualCents(totalAmountCents, shareCount);
   const sharesCents: Record<string, number> = {};
 
-  payerPlayerIds.forEach((playerId, index) => {
+  participantPlayerIds.forEach((playerId, index) => {
     sharesCents[playerId] = parts[index] ?? 0;
   });
 
@@ -258,12 +274,14 @@ export function fieldCostToUnifiedExpense(match: Match): UnifiedExpense | null {
     date: match.date,
     totalAmountCents,
     paidByPlayerId: null,
-    participantPlayerIds: payerPlayerIds,
+    participantPlayerIds,
     extraSharesCount,
-    // No modelo legado, estar na lista de pagantes já significa acertado.
+    // No modelo legado, estar na lista de pagantes é o que significa acertado.
     settledPlayerIds: payerPlayerIds,
     sharesCents,
-    extraSharesCents: parts.slice(payerPlayerIds.length).reduce((sum, value) => sum + value, 0),
+    extraSharesCents: parts
+      .slice(participantPlayerIds.length)
+      .reduce((sum, value) => sum + value, 0),
   };
 }
 
@@ -305,6 +323,8 @@ export function collectTeamExpenses(input: {
   teamId: string;
   expenses?: Expense[];
   matches?: Match[];
+  /** Presenças do time. Define quem deve o rateio do campo de cada partida. */
+  attendance?: AttendanceRecord[];
   categoryLabels?: Record<string, string>;
   includeFieldCosts?: boolean;
   filters?: ExpenseFilters;
@@ -313,6 +333,7 @@ export function collectTeamExpenses(input: {
     teamId,
     expenses = [],
     matches = [],
+    attendance = [],
     categoryLabels = {},
     includeFieldCosts = true,
     filters = {},
@@ -322,10 +343,28 @@ export function collectTeamExpenses(input: {
     .filter((expense) => expense.teamId === teamId && !expense.deletedAt)
     .map((expense) => toUnifiedExpense(expense, categoryLabels[expense.categoryId] ?? null));
 
+  const confirmedByMatchId = new Map<string, string[]>();
+
+  for (const record of attendance) {
+    if (record.teamId !== teamId || record.status !== 'confirmed') {
+      continue;
+    }
+
+    const current = confirmedByMatchId.get(record.matchId);
+
+    if (current) {
+      current.push(record.playerId);
+    } else {
+      confirmedByMatchId.set(record.matchId, [record.playerId]);
+    }
+  }
+
   const fromFieldCosts = includeFieldCosts
     ? matches
         .filter((match) => match.teamId === teamId && !match.deletedAt)
-        .map((match) => fieldCostToUnifiedExpense(match))
+        .map((match) =>
+          fieldCostToUnifiedExpense(match, confirmedByMatchId.get(match.id) ?? []),
+        )
         .filter((expense): expense is UnifiedExpense => expense !== null)
     : [];
 

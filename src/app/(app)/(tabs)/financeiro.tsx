@@ -106,6 +106,7 @@ export default function FinanceiroScreen() {
   const teamMatches = useAppStore(selectTeamMatches);
   const teamPlayers = useAppStore(selectTeamPlayers);
   const expenses = useAppStore((state) => state.snapshot.expenses);
+  const attendance = useAppStore((state) => state.snapshot.attendance);
   const expenseCategories = useAppStore((state) => state.snapshot.expenseCategories);
   const createExpense = useAppStore((state) => state.createExpense);
   const updateExpense = useAppStore((state) => state.updateExpense);
@@ -186,6 +187,7 @@ export default function FinanceiroScreen() {
             teamId: team.id,
             expenses,
             matches: teamMatches,
+            attendance,
             categoryLabels,
             filters: {
               year: selectedYear,
@@ -193,7 +195,7 @@ export default function FinanceiroScreen() {
             },
           })
         : [],
-    [categoryLabels, expenses, selectedMonth, selectedYear, team, teamMatches],
+    [attendance, categoryLabels, expenses, selectedMonth, selectedYear, team, teamMatches],
   );
 
   const expensesSummary = useMemo(

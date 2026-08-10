@@ -637,6 +637,43 @@ export const expensesTestCases: TestCase[] = [
     },
   },
   {
+    name: 'aviso ao usuario funciona no navegador: Alert do react-native-web e um no-op',
+    run() {
+      // Guarda contra regressao silenciosa: se alguem remover a instalacao do
+      // patch, todo erro do app volta a desaparecer na web sem aviso nenhum.
+      const alertSource = fs.readFileSync(
+        'node_modules/react-native-web/dist/exports/Alert/index.js',
+        'utf8',
+      );
+
+      // Se a lib passar a implementar Alert de verdade, este teste falha e
+      // avisa que o patch pode ser removido.
+      assert.match(alertSource, /static alert\(\)\s*\{\s*\}/);
+
+      const layout = fs.readFileSync('src/app/_layout.tsx', 'utf8');
+      assert.match(layout, /installWebAlert\(\);/);
+
+      const patch = fs.readFileSync('src/lib/alert.ts', 'utf8');
+      assert.match(patch, /window\.confirm/);
+      assert.match(patch, /window\.alert/);
+    },
+  },
+  {
+    name: 'erro de pagamento aparece na tela, sem depender de alerta nativo',
+    run() {
+      const screen = fs.readFileSync('src/app/(app)/matches/[matchId].tsx', 'utf8');
+
+      // O catch precisa alimentar a mensagem inline.
+      assert.match(screen, /setFieldPaymentError\(/);
+      assert.match(screen, /fieldPaymentError \?/);
+
+      // E a mensagem do limite precisa dizer os numeros e o caminho da correcao.
+      const fieldCost = fs.readFileSync('src/lib/field-cost.ts', 'utf8');
+      assert.match(fieldCost, /Editar valor do campo/);
+      assert.match(fieldCost, /pagante\(s\)/);
+    },
+  },
+  {
     name: 'regras do Firestore cobrem despesas e categorias com escopo de time',
     run() {
       const rules = fs.readFileSync('firestore.rules', 'utf8');

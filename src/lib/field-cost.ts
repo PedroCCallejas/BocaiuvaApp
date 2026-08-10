@@ -137,7 +137,13 @@ export function buildMatchFieldPayment(input: {
   });
 
   if (summary.totalPaidCount > input.fieldCost.splitCount) {
-    throw new Error('O total de pagantes nao pode ultrapassar a divisao do campo.');
+    // Mensagem precisa dizer os números e o caminho da correção: o admin
+    // marca todo mundo que jogou e não entende por que o salvamento falha.
+    throw new Error(
+      `Você marcou ${summary.totalPaidCount} pagante(s), mas o campo está dividido em ` +
+        `${input.fieldCost.splitCount} cota(s). Ajuste a divisão em "Editar valor do campo" ` +
+        'ou desmarque quem não pagou.',
+    );
   }
 
   return {

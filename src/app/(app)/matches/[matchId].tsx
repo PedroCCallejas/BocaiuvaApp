@@ -85,6 +85,7 @@ export default function MatchDetailsScreen() {
   const adminSetMatchAttendance = useAppStore((state) => state.adminSetMatchAttendance);
   const [navigatingEdit, setNavigatingEdit] = useState(false);
   const [savingFieldPayment, setSavingFieldPayment] = useState(false);
+  const [fieldPaymentError, setFieldPaymentError] = useState<string | null>(null);
   const [savingDeleteMatch, setSavingDeleteMatch] = useState(false);
   const [savingManualMvp, setSavingManualMvp] = useState(false);
   const [deleteMatchModalVisible, setDeleteMatchModalVisible] = useState(false);
@@ -289,6 +290,9 @@ export default function MatchDetailsScreen() {
   }
 
   function handleTogglePlayerPaid(playerId: string) {
+    // Mexer na lista já é a tentativa de corrigir o que deu errado:
+    // manter o erro antigo na tela só confunde.
+    setFieldPaymentError(null);
     setPayerPlayerIdsDraft((current) =>
       current.includes(playerId)
         ? current.filter((item) => item !== playerId)
@@ -314,6 +318,7 @@ export default function MatchDetailsScreen() {
 
     try {
       setSavingFieldPayment(true);
+      setFieldPaymentError(null);
       await updateMatchFieldPayment(currentMatch.id, {
         fieldPayment: {
           payerPlayerIds: payerPlayerIdsDraft,
@@ -323,9 +328,10 @@ export default function MatchDetailsScreen() {
         },
       });
     } catch (error) {
-      Alert.alert(
-        'Não foi possível salvar o controle do campo',
-        error instanceof Error ? error.message : 'Tente novamente.',
+      // Mensagem inline: `Alert.alert` do react-native-web não exibe nada,
+      // e o erro silencioso fazia parecer que o salvamento tinha funcionado.
+      setFieldPaymentError(
+        error instanceof Error ? error.message : 'Não foi possível salvar. Tente novamente.',
       );
     } finally {
       setSavingFieldPayment(false);
@@ -890,6 +896,21 @@ export default function MatchDetailsScreen() {
                     placeholder="Nome de quem está recebendo"
                   />
                 </View>
+                {fieldPaymentError ? (
+                  <View
+                    style={[
+                      styles.fieldPaymentErrorBox,
+                      {
+                        backgroundColor: `${theme.colors.danger}14`,
+                        borderColor: theme.colors.danger,
+                      },
+                    ]}>
+                    <Text style={[styles.fieldPaymentErrorText, { color: theme.colors.danger }]}>
+                      {fieldPaymentError}
+                    </Text>
+                  </View>
+                ) : null}
+
                 <View style={styles.buttonRow}>
                   <AppButton
                     label={
@@ -1628,6 +1649,17 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 14,
     gap: 4,
+  },
+  fieldPaymentErrorBox: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  fieldPaymentErrorText: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
   },
   fieldPaymentAdminSection: {
     gap: 12,

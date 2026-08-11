@@ -1817,6 +1817,20 @@ async function fetchSeasonsByTeamId(teamId: string) {
   return snapshot.docs.map((item) => parseDoc<FirestoreSeasonDocument>(item)) as Season[];
 }
 
+/**
+ * Remove chaves com valor `undefined` antes de gravar no Firestore.
+ *
+ * O cliente e criado com `getFirestore` puro, sem `ignoreUndefinedProperties`,
+ * entao qualquer campo `undefined` faz `setDoc` lancar
+ * "Unsupported field value: undefined" e a gravacao inteira falha.
+ * `null` e aceito normalmente — o problema e so `undefined`.
+ */
+function stripUndefined<T extends object>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined),
+  ) as T;
+}
+
 function requireExpenseLabel(label: string) {
   const trimmed = label.trim();
 
@@ -5473,7 +5487,7 @@ export const firebaseRepository: AppRepository = {
         updatedAt: now,
       };
 
-      await setDoc(categoryRef, category);
+      await setDoc(categoryRef, stripUndefined(category));
       return category;
     } catch (error) {
       throw toFriendlyFirestoreError(error, 'Não foi possível criar a categoria agora.');
@@ -5510,7 +5524,7 @@ export const firebaseRepository: AppRepository = {
         updatedAt: nowIso(),
       };
 
-      await setDoc(categoryRef, nextCategory);
+      await setDoc(categoryRef, stripUndefined(nextCategory));
       return nextCategory;
     } catch (error) {
       throw toFriendlyFirestoreError(error, 'Não foi possível salvar a categoria agora.');
@@ -5536,11 +5550,14 @@ export const firebaseRepository: AppRepository = {
       const inUse = expenses.some((expense) => expense.categoryId === category.id);
 
       if (inUse) {
-        await setDoc(categoryRef, {
-          ...category,
-          archivedAt: category.archivedAt ?? nowIso(),
-          updatedAt: nowIso(),
-        });
+        await setDoc(
+          categoryRef,
+          stripUndefined({
+            ...category,
+            archivedAt: category.archivedAt ?? nowIso(),
+            updatedAt: nowIso(),
+          }),
+        );
         return;
       }
 
@@ -5590,7 +5607,7 @@ export const firebaseRepository: AppRepository = {
         updatedAt: now,
       };
 
-      await setDoc(expenseRef, expense);
+      await setDoc(expenseRef, stripUndefined(expense));
       return expense;
     } catch (error) {
       throw toFriendlyFirestoreError(error, 'Não foi possível salvar a despesa agora.');
@@ -5654,7 +5671,7 @@ export const firebaseRepository: AppRepository = {
         updatedAt: nowIso(),
       };
 
-      await setDoc(expenseRef, nextExpense);
+      await setDoc(expenseRef, stripUndefined(nextExpense));
       return nextExpense;
     } catch (error) {
       throw toFriendlyFirestoreError(error, 'Não foi possível salvar a despesa agora.');
@@ -5718,7 +5735,7 @@ export const firebaseRepository: AppRepository = {
         updatedAt: nowIso(),
       };
 
-      await setDoc(expenseRef, nextExpense);
+      await setDoc(expenseRef, stripUndefined(nextExpense));
       return nextExpense;
     } catch (error) {
       throw toFriendlyFirestoreError(error, 'Não foi possível atualizar o pagamento agora.');

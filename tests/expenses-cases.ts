@@ -637,6 +637,34 @@ export const expensesTestCases: TestCase[] = [
     },
   },
   {
+    name: 'nenhuma gravacao de despesa manda undefined para o Firestore',
+    run() {
+      const source = fs.readFileSync('src/services/repository/firebase-repository.ts', 'utf8');
+
+      // O cliente nao usa ignoreUndefinedProperties: um campo undefined faz
+      // o setDoc inteiro falhar com "Unsupported field value: undefined".
+      const client = fs.readFileSync('src/config/firebase/client.ts', 'utf8');
+      assert.doesNotMatch(client, /ignoreUndefinedProperties/);
+
+      assert.match(source, /function stripUndefined/);
+
+      // Toda gravacao das colecoes financeiras precisa passar pelo filtro.
+      const financeWrites = [
+        ...source.matchAll(/await setDoc\((expenseRef|categoryRef), ([^)]+)\)/g),
+      ];
+
+      assert.equal(financeWrites.length > 0, true, 'nenhuma gravacao encontrada');
+
+      for (const [, ref, payload] of financeWrites) {
+        assert.match(
+          payload as string,
+          /^stripUndefined\(/,
+          `gravacao em ${ref} nao filtra undefined: ${payload}`,
+        );
+      }
+    },
+  },
+  {
     name: 'aviso ao usuario funciona no navegador: Alert do react-native-web e um no-op',
     run() {
       // Guarda contra regressao silenciosa: se alguem remover a instalacao do

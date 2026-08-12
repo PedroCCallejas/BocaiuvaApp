@@ -12,6 +12,7 @@ import { SectionHeader } from '@/components/ui/SectionHeader';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { buildTeamPlayerAchievementMap, getTopPlayerAchievements } from '@/lib/player-achievements';
+import { normalizeSearchText } from '@/lib/search';
 import { buildPlayerAggregates, buildPlayerStatsLabel } from '@/lib/stats';
 import { useAppStore } from '@/store/app-store';
 import {
@@ -33,14 +34,6 @@ const PLAYER_FILTER_LABELS: Record<PlayerRosterFilter, string> = {
   all: 'Todos',
 };
 
-// Busca tolerante a acento e caixa: "jose" encontra "José".
-function normalizeSearchText(value: string) {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-}
 
 export default function PlayersScreen() {
   const isWeb = Platform.OS === 'web';

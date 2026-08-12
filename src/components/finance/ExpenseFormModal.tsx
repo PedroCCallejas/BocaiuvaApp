@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
@@ -9,6 +19,7 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatDateBR } from '@/lib/date';
 import { calculateExpenseShares } from '@/lib/expenses';
 import { formatCentsBRL, formatCentsForInput, parseCurrencyInputToCents } from '@/lib/money';
+import { matchesSearchQuery } from '@/lib/search';
 import type { Expense, ExpenseCategory, ExpenseSplitMode, Match, Player } from '@/types/domain';
 
 export interface ExpenseFormValues {
@@ -35,6 +46,8 @@ interface ExpenseFormModalProps {
   onClose: () => void;
   onSubmit: (values: ExpenseFormValues) => void;
 }
+
+const MATCH_PAGE_SIZE = 8;
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -98,6 +111,8 @@ export function ExpenseFormModal({
   const [splitMode, setSplitMode] = useState<ExpenseSplitMode>('equal');
   const [participantPlayerIds, setParticipantPlayerIds] = useState<string[]>([]);
   const [extraSharesCount, setExtraSharesCount] = useState('0');
+  const [matchQuery, setMatchQuery] = useState('');
+  const [showAllMatches, setShowAllMatches] = useState(false);
 
   // Reabrir o modal precisa refletir a despesa escolhida, não o rascunho anterior.
   useEffect(() => {
@@ -116,6 +131,8 @@ export function ExpenseFormModal({
     setSplitMode(expense?.splitMode ?? 'equal');
     setParticipantPlayerIds(expense?.participantPlayerIds ?? []);
     setExtraSharesCount(String(expense?.extraSharesCount ?? 0));
+    setMatchQuery('');
+    setShowAllMatches(false);
   }, [visible, expense, categories]);
 
   const totalCents = parseCurrencyInputToCents(amountInput) ?? 0;
@@ -137,6 +154,26 @@ export function ExpenseFormModal({
     : 0;
 
   const selectedMatch = matchId ? matches.find((item) => item.id === matchId) ?? null : null;
+
+  // A lista chega na ordem do snapshot, que nao e cronologica: sem ordenar,
+  // o corte mostrava os jogos mais antigos e escondia os recentes - que sao
+  // justamente os que o admin procura ao lancar uma despesa.
+  const sortedMatches = useMemo(
+    () =>
+      [...matches].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
+    [matches],
+  );
+
+  const filteredMatches = useMemo(
+    () =>
+      sortedMatches.filter((match) =>
+        matchesSearchQuery(`${formatDateBR(match.date)} ${match.date} ${match.opponentName}`, matchQuery),
+      ),
+    [matchQuery, sortedMatches],
+  );
+
+  const visibleMatches = showAllMatches ? filteredMatches : filteredMatches.slice(0, MATCH_PAGE_SIZE);
+  const hiddenMatchesCount = filteredMatches.length - visibleMatches.length;
 
   function toggleParticipant(playerId: string) {
     setParticipantPlayerIds((current) =>
@@ -225,8 +262,45 @@ export function ExpenseFormModal({
                 <Text style={[styles.fieldLabel, { color: theme.colors.textMuted }]}>
                   Escolha o jogo
                 </Text>
+
+                <View
+                  style={[
+                    styles.searchField,
+                    {
+                      backgroundColor: theme.colors.surfaceMuted,
+                      borderColor: theme.colors.border,
+                    },
+                  ]}>
+                  <Ionicons name="search" size={16} color={theme.colors.textMuted} />
+                  <TextInput
+                    value={matchQuery}
+                    onChangeText={setMatchQuery}
+                    placeholder="Buscar por adversário ou data"
+                    placeholderTextColor={theme.colors.textMuted}
+                    selectionColor={theme.colors.action}
+                    autoCorrect={false}
+                    style={[styles.searchInput, { color: theme.colors.text }]}
+                  />
+                  {matchQuery ? (
+                    <Pressable
+                      onPress={() => setMatchQuery('')}
+                      hitSlop={10}
+                      accessibilityRole="button"
+                      accessibilityLabel="Limpar busca de jogo">
+                      <Ionicons name="close-circle" size={16} color={theme.colors.textMuted} />
+                    </Pressable>
+                  ) : null}
+                </View>
+
+                {selectedMatch ? (
+                  <Text style={[styles.fieldHelper, { color: theme.colors.success }]}>
+                    Selecionado: {formatDateBR(selectedMatch.date)} ·{' '}
+                    {selectedMatch.opponentName}
+                  </Text>
+                ) : null}
+
                 <View style={styles.chipRow}>
-                  {matches.slice(0, 12).map((match) => (
+                  {visibleMatches.map((match) => (
                     <Chip
                       key={match.id}
                       label={`${formatDateBR(match.date)} · ${match.opponentName}`}
@@ -235,6 +309,23 @@ export function ExpenseFormModal({
                     />
                   ))}
                 </View>
+
+                {filteredMatches.length === 0 ? (
+                  <Text style={[styles.fieldHelper, { color: theme.colors.textSubtle }]}>
+                    Nenhum jogo encontrado para &quot;{matchQuery.trim()}&quot;.
+                  </Text>
+                ) : null}
+
+                {hiddenMatchesCount > 0 ? (
+                  <Pressable
+                    onPress={() => setShowAllMatches(true)}
+                    accessibilityRole="button"
+                    style={styles.showMore}>
+                    <Text style={[styles.showMoreText, { color: theme.colors.action }]}>
+                      Ver mais {hiddenMatchesCount} jogo(s)
+                    </Text>
+                  </Pressable>
+                ) : null}
               </>
             ) : null}
 
@@ -379,6 +470,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  searchField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 42,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: fonts.body,
+    fontSize: 14,
+    paddingVertical: 0,
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' as never } : null),
+  },
+  showMore: {
+    paddingVertical: 2,
+  },
+  showMoreText: {
+    fontFamily: fonts.heading,
+    fontSize: 13,
+    fontWeight: '700',
   },
   chip: {
     borderWidth: 1,

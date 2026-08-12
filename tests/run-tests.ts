@@ -121,6 +121,7 @@ import {
 } from './test-helpers';
 import { expensesTestCases } from './expenses-cases';
 import { expensesRepositoryTestCases } from './expenses-repository-cases';
+import { searchTestCases } from './search-cases';
 import { statsBreakdownFinanceTestCases } from './stats-breakdown-finance-cases';
 import { themeContrastTestCases } from './theme-contrast-cases';
 
@@ -134,6 +135,7 @@ const testCases: TestCase[] = [
   ...themeContrastTestCases,
   ...expensesTestCases,
   ...expensesRepositoryTestCases,
+  ...searchTestCases,
   {
     name: 'sitemap oficial contem somente as dez URLs publicas canonicas',
     run() {

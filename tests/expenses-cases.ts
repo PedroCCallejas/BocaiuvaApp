@@ -621,6 +621,77 @@ export const expensesTestCases: TestCase[] = [
     },
   },
   {
+    name: 'caso real: 12 confirmados e campo dividido em 10, com 2 nao pagantes',
+    run() {
+      const confirmedIds = Array.from({ length: 12 }, (_, index) => `player-${index + 1}`);
+      const exemptIds = ['player-11', 'player-12'];
+
+      const unified = collectTeamExpenses({
+        teamId: 'team-1',
+        matches: [
+          createMatchWithFieldCost({
+            fieldCost: {
+              totalAmount: 185,
+              splitCount: 10,
+              amountPerPlayer: 18.5,
+              currency: 'BRL',
+            },
+            fieldPayment: {
+              payerPlayerIds: ['player-1', 'player-2'],
+              exemptPlayerIds: exemptIds,
+              paidGuestCount: 0,
+            },
+          }),
+        ],
+        attendance: createConfirmedAttendance('match-1', confirmedIds),
+      });
+
+      const campo = unified[0];
+
+      // Os 2 isentos saem do rateio: sobram 10 pagantes para 10 cotas.
+      assert.equal(campo?.participantPlayerIds.length, 10);
+      assert.equal(campo?.participantPlayerIds.includes('player-11'), false);
+      assert.equal(campo?.participantPlayerIds.includes('player-12'), false);
+      assert.equal(campo?.extraSharesCount, 0);
+      assert.equal(campo?.sharesCents['player-3'], 1850);
+
+      const report = buildPlayerDebtReport(unified);
+
+      // 10 pagantes, 2 ja pagaram: 8 devendo. Os isentos nao aparecem.
+      assert.equal(report.playersInDebtCount, 8);
+      assert.equal(
+        report.rows.some((row) => exemptIds.includes(row.playerId)),
+        false,
+      );
+      assert.equal(report.totalOwedCents, 8 * 1850);
+    },
+  },
+  {
+    name: 'quem esta como pago nao pode ser isentado pelo rateio',
+    run() {
+      const unified = collectTeamExpenses({
+        teamId: 'team-1',
+        matches: [
+          createMatchWithFieldCost({
+            fieldCost: { totalAmount: 100, splitCount: 2, amountPerPlayer: 50, currency: 'BRL' },
+            fieldPayment: {
+              payerPlayerIds: ['player-1'],
+              // Dado inconsistente vindo do banco: pagou e consta isento.
+              exemptPlayerIds: ['player-1'],
+              paidGuestCount: 0,
+            },
+          }),
+        ],
+        attendance: createConfirmedAttendance('match-1', ['player-1', 'player-2']),
+      });
+
+      // Quem pagou permanece no rateio: ignorar a cota dele furaria o total.
+      const campo = unified[0];
+      assert.equal(campo?.participantPlayerIds.includes('player-1'), true);
+      assert.equal(campo?.settledPlayerIds.includes('player-1'), true);
+    },
+  },
+  {
     name: 'partida sem presenca registrada nao inventa dividas',
     run() {
       // Sem attendance nao ha como saber quem faltou pagar: so os pagantes

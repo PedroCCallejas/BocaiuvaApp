@@ -28,7 +28,11 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatDateBR, formatMatchDateTime, hasMatchElapsedHours, isValidTime, parseDateBRToISO } from '@/lib/date';
 import { isValidExternalUrl } from '@/lib/url';
 import { openExternalUrl } from '@/lib/external-url';
-import { formatCurrencyBRL, getMatchFieldPaymentSummary } from '@/lib/field-cost';
+import {
+  checkFieldCostSplit,
+  formatCurrencyBRL,
+  getMatchFieldPaymentSummary,
+} from '@/lib/field-cost';
 import {
   membershipIndicatesPlayer,
 } from '@/lib/player-linking';
@@ -110,6 +114,9 @@ export default function MatchDetailsScreen() {
   const [payerPlayerIdsDraft, setPayerPlayerIdsDraft] = useState<string[]>(
     () => match?.fieldPayment?.payerPlayerIds ?? [],
   );
+  const [exemptPlayerIdsDraft, setExemptPlayerIdsDraft] = useState<string[]>(
+    () => match?.fieldPayment?.exemptPlayerIds ?? [],
+  );
   const [paidGuestCountDraft, setPaidGuestCountDraft] = useState(
     () => String(match?.fieldPayment?.paidGuestCount ?? 0),
   );
@@ -138,10 +145,12 @@ export default function MatchDetailsScreen() {
   // efeito rodar e descartar as marcações que o admin ainda não tinha salvado.
   // A chave serializada só muda quando o conteúdo realmente muda.
   const persistedPayerPlayerIdsKey = (match?.fieldPayment?.payerPlayerIds ?? []).join('|');
+  const persistedExemptPlayerIdsKey = (match?.fieldPayment?.exemptPlayerIds ?? []).join('|');
 
   useEffect(() => {
     const fp = match?.fieldPayment ?? null;
     setPayerPlayerIdsDraft(fp?.payerPlayerIds ?? []);
+    setExemptPlayerIdsDraft(fp?.exemptPlayerIds ?? []);
     setPaidGuestCountDraft(String(fp?.paidGuestCount ?? 0));
     setPixKeyDraft(fp?.pixKey ?? '');
     setResponsibleNameDraft(fp?.responsibleName ?? '');
@@ -152,12 +161,29 @@ export default function MatchDetailsScreen() {
     match?.fieldPayment?.pixKey,
     match?.fieldPayment?.responsibleName,
     persistedPayerPlayerIdsKey,
+    persistedExemptPlayerIdsKey,
   ]);
 
   const paidGuestCountValue = useMemo(() => {
     const parsed = Number(paidGuestCountDraft.trim() || '0');
     return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
   }, [paidGuestCountDraft]);
+
+  // Confere quem realmente paga contra a divisao informada no pos-jogo.
+  const fieldSplitCheck = useMemo(() => {
+    const fc = match?.fieldCost ?? null;
+
+    if (!fc || !match) {
+      return null;
+    }
+
+    return checkFieldCostSplit({
+      splitCount: fc.splitCount,
+      confirmedPlayerIds: getConfirmedPlayers(snapshot, match.id).map((player) => player.id),
+      exemptPlayerIds: exemptPlayerIdsDraft,
+      paidGuestCount: paidGuestCountValue,
+    });
+  }, [exemptPlayerIdsDraft, match?.fieldCost, match?.id, paidGuestCountValue, snapshot]);
 
   const fieldPaymentSummary = useMemo(() => {
     const fc = match?.fieldCost ?? null;
@@ -176,11 +202,14 @@ export default function MatchDetailsScreen() {
 
     return (
       [...payerPlayerIdsDraft].sort().join('|') !== [...(fp?.payerPlayerIds ?? [])].sort().join('|') ||
+      [...exemptPlayerIdsDraft].sort().join('|') !==
+        [...(fp?.exemptPlayerIds ?? [])].sort().join('|') ||
       paidGuestCountValue !== (fp?.paidGuestCount ?? 0) ||
       pixKeyDraft.trim() !== (fp?.pixKey ?? '') ||
       responsibleNameDraft.trim() !== (fp?.responsibleName ?? '')
     );
   }, [
+    exemptPlayerIdsDraft,
     match?.fieldPayment,
     paidGuestCountValue,
     payerPlayerIdsDraft,
@@ -293,7 +322,20 @@ export default function MatchDetailsScreen() {
     // Mexer na lista já é a tentativa de corrigir o que deu errado:
     // manter o erro antigo na tela só confunde.
     setFieldPaymentError(null);
+    // Marcar como pago tira a isenção: os dois estados são excludentes.
+    setExemptPlayerIdsDraft((current) => current.filter((item) => item !== playerId));
     setPayerPlayerIdsDraft((current) =>
+      current.includes(playerId)
+        ? current.filter((item) => item !== playerId)
+        : [...current, playerId],
+    );
+  }
+
+  function handleTogglePlayerExempt(playerId: string) {
+    setFieldPaymentError(null);
+    // Quem não paga sai da lista de pagantes no mesmo gesto.
+    setPayerPlayerIdsDraft((current) => current.filter((item) => item !== playerId));
+    setExemptPlayerIdsDraft((current) =>
       current.includes(playerId)
         ? current.filter((item) => item !== playerId)
         : [...current, playerId],
@@ -322,6 +364,7 @@ export default function MatchDetailsScreen() {
       await updateMatchFieldPayment(currentMatch.id, {
         fieldPayment: {
           payerPlayerIds: payerPlayerIdsDraft,
+          exemptPlayerIds: exemptPlayerIdsDraft,
           paidGuestCount: paidGuestCountValue,
           pixKey: pixKeyDraft.trim() || null,
           responsibleName: responsibleNameDraft.trim() || null,
@@ -821,15 +864,58 @@ export default function MatchDetailsScreen() {
             {canManage ? (
               <View style={styles.fieldPaymentAdminSection}>
                 <SectionHeader
-                  title="Marcar como pago"
+                  title="Quem paga o campo"
                   subtitle={
                     hasUnsavedFieldPayment
                       ? 'Alterações ainda não salvas. Toque em "Salvar controle do campo" para confirmar.'
-                      : 'Somente jogadores confirmados entram na lista de pagamento.'
+                      : 'Marque quem já pagou. Quem jogou mas não entra no rateio vai em "Não paga".'
                   }
                 />
+
+                {fieldSplitCheck && !fieldSplitCheck.balanced ? (
+                  <View
+                    style={[
+                      styles.splitCheckBox,
+                      {
+                        backgroundColor:
+                          fieldSplitCheck.differenceFromSplit > 0
+                            ? `${theme.colors.warning}14`
+                            : `${theme.colors.danger}14`,
+                        borderColor:
+                          fieldSplitCheck.differenceFromSplit > 0
+                            ? theme.colors.warning
+                            : theme.colors.danger,
+                      },
+                    ]}>
+                    <Text
+                      style={[
+                        styles.splitCheckText,
+                        {
+                          color:
+                            fieldSplitCheck.differenceFromSplit > 0
+                              ? theme.colors.warning
+                              : theme.colors.danger,
+                        },
+                      ]}>
+                      {fieldSplitCheck.differenceFromSplit > 0
+                        ? `${fieldSplitCheck.payingCount} jogador(es) pagando para ${fieldSplitCheck.splitCount} cota(s). ` +
+                          `Sobram ${fieldSplitCheck.differenceFromSplit} cota(s) — informe em "Pagantes extras" se foram convidados.`
+                        : `${fieldSplitCheck.payingCount} jogador(es) pagando para ${fieldSplitCheck.splitCount} cota(s). ` +
+                          `Marque ${Math.abs(fieldSplitCheck.differenceFromSplit)} como "Não paga" ou aumente a divisão em "Editar valor do campo".`}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {fieldSplitCheck && fieldSplitCheck.exemptCount > 0 ? (
+                  <Text style={[styles.playerSub, { color: theme.colors.textMuted }]}>
+                    {fieldSplitCheck.exemptCount} jogador(es) fora do rateio ·{' '}
+                    {fieldSplitCheck.payingCount} dividindo o campo.
+                  </Text>
+                ) : null}
+
                 {confirmedPlayers.map((player) => {
                   const isPaid = payerPlayerIdsDraft.includes(player.id);
+                  const isExempt = exemptPlayerIdsDraft.includes(player.id);
 
                   return (
                     <View
@@ -839,6 +925,7 @@ export default function MatchDetailsScreen() {
                         {
                           backgroundColor: theme.colors.background,
                           borderColor: theme.colors.border,
+                          opacity: isExempt ? 0.7 : 1,
                         },
                       ]}>
                       <View style={styles.paymentPlayerCopy}>
@@ -846,32 +933,70 @@ export default function MatchDetailsScreen() {
                           #{player.jerseyNumber} {player.nickname}
                         </Text>
                         <Text style={[styles.playerSub, { color: theme.colors.textMuted }]}>
-                          {player.fullName}
+                          {isExempt ? 'Não entra no rateio' : player.fullName}
                         </Text>
                       </View>
-                      <Pressable
-                        onPress={() => handleTogglePlayerPaid(player.id)}
-                        style={[
-                          styles.paymentToggle,
-                          {
-                            backgroundColor: isPaid
-                              ? theme.colors.secondary
-                              : theme.colors.surface,
-                            borderColor: isPaid
-                              ? theme.colors.secondary
-                              : theme.colors.border,
-                          },
-                        ]}>
-                        <Text
+
+                      <View style={styles.paymentActions}>
+                        {!isExempt ? (
+                          <Pressable
+                            onPress={() => handleTogglePlayerPaid(player.id)}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: isPaid }}
+                            style={[
+                              styles.paymentToggle,
+                              {
+                                backgroundColor: isPaid
+                                  ? theme.colors.secondary
+                                  : theme.colors.surface,
+                                borderColor: isPaid
+                                  ? theme.colors.secondary
+                                  : theme.colors.border,
+                              },
+                            ]}>
+                            <Text
+                              style={[
+                                styles.paymentToggleLabel,
+                                {
+                                  color: isPaid ? '#041008' : theme.colors.text,
+                                },
+                              ]}>
+                              {isPaid ? 'Pago' : 'Marcar como pago'}
+                            </Text>
+                          </Pressable>
+                        ) : null}
+
+                        <Pressable
+                          onPress={() => handleTogglePlayerExempt(player.id)}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: isExempt }}
+                          accessibilityLabel={
+                            isExempt
+                              ? `${player.nickname} não paga. Toque para voltar ao rateio.`
+                              : `Marcar ${player.nickname} como não pagante.`
+                          }
                           style={[
-                            styles.paymentToggleLabel,
+                            styles.exemptToggle,
                             {
-                              color: isPaid ? '#041008' : theme.colors.text,
+                              backgroundColor: isExempt
+                                ? theme.colors.surfaceRaised
+                                : 'transparent',
+                              borderColor: isExempt
+                                ? theme.colors.borderStrong
+                                : theme.colors.border,
                             },
                           ]}>
-                          {isPaid ? 'Pago' : 'Marcar como pago'}
-                        </Text>
-                      </Pressable>
+                          <Text
+                            style={[
+                              styles.exemptToggleLabel,
+                              {
+                                color: isExempt ? theme.colors.text : theme.colors.textMuted,
+                              },
+                            ]}>
+                            {isExempt ? 'Voltar ao rateio' : 'Não paga'}
+                          </Text>
+                        </Pressable>
+                      </View>
                     </View>
                   );
                 })}
@@ -1649,6 +1774,35 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 14,
     gap: 4,
+  },
+  paymentActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+  },
+  exemptToggle: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  exemptToggleLabel: {
+    fontFamily: fonts.heading,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  splitCheckBox: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  splitCheckText: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 19,
   },
   fieldPaymentErrorBox: {
     borderWidth: 1,

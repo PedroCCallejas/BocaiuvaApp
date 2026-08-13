@@ -244,11 +244,20 @@ export function fieldCostToUnifiedExpense(
   const payerPlayerIds = sanitizeParticipants(payment?.payerPlayerIds ?? []);
   const confirmed = sanitizeParticipants(confirmedPlayerIds);
 
+  // Isentos jogaram, mas o time decidiu que não entram no rateio (goleiro
+  // convidado, aniversariante). Deixá-los na lista criaria devedor onde não
+  // existe dívida — exatamente o que acontecia antes deste campo existir.
+  const exemptPlayerIds = new Set(
+    sanitizeParticipants(payment?.exemptPlayerIds ?? []).filter(
+      (playerId) => !payerPlayerIds.includes(playerId),
+    ),
+  );
+
   // Um jogador pode ter pago sem constar como confirmado (entrou de última
   // hora). Ele também é participante — senão a cota dele sumiria do total.
-  const participantPlayerIds = confirmed.length > 0
-    ? [...new Set([...confirmed, ...payerPlayerIds])]
-    : payerPlayerIds;
+  const participantPlayerIds = (
+    confirmed.length > 0 ? [...new Set([...confirmed, ...payerPlayerIds])] : payerPlayerIds
+  ).filter((playerId) => !exemptPlayerIds.has(playerId));
 
   const splitCount = isPositiveInteger(fieldCost.splitCount) ? fieldCost.splitCount : 0;
   const shareCount = Math.max(splitCount, participantPlayerIds.length) || 1;

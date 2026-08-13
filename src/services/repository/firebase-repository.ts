@@ -913,6 +913,7 @@ function normalizeMatchDocument(
       ? {
           ...match.fieldPayment,
           payerPlayerIds: [...new Set(match.fieldPayment.payerPlayerIds ?? [])],
+          exemptPlayerIds: [...new Set(match.fieldPayment.exemptPlayerIds ?? [])],
           paidGuestCount: Math.max(0, Math.trunc(match.fieldPayment.paidGuestCount ?? 0)),
           pixKey: match.fieldPayment.pixKey?.trim() || null,
           responsibleName: match.fieldPayment.responsibleName?.trim() || null,

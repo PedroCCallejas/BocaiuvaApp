@@ -232,6 +232,13 @@ export interface MatchFieldCost {
 
 export interface MatchFieldPayment {
   payerPlayerIds: string[];
+  /**
+   * Quem confirmou presença mas não entra no rateio do campo: goleiro
+   * convidado, aniversariante, quem entrou só no fim. Sem isso, todo
+   * confirmado vira devedor e a conta nunca fecha quando o time divide o
+   * campo entre menos pessoas do que as que jogaram.
+   */
+  exemptPlayerIds?: string[];
   paidGuestCount?: number;
   pixKey?: string | null;
   responsibleName?: string | null;

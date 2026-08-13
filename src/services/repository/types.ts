@@ -265,6 +265,7 @@ export interface MatchFieldCostInput {
 
 export interface MatchFieldPaymentInput {
   payerPlayerIds: string[];
+  exemptPlayerIds?: string[];
   paidGuestCount?: number;
   pixKey?: string | null;
   responsibleName?: string | null;

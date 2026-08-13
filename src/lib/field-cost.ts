@@ -123,10 +123,23 @@ export function buildMatchFieldPayment(input: {
 }): MatchFieldPayment {
   const confirmedPlayerIds = new Set(input.confirmedPlayerIds);
   const payerPlayerIds = [...new Set(input.values.payerPlayerIds)];
+  const exemptPlayerIds = [...new Set(input.values.exemptPlayerIds ?? [])];
 
   for (const playerId of payerPlayerIds) {
     if (!confirmedPlayerIds.has(playerId)) {
       throw new Error('Somente jogadores confirmados podem ser marcados como pagos.');
+    }
+  }
+
+  for (const playerId of exemptPlayerIds) {
+    if (!confirmedPlayerIds.has(playerId)) {
+      throw new Error('Somente jogadores confirmados podem ser marcados como não pagantes.');
+    }
+
+    // Pagou e não paga são estados excludentes: aceitar os dois deixaria o
+    // rateio ambíguo e o total nunca fecharia.
+    if (payerPlayerIds.includes(playerId)) {
+      throw new Error('Um jogador não pode estar como pago e como não pagante ao mesmo tempo.');
     }
   }
 
@@ -142,16 +155,58 @@ export function buildMatchFieldPayment(input: {
     throw new Error(
       `Você marcou ${summary.totalPaidCount} pagante(s), mas o campo está dividido em ` +
         `${input.fieldCost.splitCount} cota(s). Ajuste a divisão em "Editar valor do campo" ` +
-        'ou desmarque quem não pagou.',
+        'ou marque quem não entra no rateio como "Não paga".',
     );
   }
 
   return {
     payerPlayerIds,
+    exemptPlayerIds,
     paidGuestCount,
     pixKey: normalizeOptionalText(input.values.pixKey),
     responsibleName: normalizeOptionalText(input.values.responsibleName),
     updatedAt: input.updatedAt,
     updatedByUserId: input.updatedByUserId,
+  };
+}
+
+export interface FieldCostSplitCheck {
+  confirmedCount: number;
+  exemptCount: number;
+  payingCount: number;
+  splitCount: number;
+  /** Cotas que sobram para convidados sem cadastro. Negativo = faltam cotas. */
+  differenceFromSplit: number;
+  balanced: boolean;
+}
+
+/**
+ * Compara quem realmente paga com a divisão informada no pós-jogo.
+ *
+ * O admin digita "dividir entre 10" e 12 confirmam presença: a diferença
+ * precisa aparecer na tela para ele decidir quem fica de fora, em vez de o
+ * app escolher sozinho e inventar dois devedores.
+ */
+export function checkFieldCostSplit(input: {
+  splitCount: number;
+  confirmedPlayerIds: string[];
+  exemptPlayerIds?: string[];
+  paidGuestCount?: number;
+}): FieldCostSplitCheck {
+  const confirmed = [...new Set(input.confirmedPlayerIds)];
+  const exempt = [...new Set(input.exemptPlayerIds ?? [])].filter((playerId) =>
+    confirmed.includes(playerId),
+  );
+  const payingCount = confirmed.length - exempt.length;
+  const splitCount = Math.max(0, Math.trunc(input.splitCount));
+  const guests = Math.max(0, Math.trunc(input.paidGuestCount ?? 0));
+
+  return {
+    confirmedCount: confirmed.length,
+    exemptCount: exempt.length,
+    payingCount,
+    splitCount,
+    differenceFromSplit: splitCount - payingCount - guests,
+    balanced: splitCount - payingCount - guests === 0,
   };
 }

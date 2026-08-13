@@ -2854,6 +2854,9 @@ export const mockRepository: AppRepository = {
       if (input.allowSelfEditJerseyNumber !== undefined) {
         player.allowSelfEditJerseyNumber = input.allowSelfEditJerseyNumber;
       }
+      if (input.feeExemption !== undefined) {
+        player.feeExemption = input.feeExemption;
+      }
       player.linkedUserId = linkResult.linkedUserId;
       player.linkedEmail = linkResult.linkedEmail;
       if (input.manualStats !== undefined) {

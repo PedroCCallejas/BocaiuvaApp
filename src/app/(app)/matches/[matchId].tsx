@@ -34,6 +34,11 @@ import {
   getMatchFieldPaymentSummary,
 } from '@/lib/field-cost';
 import {
+  describeFeeExemption,
+  getExemptPlayerIdsForDate,
+  isPlayerFeeExemptOnDate,
+} from '@/lib/fee-exemption';
+import {
   membershipIndicatesPlayer,
 } from '@/lib/player-linking';
 import {
@@ -150,7 +155,20 @@ export default function MatchDetailsScreen() {
   useEffect(() => {
     const fp = match?.fieldPayment ?? null;
     setPayerPlayerIdsDraft(fp?.payerPlayerIds ?? []);
-    setExemptPlayerIdsDraft(fp?.exemptPlayerIds ?? []);
+
+    // Isenção recorrente entra sozinha apenas enquanto o admin não decidiu
+    // nada para esta partida. Depois que ele salva, o que está salvo manda —
+    // caso contrário, desfazer a isenção num jogo específico nunca duraria.
+    if (fp) {
+      setExemptPlayerIdsDraft(fp.exemptPlayerIds ?? []);
+    } else if (match) {
+      setExemptPlayerIdsDraft(
+        getExemptPlayerIdsForDate(getConfirmedPlayers(snapshot, match.id), match.date),
+      );
+    } else {
+      setExemptPlayerIdsDraft([]);
+    }
+
     setPaidGuestCountDraft(String(fp?.paidGuestCount ?? 0));
     setPixKeyDraft(fp?.pixKey ?? '');
     setResponsibleNameDraft(fp?.responsibleName ?? '');
@@ -916,6 +934,11 @@ export default function MatchDetailsScreen() {
                 {confirmedPlayers.map((player) => {
                   const isPaid = payerPlayerIdsDraft.includes(player.id);
                   const isExempt = exemptPlayerIdsDraft.includes(player.id);
+                  // Isenção configurada na ficha do jogador, válida nesta data.
+                  const hasStandingExemption = isPlayerFeeExemptOnDate(
+                    player,
+                    currentMatch.date,
+                  );
 
                   return (
                     <View
@@ -935,6 +958,11 @@ export default function MatchDetailsScreen() {
                         <Text style={[styles.playerSub, { color: theme.colors.textMuted }]}>
                           {isExempt ? 'Não entra no rateio' : player.fullName}
                         </Text>
+                        {hasStandingExemption ? (
+                          <Text style={[styles.playerSub, { color: theme.colors.warning }]}>
+                            {describeFeeExemption(player.feeExemption, currentMatch.date)}
+                          </Text>
+                        ) : null}
                       </View>
 
                       <View style={styles.paymentActions}>

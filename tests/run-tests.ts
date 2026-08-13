@@ -121,6 +121,7 @@ import {
 } from './test-helpers';
 import { expensesTestCases } from './expenses-cases';
 import { expensesRepositoryTestCases } from './expenses-repository-cases';
+import { feeExemptionTestCases } from './fee-exemption-cases';
 import { fieldCostExemptTestCases } from './field-cost-exempt-cases';
 import { searchTestCases } from './search-cases';
 import { statsBreakdownFinanceTestCases } from './stats-breakdown-finance-cases';
@@ -138,6 +139,7 @@ const testCases: TestCase[] = [
   ...expensesRepositoryTestCases,
   ...searchTestCases,
   ...fieldCostExemptTestCases,
+  ...feeExemptionTestCases,
   {
     name: 'sitemap oficial contem somente as dez URLs publicas canonicas',
     run() {

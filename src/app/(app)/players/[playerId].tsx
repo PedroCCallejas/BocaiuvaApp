@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Pill } from '@/components/ui/Pill';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { FeeExemptionCard } from '@/components/finance/FeeExemptionCard';
 import { FOOT_LABELS, PLAYER_STATUS_LABELS, POSITION_LABELS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -163,6 +164,7 @@ export default function PlayerDetailsScreen() {
   const activeTeamCriteria = useAppStore(selectActiveTeamRatingCriteria);
   const player = useAppStore((state) => findPlayerById(state, String(playerId)));
   const removePlayer = useAppStore((state) => state.removePlayer);
+  const updatePlayer = useAppStore((state) => state.updatePlayer);
   const reactivatePlayer = useAppStore((state) => state.reactivatePlayer);
   const [filterMode, setFilterMode] = useState<RatingFilterMode>('all');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -423,6 +425,15 @@ export default function PlayerDetailsScreen() {
         achievements={heroAchievements}
         summaryItems={heroSummaryItems}
       />
+
+      {canManageTeam ? (
+        <FeeExemptionCard
+          player={currentPlayerRecord}
+          onSave={async (exemption) => {
+            await updatePlayer(currentPlayerRecord.id, { feeExemption: exemption });
+          }}
+        />
+      ) : null}
 
       {canManageTeam || canManagePlayers || canEditPlayer ? (
         <View style={styles.buttonRow}>

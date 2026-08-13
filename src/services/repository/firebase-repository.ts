@@ -874,6 +874,7 @@ function normalizePlayerDocument(
     introVideoUrl: player.introVideoUrl ?? null,
     celebrationVideoUrl: player.celebrationVideoUrl ?? null,
     manualStats: normalizeManualStats(player.manualStats),
+    feeExemption: player.feeExemption ?? null,
     deletedAt: player.deletedAt ?? null,
   };
 }
@@ -6135,10 +6136,14 @@ export const firebaseRepository: AppRepository = {
             input.manualStats !== undefined
               ? normalizeManualStats(input.manualStats)
               : currentPlayer.manualStats,
+          feeExemption:
+            input.feeExemption !== undefined
+              ? input.feeExemption
+              : currentPlayer.feeExemption ?? null,
           updatedAt: now,
         });
 
-        await setDoc(playerRef, updatedPlayer);
+        await setDoc(playerRef, stripUndefined(updatedPlayer));
 
         if (
           currentPlayer.linkedUserId &&

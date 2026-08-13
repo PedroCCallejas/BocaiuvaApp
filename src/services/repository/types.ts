@@ -24,6 +24,7 @@ import type {
   MvpVote,
   ManualPlayerStats,
   Player,
+  PlayerFeeExemption,
   PlayerRating,
   PublicTeamProfile,
   PublicTeamSummary,
@@ -236,6 +237,8 @@ export interface UpdatePlayerInput extends Partial<PlayerDraftInput> {
   linkedEmail?: string | null;
   manualStats?: ManualPlayerStats;
   allowSelfEditJerseyNumber?: boolean;
+  /** `null` remove a isenção e devolve o jogador ao rateio. */
+  feeExemption?: PlayerFeeExemption | null;
 }
 
 export interface JoinTeamResult {

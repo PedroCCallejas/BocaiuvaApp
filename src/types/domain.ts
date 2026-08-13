@@ -144,6 +144,24 @@ export interface TeamRatingCriterion extends BaseEntity {
   order: number;
 }
 
+/**
+ * Isenção do rateio: `always` para quem nunca paga (goleiro do time),
+ * `until` para cortesia com prazo (voltando de lesão, jogador novo).
+ *
+ * O prazo é uma data, não um contador de jogos. Contador exigiria estado
+ * mutável decrementado a cada partida — que dessincroniza quando um jogo é
+ * cancelado, editado ou lançado fora de ordem. A data é imutável e responde
+ * corretamente até para partidas antigas lançadas depois.
+ */
+export interface PlayerFeeExemption {
+  mode: 'always' | 'until';
+  /** YYYY-MM-DD, inclusive. Obrigatório quando `mode` é `until`. */
+  until?: string | null;
+  reason?: string | null;
+  updatedAt?: string;
+  updatedByUserId?: string;
+}
+
 export interface Player extends BaseEntity {
   teamId: string;
   linkedUserId?: string | null;
@@ -163,6 +181,7 @@ export interface Player extends BaseEntity {
   introVideoUrl?: string | null;
   celebrationVideoUrl?: string | null;
   manualStats?: ManualPlayerStats;
+  feeExemption?: PlayerFeeExemption | null;
   deletedAt?: string | null;
 }
 

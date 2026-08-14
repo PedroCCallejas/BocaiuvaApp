@@ -118,6 +118,7 @@ export interface AppState {
   updatePlayer: (playerId: string, input: UpdatePlayerInput) => Promise<void>;
   unlinkPlayerAccount: (playerId: string) => Promise<void>;
   removePlayer: (playerId: string) => Promise<void>;
+  deletePlayerPermanently: (playerId: string) => Promise<void>;
   reactivatePlayer: (playerId: string) => Promise<void>;
   createMatch: (input: CreateMatchInput) => Promise<string>;
   updateMatch: (matchId: string, input: UpdateMatchInput) => Promise<void>;
@@ -795,6 +796,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     await repository.unlinkPlayerAccount(playerId, userId);
+    await refreshCurrentSession(set, get);
+  },
+
+  async deletePlayerPermanently(playerId) {
+    const userId = get().currentUserId;
+    if (!userId) {
+      throw new Error('Sessão expirada.');
+    }
+
+    await repository.deletePlayerPermanently(playerId, userId);
     await refreshCurrentSession(set, get);
   },
 

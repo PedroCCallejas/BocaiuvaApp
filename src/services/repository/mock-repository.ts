@@ -108,6 +108,7 @@ import type {
   TeamRatingCriterion,
   User,
 } from '@/types/domain';
+import { checkPlayerDeletion } from '@/lib/player-deletion';
 import { createSeedDatabase } from '@/mocks/seed';
 import { emptySnapshot } from '@/services/repository/types';
 import type {
@@ -2947,6 +2948,39 @@ export const mockRepository: AppRepository = {
     player.updatedAt = updatedPlayer.updatedAt;
 
     return clone(player);
+  },
+
+  async deletePlayerPermanently(playerId: string, actorUserId: string) {
+    const player = findPlayer(playerId);
+    requireTeamAdmin(actorUserId, player.teamId);
+
+    const check = checkPlayerDeletion(playerId, {
+      matchStats: database.matchStats,
+      attendance: database.attendance,
+      mvpVotes: database.mvpVotes,
+      playerRatings: database.playerRatings,
+      lineups: database.lineups,
+      matches: database.matches,
+      expenses: database.expenses,
+    });
+
+    if (!check.allowed) {
+      throw new Error(check.message ?? 'Esse jogador não pode ser apagado.');
+    }
+
+    // A membership perde o vínculo antes de o cadastro sumir, senão o usuário
+    // fica apontando para um jogador inexistente.
+    const membership = player.linkedUserId
+      ? findAnyMembershipByUserAndTeam(player.linkedUserId, player.teamId)
+      : null;
+
+    if (membership && membership.playerId === player.id) {
+      membership.playerId = null;
+      membership.updatedAt = nowIso();
+      syncTeamMembershipIndexDocument(membership);
+    }
+
+    database.players = database.players.filter((item) => item.id !== player.id);
   },
 
   async removePlayer(playerId: string, actorUserId: string) {

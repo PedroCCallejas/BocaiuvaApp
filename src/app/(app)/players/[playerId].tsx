@@ -13,6 +13,7 @@ import { Pill } from '@/components/ui/Pill';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { FeeExemptionCard } from '@/components/finance/FeeExemptionCard';
+import { checkPlayerDeletion } from '@/lib/player-deletion';
 import { FOOT_LABELS, PLAYER_STATUS_LABELS, POSITION_LABELS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -165,12 +166,15 @@ export default function PlayerDetailsScreen() {
   const player = useAppStore((state) => findPlayerById(state, String(playerId)));
   const removePlayer = useAppStore((state) => state.removePlayer);
   const updatePlayer = useAppStore((state) => state.updatePlayer);
+  const deletePlayerPermanently = useAppStore((state) => state.deletePlayerPermanently);
   const reactivatePlayer = useAppStore((state) => state.reactivatePlayer);
   const [filterMode, setFilterMode] = useState<RatingFilterMode>('all');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [showLegacyCriteria, setShowLegacyCriteria] = useState(false);
   const [removePlayerModalVisible, setRemovePlayerModalVisible] = useState(false);
+  const [deletePlayerModalVisible, setDeletePlayerModalVisible] = useState(false);
+  const [savingDeletePlayer, setSavingDeletePlayer] = useState(false);
   const [reactivatePlayerModalVisible, setReactivatePlayerModalVisible] = useState(false);
   const [savingRemovePlayer, setSavingRemovePlayer] = useState(false);
   const [savingReactivatePlayer, setSavingReactivatePlayer] = useState(false);
@@ -350,8 +354,41 @@ export default function PlayerDetailsScreen() {
     Alert.alert('Convite copiado', 'A mensagem de convite foi copiada para enviar ao jogador.');
   }
 
+  const deletionCheck = useMemo(
+    () =>
+      checkPlayerDeletion(currentPlayerRecord.id, {
+        matchStats: snapshot.matchStats,
+        attendance: snapshot.attendance,
+        mvpVotes: snapshot.mvpVotes,
+        playerRatings: snapshot.playerRatings,
+        lineups: snapshot.lineups,
+        matches: snapshot.matches,
+        expenses: snapshot.expenses,
+      }),
+    [currentPlayerRecord.id, snapshot],
+  );
+
   function handleRemovePlayer() {
     setRemovePlayerModalVisible(true);
+  }
+
+  function handleDeletePlayer() {
+    setDeletePlayerModalVisible(true);
+  }
+
+  async function confirmDeletePlayer() {
+    try {
+      setSavingDeletePlayer(true);
+      await deletePlayerPermanently(currentPlayerRecord.id);
+      router.replace('/players');
+    } catch (error) {
+      setSavingDeletePlayer(false);
+      setDeletePlayerModalVisible(false);
+      Alert.alert(
+        'Não foi possível apagar',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    }
   }
 
   async function confirmRemovePlayer() {
@@ -452,6 +489,11 @@ export default function PlayerDetailsScreen() {
             ) : (
               <AppButton label="Inativar jogador" variant="danger" onPress={handleRemovePlayer} />
             )
+          ) : null}
+          {/* Apagar de vez só faz sentido para cadastro criado errado.
+              Quem já jogou tem histórico e precisa ser inativado. */}
+          {canManageTeam && deletionCheck.allowed ? (
+            <AppButton label="Apagar cadastro" variant="danger" onPress={handleDeletePlayer} />
           ) : null}
         </View>
       ) : null}
@@ -839,6 +881,16 @@ export default function PlayerDetailsScreen() {
         onConfirm={() => void confirmRemovePlayer()}
         onCancel={() => setRemovePlayerModalVisible(false)}
         loading={savingRemovePlayer}
+        destructive
+      />
+      <ConfirmModal
+        visible={deletePlayerModalVisible}
+        title="Apagar cadastro"
+        description={`O cadastro de ${currentPlayerRecord.nickname} será apagado de vez e não pode ser recuperado. Use isto apenas para cadastro criado por engano.`}
+        confirmLabel="Apagar de vez"
+        onConfirm={() => void confirmDeletePlayer()}
+        onCancel={() => setDeletePlayerModalVisible(false)}
+        loading={savingDeletePlayer}
         destructive
       />
       <ConfirmModal

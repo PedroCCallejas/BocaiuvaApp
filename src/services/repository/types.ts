@@ -456,6 +456,11 @@ export interface AppRepository {
   updatePlayer(playerId: string, input: UpdatePlayerInput, actorUserId: string): Promise<Player>;
   unlinkPlayerAccount(playerId: string, actorUserId: string): Promise<Player>;
   removePlayer(playerId: string, actorUserId: string): Promise<Player>;
+  /**
+   * Apaga o cadastro de vez. Só para jogador sem histórico — quem já jogou
+   * deve ser inativado, senão súmulas e notas ficam sem dono.
+   */
+  deletePlayerPermanently(playerId: string, actorUserId: string): Promise<void>;
   reactivatePlayer(playerId: string, actorUserId: string): Promise<Player>;
   createMatch(input: CreateMatchInput, creatorUserId: string): Promise<Match>;
   updateMatch(matchId: string, input: UpdateMatchInput, actorUserId: string): Promise<Match>;

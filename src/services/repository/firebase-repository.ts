@@ -24,6 +24,7 @@ import {
   firebaseConfigError,
   firebaseEnabled,
 } from '@/config/firebase/client';
+import { checkPlayerDeletion } from '@/lib/player-deletion';
 import {
   calculateMatchResult,
   getMvpSummary,
@@ -6262,6 +6263,60 @@ export const firebaseRepository: AppRepository = {
         error,
         'Não foi possível desvincular a conta do jogador agora.',
       );
+    }
+  },
+
+  async deletePlayerPermanently(playerId: string, actorUserId: string) {
+    try {
+      const firestore = requireFirestore();
+      const { activeTeamId } = await ensureActiveTeamContext(actorUserId);
+      await ensureTeamAdmin(actorUserId, activeTeamId);
+
+      const player = await fetchPlayerByIdForTeam(activeTeamId, playerId);
+
+      const [matchStats, attendance, mvpVotes, playerRatings, lineups, matches, expenses] =
+        await Promise.all([
+          fetchMatchStatsByTeamId(activeTeamId),
+          fetchAttendanceByTeamId(activeTeamId),
+          fetchMvpVotesByTeamId(activeTeamId),
+          fetchPlayerRatingsByTeamId(activeTeamId),
+          fetchLineupsByTeamId(activeTeamId),
+          fetchMatchesByTeamId(activeTeamId),
+          fetchExpensesByTeamId(activeTeamId),
+        ]);
+
+      const check = checkPlayerDeletion(playerId, {
+        matchStats,
+        attendance,
+        mvpVotes,
+        playerRatings,
+        lineups,
+        matches,
+        expenses,
+      });
+
+      if (!check.allowed) {
+        throw createRepositoryError(
+          check.message ?? 'Esse jogador não pode ser apagado.',
+          'failed-precondition',
+        );
+      }
+
+      // Solta o vínculo da membership antes de apagar: deixar o usuário
+      // apontando para um jogador inexistente quebraria o bootstrap dele.
+      if (player.linkedUserId) {
+        const currentTeam = await fetchTeamById(activeTeamId);
+        await clearLinkedUserMembershipPlayer({
+          linkedUserId: player.linkedUserId,
+          team: currentTeam,
+          playerId: player.id,
+          updatedAt: nowIso(),
+        });
+      }
+
+      await deleteDoc(doc(firestore, FIRESTORE_COLLECTIONS.players, player.id));
+    } catch (error) {
+      throw toFriendlyFirestoreError(error, 'Não foi possível apagar o jogador agora.');
     }
   },
 

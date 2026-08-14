@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { Platform } from 'react-native';
+import { Platform, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -10,6 +11,21 @@ import { selectCanManageTeam } from '@/store/selectors';
 export default function TabsLayout() {
   const theme = useAppTheme();
   const canManageTeam = useAppStore(selectCanManageTeam);
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+
+  const isWeb = Platform.OS === 'web';
+
+  // Sete abas em tela estreita nao cabem com o tamanho padrao: o rotulo era
+  // cortado no meio da palavra e o icone encostava na borda. Abaixo de 400px
+  // encolhemos icone e fonte para tudo caber inteiro.
+  const isCompact = !isWeb && width < 400;
+  const iconSize = isCompact ? 20 : 24;
+  const labelFontSize = isCompact ? 9 : 10;
+
+  // Altura explicita: sem ela o rotulo some atras da area segura em aparelho
+  // com barra de gestos.
+  const barHeight = isWeb ? 72 : 58 + insets.bottom;
 
   return (
     <Tabs
@@ -19,14 +35,15 @@ export default function TabsLayout() {
           backgroundColor: theme.colors.backgroundElevated,
           borderTopColor: theme.colors.border,
           borderTopWidth: 1,
-          height: Platform.OS === 'web' ? 72 : undefined,
-          paddingBottom: Platform.OS === 'web' ? 10 : undefined,
-          paddingTop: Platform.OS === 'web' ? 8 : undefined,
+          height: barHeight,
+          paddingBottom: isWeb ? 10 : Math.max(insets.bottom, 6),
+          paddingTop: isWeb ? 8 : 6,
         },
         tabBarItemStyle: {
-          borderRadius: 14,
-          marginHorizontal: Platform.OS === 'web' ? 4 : 2,
-          marginVertical: 5,
+          borderRadius: isCompact ? 10 : 14,
+          marginHorizontal: isWeb ? 4 : 1,
+          marginVertical: isWeb ? 5 : 2,
+          paddingHorizontal: 0,
         },
         tabBarActiveBackgroundColor: theme.colors.primaryFaint,
         tabBarActiveTintColor: theme.colors.action,
@@ -34,62 +51,68 @@ export default function TabsLayout() {
         tabBarHideOnKeyboard: true,
         tabBarLabelStyle: {
           fontFamily: fonts.heading,
-          fontSize: 10,
+          fontSize: labelFontSize,
           fontWeight: '800',
+          // Sem isso o texto quebra em duas linhas e some sob a borda.
+          marginBottom: isWeb ? 0 : 2,
+        },
+        tabBarIconStyle: {
+          marginTop: isWeb ? 0 : 2,
         },
       }}>
       <Tabs.Screen
         name="home"
         options={{
           title: 'Início',
-          tabBarIcon: ({ color, size }) => <Ionicons name="home" color={color} size={size} />,
+          tabBarIcon: ({ color }) => <Ionicons name="home" color={color} size={iconSize} />,
         }}
       />
       <Tabs.Screen
         name="players"
         options={{
-          title: 'Jogadores',
-          tabBarIcon: ({ color, size }) => <Ionicons name="people" color={color} size={size} />,
+          title: isCompact ? 'Elenco' : 'Jogadores',
+          tabBarIcon: ({ color }) => <Ionicons name="people" color={color} size={iconSize} />,
         }}
       />
       <Tabs.Screen
         name="matches"
         options={{
-          title: 'Partidas',
-          tabBarIcon: ({ color, size }) => <Ionicons name="calendar" color={color} size={size} />,
+          title: isCompact ? 'Jogos' : 'Partidas',
+          tabBarIcon: ({ color }) => <Ionicons name="calendar" color={color} size={iconSize} />,
         }}
       />
       <Tabs.Screen
         name="stats"
         options={{
-          title: 'Estatísticas',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="stats-chart" color={color} size={size} />
+          // "Estatísticas" nao cabe em tela estreita e era cortado no meio.
+          title: isCompact ? 'Stats' : 'Estatísticas',
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="stats-chart" color={color} size={iconSize} />
           ),
         }}
       />
       <Tabs.Screen
         name="rankings"
         options={{
-          title: 'Rankings',
-          tabBarIcon: ({ color, size }) => <Ionicons name="trophy" color={color} size={size} />,
+          title: isCompact ? 'Ranking' : 'Rankings',
+          tabBarIcon: ({ color }) => <Ionicons name="trophy" color={color} size={iconSize} />,
         }}
       />
       <Tabs.Screen
         name="financeiro"
         options={{
-          title: 'Financeiro',
+          title: isCompact ? 'Caixa' : 'Financeiro',
           // `href: null` remove a aba da barra para quem não administra o time.
           // A própria tela já redireciona quem não tem permissão.
           href: canManageTeam ? undefined : null,
-          tabBarIcon: ({ color, size }) => <Ionicons name="wallet" color={color} size={size} />,
+          tabBarIcon: ({ color }) => <Ionicons name="wallet" color={color} size={iconSize} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Conta',
-          tabBarIcon: ({ color, size }) => <Ionicons name="person" color={color} size={size} />,
+          tabBarIcon: ({ color }) => <Ionicons name="person" color={color} size={iconSize} />,
         }}
       />
     </Tabs>

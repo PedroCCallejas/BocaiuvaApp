@@ -1,7 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as FirebaseAuth from 'firebase/auth'
 import { getApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app'
-import { getFirestore, type Firestore } from 'firebase/firestore'
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  type Firestore,
+} from 'firebase/firestore'
 import { Platform } from 'react-native'
 
 type FirebaseAuthModule = typeof FirebaseAuth & {
@@ -107,10 +113,43 @@ function createAuthInstance(firebaseApp: FirebaseApp) {
   }
 }
 
+/**
+ * Cria o Firestore com cache em disco no navegador.
+ *
+ * Sem isto o cache vive apenas em memória: cada F5 descarta tudo e o app
+ * relê o time inteiro do servidor. Com a persistência em IndexedDB os dados
+ * sobrevivem ao recarregamento, e o listener em tempo real busca só o que
+ * mudou desde a última visita — que é a diferença entre alguns milhares de
+ * leituras por abertura e algumas dezenas.
+ *
+ * `persistentMultipleTabManager` mantém as abas em sincronia; sem ele, abrir
+ * o app em duas abas desabilita a persistência em uma delas.
+ *
+ * No React Native não existe IndexedDB, e o SDK já usa a persistência
+ * nativa dele — por isso o caminho separado.
+ */
+function createFirestoreInstance(firebaseApp: FirebaseApp): Firestore {
+  if (Platform.OS !== 'web') {
+    return getFirestore(firebaseApp)
+  }
+
+  try {
+    return initializeFirestore(firebaseApp, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      }),
+    })
+  } catch {
+    // Navegador sem IndexedDB (aba anônima em alguns casos) ou Firestore já
+    // inicializado: seguir sem cache é pior, mas melhor que não abrir o app.
+    return getFirestore(firebaseApp)
+  }
+}
+
 if (firebaseEnabled && firebaseConfig) {
   app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp()
   auth = createAuthInstance(app)
-  db = getFirestore(app)
+  db = createFirestoreInstance(app)
 }
 
 export { app, auth, db }

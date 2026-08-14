@@ -125,6 +125,23 @@ export const ratingAverageTestCases: TestCase[] = [
     },
   },
   {
+    name: 'cache persistente do Firestore esta ligado no navegador',
+    run() {
+      const client = fs.readFileSync('src/config/firebase/client.ts', 'utf8');
+
+      // Sem cache em disco cada F5 relê o time inteiro do servidor, que foi
+      // o que estourou a cota diaria de leituras.
+      assert.match(client, /persistentLocalCache\(/);
+      assert.match(client, /persistentMultipleTabManager\(/);
+
+      // React Native nao tem IndexedDB e usa a persistencia propria do SDK.
+      assert.match(client, /if \(Platform\.OS !== 'web'\)/);
+
+      // E precisa haver saida quando o navegador nao permite IndexedDB.
+      assert.match(client, /catch \{[\s\S]{0,200}return getFirestore\(firebaseApp\)/);
+    },
+  },
+  {
     name: 'mensagem de cota explica o que fazer em vez de mandar tentar de novo',
     run() {
       const repo = fs.readFileSync('src/services/repository/firebase-repository.ts', 'utf8');

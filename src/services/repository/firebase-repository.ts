@@ -2945,7 +2945,23 @@ async function ensureMembershipsForUser(
   };
 }
 
-async function buildSnapshotForResolvedUser(currentUser: User): Promise<AppSnapshot> {
+type BuildSnapshotOptions = {
+  /**
+   * Devolve so o contexto da pessoa (usuario, vinculos, times e financeiro),
+   * sem as colecoes do time.
+   *
+   * Usado quando o tempo real vai assumir logo em seguida: os listeners ja
+   * entregam elenco, partidas, presenca, notas e votos por completo. Ler tudo
+   * aqui tambem dobrava o consumo de cada abertura sem trazer nada novo — e era
+   * o que estourava a cota diaria de leituras.
+   */
+  skipTeamCollections?: boolean;
+};
+
+async function buildSnapshotForResolvedUser(
+  currentUser: User,
+  options?: BuildSnapshotOptions,
+): Promise<AppSnapshot> {
   logAuthLink('active-team', {
     userId: currentUser.id,
     storedActiveTeamId: currentUser.activeTeamId ?? null,
@@ -3013,6 +3029,49 @@ async function buildSnapshotForResolvedUser(currentUser: User): Promise<AppSnaps
     });
   }
 
+  // O financeiro nao tem listener de tempo real, entao continua sendo lido aqui
+  // nos dois caminhos. Sao poucos documentos e so o admin enxerga.
+  const canReadFinance = Boolean(
+    activeMembership &&
+      (activeMembership.canManageTeam || activeMembership.roles.includes('admin')),
+  );
+
+  const loadFinance = async () =>
+    canReadFinance
+      ? await Promise.all([
+          fetchExpenseCategoriesByTeamId(activeTeamId),
+          fetchExpensesByTeamId(activeTeamId),
+        ])
+      : ([[], []] as [ExpenseCategory[], Expense[]]);
+
+  if (options?.skipTeamCollections) {
+    try {
+      const [expenseCategories, expenses] = await loadFinance();
+
+      return {
+        ...emptySnapshot,
+        users: [user],
+        teams,
+        teamMembers: memberships,
+        expenseCategories,
+        expenses,
+        accessNotice: resolvedMemberships.accessNotice,
+      };
+    } catch (error) {
+      if (extractErrorCode(error) !== 'permission-denied') {
+        throw error;
+      }
+
+      return {
+        ...emptySnapshot,
+        users: [user],
+        teams,
+        teamMembers: memberships,
+        accessNotice: resolvedMemberships.accessNotice,
+      };
+    }
+  }
+
   try {
     const [
       ratingCriteria,
@@ -3043,17 +3102,7 @@ async function buildSnapshotForResolvedUser(currentUser: User): Promise<AppSnaps
     // O financeiro so e legivel por quem administra o time (regra do Firestore).
     // Buscar sem essa checagem geraria permission-denied e derrubaria todo o
     // bootstrap de um jogador comum.
-    const canReadFinance = Boolean(
-      activeMembership &&
-        (activeMembership.canManageTeam || activeMembership.roles.includes('admin')),
-    );
-
-    const [expenseCategories, expenses] = canReadFinance
-      ? await Promise.all([
-          fetchExpenseCategoriesByTeamId(activeTeamId),
-          fetchExpensesByTeamId(activeTeamId),
-        ])
-      : [[], []];
+    const [expenseCategories, expenses] = await loadFinance();
 
     return {
       ...emptySnapshot,
@@ -3123,7 +3172,10 @@ async function buildSnapshotForCurrentUser(): Promise<AppSnapshot> {
   );
 }
 
-async function buildSnapshotForUserId(userId: string): Promise<AppSnapshot> {
+async function buildSnapshotForUserId(
+  userId: string,
+  options?: BuildSnapshotOptions,
+): Promise<AppSnapshot> {
   const sessionUser = authService.getCurrentUser();
 
   return await withBootstrapTrace(
@@ -3140,7 +3192,7 @@ async function buildSnapshotForUserId(userId: string): Promise<AppSnapshot> {
       if (!currentUser) {
         return emptySnapshot;
       }
-      return await buildSnapshotForResolvedUser(currentUser);
+      return await buildSnapshotForResolvedUser(currentUser, options);
     },
   );
 }
@@ -4480,20 +4532,30 @@ export const firebaseRepository: AppRepository = {
 
   async subscribeSnapshot(currentUserId: string, handlers: SnapshotSubscriptionHandlers) {
     const firestore = requireFirestore();
-    const initialSnapshot = await buildSnapshotForUserId(currentUserId);
+    const initialSnapshot = await buildSnapshotForUserId(currentUserId, {
+      skipTeamCollections: true,
+    });
     const state = createRealtimeStateFromSnapshot(initialSnapshot);
     const teamListeners = new Map<string, Unsubscribe>();
     const activeTeamListeners = new Map<string, Unsubscribe>();
+    // Listeners que ainda nao entregaram a primeira carga. Enquanto houver
+    // algum aqui, emitir seria mostrar um time vazio para quem tem dados.
+    const awaitingFirstDelivery = new Set<string>();
     let disposed = false;
     let activeTeamId =
       resolveActiveMembership(state.user, state.memberships)?.teamId ?? null;
 
     const emitSnapshot = () => {
-      if (disposed) {
+      if (disposed || awaitingFirstDelivery.size > 0) {
         return;
       }
 
       handlers.onSnapshot(buildSnapshotFromRealtimeState(state));
+    };
+
+    /** Marca que o listener entregou; a emissao volta quando todos chegarem. */
+    const markDelivered = (key: string) => {
+      awaitingFirstDelivery.delete(key);
     };
 
     const handleRealtimeError = (error: FirestoreError | Error) => {
@@ -4524,8 +4586,9 @@ export const firebaseRepository: AppRepository = {
     };
 
     const disposeActiveTeamListeners = () => {
-      for (const unsubscribe of activeTeamListeners.values()) {
+      for (const [key, unsubscribe] of activeTeamListeners.entries()) {
         unsubscribe();
+        awaitingFirstDelivery.delete(key);
       }
 
       activeTeamListeners.clear();
@@ -4595,6 +4658,7 @@ export const firebaseRepository: AppRepository = {
         normalize: (item: TDocument) => TDocument,
         assign: (items: TDocument[]) => void,
       ) => {
+        awaitingFirstDelivery.add(key);
         activeTeamListeners.set(
           key,
           onSnapshot(
@@ -4608,9 +4672,16 @@ export const firebaseRepository: AppRepository = {
                   normalize(parseDoc<TDocument>(item)),
                 ),
               );
+              markDelivered(key);
               emitSnapshot();
             },
-            handleRealtimeError,
+            (error) => {
+              // Sem isto a emissao ficaria travada para sempre esperando um
+              // listener que nunca vai responder.
+              markDelivered(key);
+              handleRealtimeError(error);
+              emitSnapshot();
+            },
           ),
         );
       };
@@ -4627,6 +4698,7 @@ export const firebaseRepository: AppRepository = {
           emitSnapshot();
         };
 
+        awaitingFirstDelivery.add('notifications:teamWide');
         activeTeamListeners.set(
           'notifications:teamWide',
           onSnapshot(
@@ -4641,12 +4713,18 @@ export const firebaseRepository: AppRepository = {
                   parseDoc<FirestoreNotificationDocument>(item),
                 ),
               );
+              markDelivered('notifications:teamWide');
               emitNotifications();
             },
-            handleRealtimeError,
+            (error) => {
+              markDelivered('notifications:teamWide');
+              handleRealtimeError(error);
+              emitSnapshot();
+            },
           ),
         );
 
+        awaitingFirstDelivery.add('notifications:targeted');
         activeTeamListeners.set(
           'notifications:targeted',
           onSnapshot(
@@ -4661,9 +4739,14 @@ export const firebaseRepository: AppRepository = {
                   parseDoc<FirestoreNotificationDocument>(item),
                 ),
               );
+              markDelivered('notifications:targeted');
               emitNotifications();
             },
-            handleRealtimeError,
+            (error) => {
+              markDelivered('notifications:targeted');
+              handleRealtimeError(error);
+              emitSnapshot();
+            },
           ),
         );
       };

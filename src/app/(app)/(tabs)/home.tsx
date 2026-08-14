@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
+import { LastMatchCard } from '@/components/cards/LastMatchCard';
 import { MatchCard } from '@/components/cards/MatchCard';
 import { MetricCard } from '@/components/cards/MetricCard';
 import { NotificationCard } from '@/components/cards/NotificationCard';
@@ -16,6 +17,7 @@ import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { buildLastMatchHighlights } from '@/lib/match-highlights';
 import { buildProfessoHomeTip } from '@/lib/professo-tips';
 import { buildPlayerAggregates, buildTeamAggregates } from '@/lib/stats';
 import { useAppStore } from '@/store/app-store';
@@ -99,6 +101,11 @@ export default function HomeScreen() {
   const heroSupportingText = [team.homeFieldName, team.neighborhood]
     .filter((value): value is string => Boolean(value?.trim()))
     .join(' • ');
+  const lastMatchHighlights = useMemo(
+    () => (team ? buildLastMatchHighlights(snapshot, team.id) : null),
+    [snapshot, team],
+  );
+
   const professoTip = buildProfessoHomeTip({
     team,
     canManageTeam,
@@ -138,6 +145,14 @@ export default function HomeScreen() {
         description={heroDescription}
         supportingText={heroSupportingText.length > 0 ? heroSupportingText : null}
       />
+
+      {lastMatchHighlights ? (
+        <LastMatchCard
+          highlights={lastMatchHighlights}
+          teamName={team.name}
+          teamLogoUrl={team.logoUrl}
+        />
+      ) : null}
 
       {professoTip ? (
         <View

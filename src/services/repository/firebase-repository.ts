@@ -220,8 +220,11 @@ const firestoreErrorMessages: Record<string, string> = {
   aborted: 'A operacao foi interrompida por conflito. Tente novamente.',
   'deadline-exceeded':
     'A conexao demorou demais. Tente novamente.',
+  // Quase sempre e a cota diaria do projeto no Firebase, nao um limite do
+  // usuario. A mensagem antiga sugeria "tente de novo em instantes", o que
+  // nao resolve: a cota so reseta no dia seguinte.
   'resource-exhausted':
-    'Limite temporario atingido. Aguarde e tente novamente.',
+    'O banco de dados atingiu o limite de uso do dia. Avise o administrador do app — pode ser necessario revisar o plano do Firebase.',
   internal: 'Ocorreu um erro interno. Tente novamente.',
 };
 

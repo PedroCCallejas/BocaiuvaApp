@@ -124,6 +124,7 @@ import { expensesRepositoryTestCases } from './expenses-repository-cases';
 import { feeExemptionTestCases } from './fee-exemption-cases';
 import { joinTeamTestCases } from './join-team-cases';
 import { matchHighlightsTestCases } from './match-highlights-cases';
+import { ratingAverageTestCases } from './rating-average-cases';
 import { playerDeletionTestCases } from './player-deletion-cases';
 import { fieldCostExemptTestCases } from './field-cost-exempt-cases';
 import { searchTestCases } from './search-cases';
@@ -146,6 +147,7 @@ const testCases: TestCase[] = [
   ...joinTeamTestCases,
   ...playerDeletionTestCases,
   ...matchHighlightsTestCases,
+  ...ratingAverageTestCases,
   {
     name: 'sitemap oficial contem somente as dez URLs publicas canonicas',
     run() {

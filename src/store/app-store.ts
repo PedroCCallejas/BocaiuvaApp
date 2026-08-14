@@ -414,6 +414,18 @@ function ensureAuthSubscription(set: StoreSet, get: StoreGet) {
   });
 }
 
+/**
+ * Recarrega o contexto depois de uma escrita.
+ *
+ * Quando a assinatura em tempo real está ativa, o listener já entrega a
+ * mudança — inclusive antes de o servidor confirmar, por causa da compensação
+ * de latência do Firestore. Reler o snapshot inteiro aqui custava alguns
+ * milhares de leituras por clique e era o que estourava a cota diária do
+ * projeto, derrubando gravações com "resource-exhausted".
+ *
+ * Sem tempo real (ou com ele caído) o comportamento antigo continua: sem a
+ * releitura a tela ficaria desatualizada.
+ */
 async function refreshCurrentSession(
   set: StoreSet,
   get: StoreGet,
@@ -421,6 +433,11 @@ async function refreshCurrentSession(
 ) {
   const sessionUser = authService.getCurrentUser() ?? (await authService.restoreSession());
   await ensureRealtimeSubscription(set, get, sessionUser);
+
+  if (get().hasLiveSync && !options?.showRefreshing) {
+    return;
+  }
+
   await refreshSnapshot(set, get, sessionUser, options);
 }
 

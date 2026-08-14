@@ -5802,11 +5802,16 @@ export const firebaseRepository: AppRepository = {
         );
       }
 
-      const team = await fetchTeamById(invite.teamId);
-      const teamPlayers = await fetchPlayersByTeamId(team.id);
-
       const existingMembership = await fetchTeamMemberByUserAndTeam(user.id, invite.teamId);
+
+      // As regras do Firestore exigem membership ativa para ler `teams` e
+      // `players`. Quem chega com o codigo ainda nao e membro, entao buscar
+      // esses dados aqui dava permission-denied e derrubava o fluxo inteiro.
+      // Para quem ja e membro, a leitura e permitida e acontece normalmente.
       if (existingMembership?.status === 'active') {
+        const team = await fetchTeamById(invite.teamId);
+        const teamPlayers = await fetchPlayersByTeamId(team.id);
+
         const updatedUser = await persistUserContext(
           user,
           existingMembership,
@@ -5893,6 +5898,12 @@ export const firebaseRepository: AppRepository = {
       applyFirestoreBatchMutation(batch, buildTeamMembershipIndexMutation(membership));
       batch.set(doc(firestore, FIRESTORE_COLLECTIONS.users, user.id), updatedUser);
       await batch.commit();
+
+      // Só agora existe membership ativa: a partir daqui a leitura do time e
+      // do elenco passa nas regras.
+      const team = await fetchTeamById(invite.teamId);
+      const teamPlayers = await fetchPlayersByTeamId(team.id);
+
       const initialResolution = resolvePlayerForUserWithDiagnostics({
         teamPlayers,
         teamId: team.id,

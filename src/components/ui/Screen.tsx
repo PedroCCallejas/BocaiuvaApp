@@ -45,6 +45,12 @@ interface ScreenProps extends PropsWithChildren {
   hideWebHeader?: boolean;
 }
 
+/**
+ * Folga reservada para a barra de abas. Mantido acima da altura real dela
+ * (56–68px conforme a largura) para o ultimo item nunca encostar na borda.
+ */
+const TAB_BAR_CLEARANCE = 88;
+
 export function Screen({
   children,
   scroll = true,
@@ -64,10 +70,14 @@ export function Screen({
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const keyboardAvoidanceEnabled = keyboardAware && Platform.OS === 'ios';
+  // A barra de abas flutua sobre o conteudo, entao o fim da lista precisa de
+  // folga suficiente para nao ficar escondido atras dela. No navegador do
+  // celular os 32px antigos eram menores que a propria barra (~68px + area
+  // segura), e o ultimo item aparecia cortado.
   const contentPaddingBottom =
     Math.max(
-      insets.bottom,
-      Platform.OS === 'web' ? 32 : formMode ? 112 : 28,
+      insets.bottom + TAB_BAR_CLEARANCE,
+      Platform.OS === 'web' ? TAB_BAR_CLEARANCE : formMode ? 112 : 28,
     ) + bottomSafePadding;
 
   const keyboardContextValue = useMemo<ScreenKeyboardContextValue>(

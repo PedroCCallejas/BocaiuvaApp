@@ -16,16 +16,21 @@ export default function TabsLayout() {
 
   const isWeb = Platform.OS === 'web';
 
-  // Sete abas em tela estreita nao cabem com o tamanho padrao: o rotulo era
-  // cortado no meio da palavra e o icone encostava na borda. Abaixo de 400px
-  // encolhemos icone e fonte para tudo caber inteiro.
-  const isCompact = !isWeb && width < 400;
-  const iconSize = isCompact ? 20 : 24;
-  const labelFontSize = isCompact ? 9 : 10;
+  // O que decide o tamanho e a LARGURA DA TELA, nunca a plataforma. O app roda
+  // no navegador do celular, onde Platform.OS ja e 'web': amarrar o modo
+  // compacto a plataforma fazia a correcao nunca valer justamente onde o
+  // problema aparece.
+  const isCompact = width < 420;
+  const isVeryNarrow = width < 340;
 
-  // Altura explicita: sem ela o rotulo some atras da area segura em aparelho
-  // com barra de gestos.
-  const barHeight = isWeb ? 72 : 58 + insets.bottom;
+  const iconSize = isVeryNarrow ? 18 : isCompact ? 20 : 24;
+  const labelFontSize = isVeryNarrow ? 8 : isCompact ? 9 : 11;
+
+  // Altura precisa somar a area segura em qualquer plataforma: o navegador do
+  // celular tambem tem barra de gestos, e era ela que "comia" os rotulos.
+  const baseHeight = isCompact ? 56 : 68;
+  const bottomInset = Math.max(insets.bottom, isWeb ? 0 : 6);
+  const barHeight = baseHeight + bottomInset;
 
   return (
     <Tabs
@@ -36,13 +41,13 @@ export default function TabsLayout() {
           borderTopColor: theme.colors.border,
           borderTopWidth: 1,
           height: barHeight,
-          paddingBottom: isWeb ? 10 : Math.max(insets.bottom, 6),
-          paddingTop: isWeb ? 8 : 6,
+          paddingBottom: bottomInset + 6,
+          paddingTop: 6,
         },
         tabBarItemStyle: {
           borderRadius: isCompact ? 10 : 14,
-          marginHorizontal: isWeb ? 4 : 1,
-          marginVertical: isWeb ? 5 : 2,
+          marginHorizontal: isCompact ? 1 : 4,
+          marginVertical: isCompact ? 2 : 5,
           paddingHorizontal: 0,
         },
         tabBarActiveBackgroundColor: theme.colors.primaryFaint,
@@ -53,11 +58,13 @@ export default function TabsLayout() {
           fontFamily: fonts.heading,
           fontSize: labelFontSize,
           fontWeight: '800',
-          // Sem isso o texto quebra em duas linhas e some sob a borda.
-          marginBottom: isWeb ? 0 : 2,
+          // Uma linha so: quebrando em duas, a segunda ficava sob a borda.
+          lineHeight: labelFontSize + 3,
+          marginBottom: 0,
+          paddingBottom: 0,
         },
         tabBarIconStyle: {
-          marginTop: isWeb ? 0 : 2,
+          marginTop: 0,
         },
       }}>
       <Tabs.Screen

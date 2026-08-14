@@ -258,7 +258,10 @@ service cloud.firestore {
         (
           playerDoc(playerId).data.linkedUserId == currentUserId() ||
           (
-            playerDoc(playerId).data.linkedUserId == null &&
+            // Cadastro antigo grava vazio em vez de nulo; tratar so o nulo
+            // deixava o vinculo travado sem motivo.
+            (playerDoc(playerId).data.linkedUserId == null ||
+              playerDoc(playerId).data.linkedUserId == '') &&
             currentUserEmail() != null &&
             playerDoc(playerId).data.linkedEmail is string &&
             playerDoc(playerId).data.linkedEmail.lower() == currentUserEmail()
@@ -365,6 +368,27 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/matches/$(matchId)) &&
         get(/databases/$(database)/documents/matches/$(matchId)).data.teamId == teamId &&
         get(/databases/$(database)/documents/matches/$(matchId)).data.status == 'finished';
+    }
+
+    /**
+     * O placar da votacao de MVP gravado na propria partida.
+     *
+     * Quem vota e jogador comum, e `matches` so aceita escrita de admin. Sem
+     * esta excecao o app registrava o voto e falhava logo em seguida ao tentar
+     * atualizar o total — o jogador via "voce nao tem permissao" depois de ter
+     * votado.
+     *
+     * A brecha e estreita: partida ja encerrada, do time onde a pessoa tem
+     * vinculo ativo, e nenhum campo alem do agregado do MVP pode mudar.
+     */
+    function isMvpAggregateUpdate(teamId) {
+      return hasActiveTeamMembership(teamId) &&
+        resource.data.status == 'finished' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'mvpWinnerPlayerIds',
+          'mvpTotalVotes',
+          'updatedAt',
+        ]);
     }
 
     function isConfirmedAttendance(teamId, matchId, playerId) {
@@ -485,7 +509,9 @@ service cloud.firestore {
       allow get, list: if canReadTeamScopedData(resource.data.teamId);
       allow create: if request.resource.data.id == matchId &&
         canManageTeamData(request.resource.data.teamId);
-      allow update, delete: if canManageTeamData(resource.data.teamId);
+      allow update: if canManageTeamData(resource.data.teamId) ||
+        isMvpAggregateUpdate(resource.data.teamId);
+      allow delete: if canManageTeamData(resource.data.teamId);
     }
 
     match /attendance/{attendanceId} {

@@ -108,4 +108,80 @@ export const mvpVotePermissionTestCases: TestCase[] = [
       );
     },
   },
+  {
+    name: 'efeitos colaterais do voto nao viajam mais no mesmo lote do voto',
+    run() {
+      const repo = fs.readFileSync(REPO, 'utf8');
+      const bloco = repo.slice(
+        repo.indexOf('async submitMvpVote('),
+        repo.indexOf('async submitPlayerRating('),
+      );
+
+      assert.equal(bloco.length > 0, true, 'submitMvpVote nao encontrado');
+
+      // O lote e tudo-ou-nada: juntar o agregado da partida com a notificacao
+      // fazia o voto do jogador comum falhar em `matches`, que so aceita admin.
+      assert.doesNotMatch(bloco, /writeBatch\(firestore\)/);
+      assert.match(bloco, /runBestEffort\('submitMvpVote:matchAggregate'/);
+      assert.match(bloco, /runBestEffort\('submitMvpVote:winnerNotification'/);
+    },
+  },
+  {
+    name: 'agregado da partida grava so os campos do MVP',
+    run() {
+      const repo = fs.readFileSync(REPO, 'utf8');
+      const trecho = repo.slice(repo.indexOf("runBestEffort('submitMvpVote:matchAggregate'"));
+
+      // `setDoc` reescreveria o documento inteiro e a regra recusaria por
+      // mexer em campo fora do agregado.
+      assert.match(trecho.slice(0, 500), /updateDoc\(/);
+
+      for (const campo of ['mvpWinnerPlayerIds', 'mvpTotalVotes', 'updatedAt']) {
+        assert.match(trecho.slice(0, 500), new RegExp(campo));
+      }
+    },
+  },
+  {
+    name: 'partida aceita escrita de membro apenas para o agregado do MVP',
+    run() {
+      const rules = fs.readFileSync(RULES, 'utf8');
+      const bloco = rulesBlock(rules, 'match /matches/{matchId}');
+
+      assert.match(bloco, /isMvpAggregateUpdate\(resource\.data\.teamId\)/);
+      // Apagar partida continua sendo so do admin.
+      assert.match(bloco, /allow delete: if canManageTeamData\(resource\.data\.teamId\);/);
+    },
+  },
+  {
+    name: 'a excecao do agregado nao deixa mudar mais nada da partida',
+    run() {
+      const rules = fs.readFileSync(RULES, 'utf8');
+      const regra = rulesBlock(rules, 'function isMvpAggregateUpdate');
+
+      assert.match(regra, /hasActiveTeamMembership\(teamId\)/);
+      // Votacao so existe em partida encerrada.
+      assert.match(regra, /resource\.data\.status == 'finished'/);
+      assert.match(regra, /affectedKeys\(\)\.hasOnly\(\[/);
+
+      for (const campo of ['mvpWinnerPlayerIds', 'mvpTotalVotes', 'updatedAt']) {
+        assert.match(regra, new RegExp(`'${campo}'`));
+      }
+
+      // Placar, escalacao e custo do campo ficam fora da brecha.
+      for (const campo of ['scoreboard', 'status', 'date', 'fieldCost']) {
+        assert.doesNotMatch(regra, new RegExp(`'${campo}'`));
+      }
+    },
+  },
+  {
+    name: 'cadastro com linkedUserId vazio nao trava a reivindicacao',
+    run() {
+      const rules = fs.readFileSync(RULES, 'utf8');
+      const check = rulesBlock(rules, 'function claimedPlayerBelongsToCurrentUser');
+
+      // O restante das regras trata null e '' como "sem vinculo"; aqui so o
+      // null era aceito, e o jogador ficava sem conseguir votar.
+      assert.match(check, /playerDoc\(playerId\)\.data\.linkedUserId == ''/);
+    },
+  },
 ];

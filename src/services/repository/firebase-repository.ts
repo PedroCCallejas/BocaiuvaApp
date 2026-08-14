@@ -8693,22 +8693,41 @@ export const firebaseRepository: AppRepository = {
         updatedAt,
       });
       const winnerNotificationId = buildNotificationId('mvp-winner', currentMatch.id);
-      const existingWinnerNotification = await fetchNotificationByIdForTeam(
-        activeTeamId,
-        winnerNotificationId,
-      );
-      const batch = writeBatch(firestore);
-      batch.set(
-        doc(firestore, FIRESTORE_COLLECTIONS.matches, currentMatch.id),
-        updatedMatch,
+
+      // O voto ja esta gravado neste ponto. O que vem depois e efeito colateral:
+      // o agregado na partida e a notificacao de campeao.
+      //
+      // Escrever tudo em um lote unico derrubava o voto do jogador comum: o
+      // lote e tudo-ou-nada e as regras so deixam admin escrever em `matches` e
+      // criar notificacao. A pessoa votava, o voto entrava, e mesmo assim ela
+      // via "voce nao tem permissao". Por isso cada efeito vai sozinho e falha
+      // em silencio.
+      await runBestEffort('submitMvpVote:matchAggregate', () =>
+        updateDoc(doc(firestore, FIRESTORE_COLLECTIONS.matches, currentMatch.id), {
+          mvpWinnerPlayerIds: updatedMatch.mvpWinnerPlayerIds,
+          mvpTotalVotes: updatedMatch.mvpTotalVotes,
+          updatedAt,
+        }),
       );
 
-      if (mvpSummary.winnerPlayerIds.length === 1) {
+      await runBestEffort('submitMvpVote:winnerNotification', async () => {
+        if (mvpSummary.winnerPlayerIds.length !== 1) {
+          await deleteDoc(
+            doc(firestore, FIRESTORE_COLLECTIONS.notifications, winnerNotificationId),
+          );
+          return;
+        }
+
+        const existingWinnerNotification = await fetchNotificationByIdForTeam(
+          activeTeamId,
+          winnerNotificationId,
+        );
         const winner = await fetchPlayerByIdForTeam(
           activeTeamId,
           mvpSummary.winnerPlayerIds[0],
         );
-        batch.set(
+
+        await setDoc(
           doc(firestore, FIRESTORE_COLLECTIONS.notifications, winnerNotificationId),
           createMvpWinnerNotification({
             id: winnerNotificationId,
@@ -8720,13 +8739,7 @@ export const firebaseRepository: AppRepository = {
             updatedAt,
           }),
         );
-      } else {
-        batch.delete(
-          doc(firestore, FIRESTORE_COLLECTIONS.notifications, winnerNotificationId),
-        );
-      }
-
-      await batch.commit();
+      });
 
       return vote;
     } catch (error) {

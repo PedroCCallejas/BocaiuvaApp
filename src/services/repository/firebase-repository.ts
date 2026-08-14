@@ -3784,6 +3784,40 @@ async function ensureMembershipPlayerLink(input: {
 
       linkMutationsPersisted = false;
 
+      // O batch e tudo-ou-nada: a escrita do player costuma ser negada para
+      // jogador comum (as regras nao deixam ele mexer no proprio
+      // `linkedUserId`), e isso derrubava junto a escrita do membership.
+      //
+      // Só que é o membership — e o índice espelhado dele — que carrega o
+      // `playerId` consultado pelas regras de voto de MVP, notas e autoedição.
+      // Sem ele gravado, o app resolvia o jogador em memória e o servidor
+      // negava a ação, com a pessoa vendo "você não tem permissão".
+      //
+      // Por isso tentamos o membership sozinho quando o conjunto falha.
+      if (membershipWriteNeeded) {
+        try {
+          const membershipOnlyBatch = writeBatch(firestore);
+
+          membershipOnlyBatch.set(
+            doc(firestore, FIRESTORE_COLLECTIONS.teamMembers, membership.id),
+            membership,
+          );
+          applyFirestoreBatchMutation(
+            membershipOnlyBatch,
+            buildTeamMembershipIndexMutation(membership),
+          );
+
+          await membershipOnlyBatch.commit();
+          linkMutationsPersisted = true;
+        } catch (membershipOnlyError) {
+          if (extractErrorCode(membershipOnlyError) !== 'permission-denied') {
+            throw membershipOnlyError;
+          }
+
+          linkMutationsPersisted = false;
+        }
+      }
+
       logBestEffortMembershipLinkFailure({
         scope: 'best-effort-link-sync-skipped',
         userId: input.user.id,

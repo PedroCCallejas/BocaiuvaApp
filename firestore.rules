@@ -215,6 +215,61 @@ service cloud.firestore {
         );
     }
 
+    /**
+     * O proprio usuario preenchendo o playerId que faltava no seu membership.
+     *
+     * O admin cadastra o jogador com linkedEmail e o app resolve o vinculo em
+     * memoria, mas o membership no banco continuava sem playerId porque o
+     * jogador comum nao pode escrever em teamMembers. Sem o playerId no
+     * indice, isCurrentMembershipPlayer falhava e o voto de MVP, as notas e a
+     * autoedicao de perfil eram negados.
+     *
+     * A permissao e estreita de proposito: so pode SAIR de vazio para um
+     * jogador que o admin ja reservou para esta conta, e nenhum outro campo
+     * pode mudar - papeis, permissoes e status ficam intactos.
+     */
+    function isSelfPlayerLinkClaim(membershipId) {
+      return resource.data.id == membershipId &&
+        resource.data.userId == currentUserId() &&
+        resource.data.status == 'active' &&
+        (resource.data.playerId == null || resource.data.playerId == '') &&
+        request.resource.data.playerId is string &&
+        request.resource.data.playerId.size() > 0 &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.teamId == resource.data.teamId &&
+        request.resource.data.roles == resource.data.roles &&
+        request.resource.data.canManageTeam == resource.data.canManageTeam &&
+        request.resource.data.canManagePlayers == resource.data.canManagePlayers &&
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.joinedAt == resource.data.joinedAt &&
+        claimedPlayerBelongsToCurrentUser(
+          resource.data.teamId,
+          request.resource.data.playerId
+        );
+    }
+
+    /** O jogador reivindicado precisa ter sido reservado para esta conta. */
+    function claimedPlayerBelongsToCurrentUser(teamId, playerId) {
+      return exists(/databases/$(database)/documents/players/$(playerId)) &&
+        playerDoc(playerId).data.teamId == teamId &&
+        playerDoc(playerId).data.status == 'active' &&
+        (
+          playerDoc(playerId).data.linkedUserId == currentUserId() ||
+          (
+            playerDoc(playerId).data.linkedUserId == null &&
+            currentUserEmail() != null &&
+            playerDoc(playerId).data.linkedEmail is string &&
+            playerDoc(playerId).data.linkedEmail.lower() == currentUserEmail()
+          )
+        );
+    }
+
+    function playerDoc(playerId) {
+      return get(/databases/$(database)/documents/players/$(playerId));
+    }
+
     function membershipAfterExists(membershipId) {
       return membershipId is string &&
         membershipId.size() > 0 &&
@@ -406,7 +461,8 @@ service cloud.firestore {
         request.resource.data.teamId == resource.data.teamId &&
         (
           canManageTeamData(resource.data.teamId) ||
-          isSafeInviteMembershipReactivation(membershipId)
+          isSafeInviteMembershipReactivation(membershipId) ||
+          isSelfPlayerLinkClaim(membershipId)
         );
       allow delete: if canManageTeamData(resource.data.teamId);
     }

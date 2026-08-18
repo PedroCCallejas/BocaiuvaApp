@@ -432,13 +432,31 @@ async function refreshCurrentSession(
   options?: { showRefreshing?: boolean },
 ) {
   const sessionUser = authService.getCurrentUser() ?? (await authService.restoreSession());
-  await ensureRealtimeSubscription(set, get, sessionUser);
 
-  if (get().hasLiveSync && !options?.showRefreshing) {
-    return;
+  try {
+    await ensureRealtimeSubscription(set, get, sessionUser);
+
+    if (get().hasLiveSync && !options?.showRefreshing) {
+      return;
+    }
+
+    await refreshSnapshot(set, get, sessionUser, options);
+  } catch (error) {
+    // "Puxar para atualizar" pede a releitura em si: ali o erro e a resposta
+    // honesta e continua subindo.
+    if (options?.showRefreshing) {
+      throw error;
+    }
+
+    // Nas outras 48 acoes esta releitura acontece DEPOIS da escrita, so para
+    // atualizar a tela. Deixar ela estourar transformava gravacao bem-sucedida
+    // em erro: a presenca entrava no banco e a pessoa via "voce nao tem
+    // permissao" mesmo assim. O estado de sincronizacao ja registra a falha em
+    // `hasLiveSync` e `syncStatus`.
+    if (__DEV__) {
+      console.warn('[sync] releitura apos escrita falhou', error);
+    }
   }
-
-  await refreshSnapshot(set, get, sessionUser, options);
 }
 
 async function syncPushTokenForUser(userId: string | null) {

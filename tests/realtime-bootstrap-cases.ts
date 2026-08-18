@@ -7,6 +7,7 @@ type TestCase = {
 };
 
 const REPO = 'src/services/repository/firebase-repository.ts';
+const STORE = 'src/store/app-store.ts';
 
 function subscribeBlock(source: string) {
   const start = source.indexOf('async subscribeSnapshot(');
@@ -108,6 +109,30 @@ export const realtimeBootstrapTestCases: TestCase[] = [
         bloco,
         /markDelivered\((?:key|'notifications:[a-zA-Z]+')\);\s*\n\s*handleRealtimeError\(error\);/,
       );
+    },
+  },
+  {
+    name: 'releitura que falha depois da escrita nao derruba a acao',
+    run() {
+      const store = fs.readFileSync(STORE, 'utf8');
+      const inicio = store.indexOf('async function refreshCurrentSession');
+      assert.equal(inicio > 0, true, 'refreshCurrentSession nao encontrado');
+      const bloco = store.slice(inicio, store.indexOf('\n}\n', inicio));
+
+      // A presenca era gravada e a tela mostrava "voce nao tem permissao":
+      // o erro vinha da releitura que roda depois, nao da escrita.
+      assert.match(bloco, /catch \(error\) \{/);
+      assert.match(bloco, /if \(options\?\.showRefreshing\) \{\s*throw error;/);
+    },
+  },
+  {
+    name: 'puxar para atualizar continua mostrando o erro',
+    run() {
+      const store = fs.readFileSync(STORE, 'utf8');
+
+      // Nesse caso a releitura e a propria acao pedida: engolir o erro deixaria
+      // a pessoa achando que atualizou quando nao atualizou.
+      assert.match(store, /refreshCurrentSession\(set, get, \{ showRefreshing: true \}\)/);
     },
   },
   {

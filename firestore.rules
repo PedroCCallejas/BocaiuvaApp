@@ -140,7 +140,9 @@ service cloud.firestore {
           ((playerData.linkedUserId == null || playerData.linkedUserId == '') &&
             currentUserEmail() != null &&
             playerData.linkedEmail is string &&
-            playerData.linkedEmail == currentUserEmail())
+            // Comparar sem normalizar deixava de fora o cadastro antigo, gravado
+            // antes de o app passar a salvar o e-mail em minusculas.
+            playerData.linkedEmail.lower() == currentUserEmail())
         );
     }
 
@@ -341,8 +343,33 @@ service cloud.firestore {
         );
     }
 
+    /**
+     * A pessoa autenticada e este jogador do time?
+     *
+     * A resposta canonica esta no indice de membership, mas o `playerId` so
+     * chega la depois de uma escrita em `teamMembers` que jogador comum quase
+     * nunca consegue fazer. Quem ficou sem essa escrita via "permission-denied"
+     * ao confirmar presenca, votar no MVP e avaliar — enquanto o colega de
+     * time, com exatamente o mesmo perfil, conseguia.
+     *
+     * O documento do jogador carrega a mesma prova: foi o admin quem reservou
+     * aquele cadastro para esta conta, por uid ou por e-mail. Aceitar as duas
+     * fontes tira a dependencia de uma escrita que pode nunca acontecer, sem
+     * passar a confiar em nada novo.
+     */
+    function isTeamPlayerForCurrentUser(teamId, playerId) {
+      return isCurrentMembershipPlayer(teamId, playerId) ||
+        (
+          hasActiveTeamMembership(teamId) &&
+          exists(/databases/$(database)/documents/players/$(playerId)) &&
+          playerDoc(playerId).data.teamId == teamId &&
+          isPlayerActiveForSelfEdit(playerDoc(playerId).data) &&
+          isLinkedPlayerForCurrentUser(playerDoc(playerId).data)
+        );
+    }
+
     function isOwnAttendanceWrite() {
-      return isCurrentMembershipPlayer(
+      return isTeamPlayerForCurrentUser(
         request.resource.data.teamId,
         request.resource.data.playerId
       ) &&
@@ -558,7 +585,7 @@ service cloud.firestore {
       allow create: if request.resource.data.id == voteId &&
         hasActiveTeamMembership(request.resource.data.teamId) &&
         request.resource.data.voterPlayerId != request.resource.data.targetPlayerId &&
-        isCurrentMembershipPlayer(
+        isTeamPlayerForCurrentUser(
           request.resource.data.teamId,
           request.resource.data.voterPlayerId
         ) &&
@@ -585,7 +612,7 @@ service cloud.firestore {
       allow create: if request.resource.data.id == ratingId &&
         hasActiveTeamMembership(request.resource.data.teamId) &&
         request.resource.data.raterPlayerId != request.resource.data.targetPlayerId &&
-        isCurrentMembershipPlayer(
+        isTeamPlayerForCurrentUser(
           request.resource.data.teamId,
           request.resource.data.raterPlayerId
         ) &&

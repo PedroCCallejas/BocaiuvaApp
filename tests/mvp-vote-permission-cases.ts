@@ -23,11 +23,61 @@ export const mvpVotePermissionTestCases: TestCase[] = [
       const block = rulesBlock(rules, 'match /mvpVotes/{voteId}');
 
       // Esta e a condicao que negava o voto quando o vinculo existia apenas
-      // na memoria do app, sem ter sido gravado no membership.
-      assert.match(block, /isCurrentMembershipPlayer\(/);
+      // na memoria do app, sem ter sido gravado no membership. Hoje ela e o
+      // caminho principal dentro de isTeamPlayerForCurrentUser.
+      assert.match(block, /isTeamPlayerForCurrentUser\(/);
 
       const helper = rulesBlock(rules, 'function isCurrentMembershipPlayer');
       assert.match(helper, /currentMembershipIndex\(teamId\)\.data\.playerId == playerId/);
+    },
+  },
+  {
+    name: 'presenca, voto e nota nao dependem so do indice de membership',
+    run() {
+      const rules = fs.readFileSync(RULES, 'utf8');
+
+      // O indice so ganha `playerId` depois de uma escrita que jogador comum
+      // quase nunca consegue fazer. Enquanto isso era a unica fonte, parte do
+      // elenco levava permission-denied e a outra parte nao — mesmo perfil.
+      for (const bloco of [
+        'function isOwnAttendanceWrite',
+        'match /mvpVotes/{voteId}',
+        'match /playerRatings/{ratingId}',
+      ]) {
+        assert.match(
+          rulesBlock(rules, bloco),
+          /isTeamPlayerForCurrentUser\(/,
+          `${bloco} ainda depende so do indice`,
+        );
+      }
+    },
+  },
+  {
+    name: 'a segunda fonte e o cadastro que o admin reservou para a conta',
+    run() {
+      const rules = fs.readFileSync(RULES, 'utf8');
+      const helper = rulesBlock(rules, 'function isTeamPlayerForCurrentUser');
+
+      // O indice continua valendo como caminho principal.
+      assert.match(helper, /isCurrentMembershipPlayer\(teamId, playerId\)/);
+
+      // E a alternativa exige vinculo ativo no time, jogador daquele time,
+      // ativo, e reservado para esta conta — nenhuma confianca nova.
+      assert.match(helper, /hasActiveTeamMembership\(teamId\)/);
+      assert.match(helper, /playerDoc\(playerId\)\.data\.teamId == teamId/);
+      assert.match(helper, /isPlayerActiveForSelfEdit\(playerDoc\(playerId\)\.data\)/);
+      assert.match(helper, /isLinkedPlayerForCurrentUser\(playerDoc\(playerId\)\.data\)/);
+    },
+  },
+  {
+    name: 'e-mail de cadastro antigo e comparado normalizado',
+    run() {
+      const rules = fs.readFileSync(RULES, 'utf8');
+      const helper = rulesBlock(rules, 'function isLinkedPlayerForCurrentUser');
+
+      // `currentUserEmail()` ja vem em minusculas; sem normalizar o outro lado,
+      // quem foi cadastrado com maiuscula nunca casava.
+      assert.match(helper, /playerData\.linkedEmail\.lower\(\) == currentUserEmail\(\)/);
     },
   },
   {

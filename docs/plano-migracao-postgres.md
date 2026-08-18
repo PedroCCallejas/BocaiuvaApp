@@ -74,14 +74,43 @@ esse campo, e sem ele a RLS recusa tudo.
 
 > Isso mexe em autenticação. Não faço sem pedido explícito.
 
-### Fase 2 — Importação inicial
+### Fase 2 — Importação inicial ✅ script pronto
 
-Script que lê o Firestore com service account e grava no Postgres com service
-key (que ignora RLS). Roda quantas vezes for preciso: `upsert` por id, e como os
-ids são os mesmos, reimportar é idempotente.
+```bash
+# simulação: lê, mapeia e relata, sem gravar nada
+npm run migrar:postgres:dry
 
-Ordem obrigatória por causa das FKs: `users` → `teams` → `players` →
-`team_members` → `seasons` → `matches` → resto.
+# importação de verdade
+export SUPABASE_URL=...
+export SUPABASE_SERVICE_ROLE_KEY=...
+npm run migrar:postgres
+
+# só um módulo
+npm run migrar:postgres -- --only=expense_categories,expenses
+```
+
+Credenciais do Firebase seguem a mesma ordem dos outros scripts do projeto
+(`--credentials`, env, ou `secrets/bocaiuva-app-firebase-service-account.json`).
+A pasta `secrets/` está no `.gitignore`; a service key do Supabase vai por
+variável de ambiente e **nunca** entra em arquivo versionado.
+
+**Idempotente.** `upsert` por id, e os ids são os mesmos do Firestore — rodar
+duas vezes não duplica nada.
+
+**Ordem obrigatória** por causa das FKs: `users` → `teams` → `players` →
+`team_members` → `seasons` → `matches` → resto. Coberta por teste.
+
+**Referência pendurada.** O Firestore aceita um campo apontando para documento
+apagado; o Postgres recusa a linha inteira. O importador separa os dois casos:
+
+- referência **obrigatória** pendurada → a linha não entra, e sai no relatório;
+- referência **opcional** pendurada → o campo vira nulo e a linha entra.
+
+Sem isso, uma partida apontando para uma temporada apagada derrubaria a
+importação de todas as partidas do time.
+
+O mapeamento (`src/lib/migracao/mapear-postgres.ts`) é função pura e tem 20
+testes. É onde uma migração erra, e erro de mapeamento em produção é silencioso.
 
 ### Fase 3 — Escrita dupla
 

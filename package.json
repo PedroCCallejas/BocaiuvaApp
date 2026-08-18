@@ -17,7 +17,9 @@
     "audit:player-stats": "node --no-warnings --experimental-strip-types ./scripts/audit-player-stats.ts",
     "audit:finish-permission": "node --no-warnings --experimental-strip-types ./scripts/audit-finish-match-permission.ts",
     "backfill:membership-index:dry": "node --no-warnings --experimental-strip-types ./scripts/backfill-team-membership-index.ts --dry-run",
-    "backfill:membership-index": "node --no-warnings --experimental-strip-types ./scripts/backfill-team-membership-index.ts"
+    "backfill:membership-index": "node --no-warnings --experimental-strip-types ./scripts/backfill-team-membership-index.ts",
+    "migrar:postgres:dry": "node --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./scripts/migrar-para-postgres.ts --dry-run",
+    "migrar:postgres": "node --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./scripts/migrar-para-postgres.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",

@@ -2,10 +2,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import {
+  CHAVE_DE_CONFLITO,
   DEFINICOES,
   ORDEM_DAS_TABELAS,
+  TABELAS_FILHAS,
   dataOuNulo,
   dependenciasVazias,
+  derivarCotasDaDespesa,
+  derivarCustoDoCampo,
+  derivarParticipantesDoCampo,
   instante,
   instanteOuNulo,
   inteiro,
@@ -437,6 +442,179 @@ export const migracaoPostgresTestCases: TestCase[] = [
       // "Quota exceeded" sozinho parece bug do script. Nao e.
       assert.match(bloco.slice(0, 1200), /meia-noite do Pacifico/);
       assert.match(bloco.slice(0, 1200), /--only=/);
+    },
+  },
+  {
+    name: 'rateio igual vira uma cota por participante e a soma fecha',
+    run() {
+      const cotas = derivarCotasDaDespesa(
+        {
+          id: 'e1',
+          totalAmountCents: 1000,
+          splitMode: 'equal',
+          participantPlayerIds: ['p1', 'p2', 'p3'],
+          updatedAt: REFERENCIA,
+        },
+        CONTEXTO,
+      );
+
+      assert.equal(cotas.length, 3);
+
+      // 1000 / 3 nao e inteiro: o centavo que sobra vai para o primeiro, e a
+      // soma tem de fechar exatamente com o total.
+      const soma = cotas.reduce((total, cota) => total + Number(cota.amount_cents), 0);
+      assert.equal(soma, 1000);
+      assert.deepEqual(
+        cotas.map((cota) => cota.amount_cents),
+        [334, 333, 333],
+      );
+    },
+  },
+  {
+    name: 'cota extra entra na divisao mas nao vira linha',
+    run() {
+      // Convidado que ninguem cadastrou divide a conta, mas nao ha a quem cobrar.
+      const cotas = derivarCotasDaDespesa(
+        {
+          id: 'e1',
+          totalAmountCents: 900,
+          splitMode: 'equal',
+          participantPlayerIds: ['p1', 'p2'],
+          extraSharesCount: 1,
+          updatedAt: REFERENCIA,
+        },
+        CONTEXTO,
+      );
+
+      assert.equal(cotas.length, 2);
+      assert.deepEqual(
+        cotas.map((cota) => cota.amount_cents),
+        [300, 300],
+      );
+    },
+  },
+  {
+    name: 'rateio manual respeita o valor combinado',
+    run() {
+      const cotas = derivarCotasDaDespesa(
+        {
+          id: 'e1',
+          totalAmountCents: 1000,
+          splitMode: 'manual',
+          participantPlayerIds: ['p1', 'p2'],
+          manualSharesCents: { p1: 700, p2: 300 },
+          settledPlayerIds: ['p1'],
+          updatedAt: REFERENCIA,
+        },
+        CONTEXTO,
+      );
+
+      assert.deepEqual(
+        cotas.map((cota) => cota.amount_cents),
+        [700, 300],
+      );
+
+      // Quem ja acertou fica com data; quem deve continua nulo.
+      assert.equal(cotas[0].settled_at, REFERENCIA);
+      assert.equal(cotas[1].settled_at, null);
+    },
+  },
+  {
+    name: 'custo do campo sai de reais float para centavos inteiros',
+    run() {
+      const custo = derivarCustoDoCampo(
+        {
+          id: 'm1',
+          fieldCost: { totalAmount: 120.5, splitCount: 10, amountPerPlayer: 12.05 },
+          fieldPayment: { pixKey: 'chave', paidGuestCount: 2 },
+          updatedAt: REFERENCIA,
+        },
+        CONTEXTO,
+      );
+
+      assert.equal(custo.length, 1);
+      // Float em dinheiro fecha conta errada; 120.5 tem de virar 12050.
+      assert.equal(custo[0].total_amount_cents, 12050);
+      assert.equal(custo[0].amount_per_player_cents, 1205);
+      assert.equal(custo[0].split_count, 10);
+      assert.equal(custo[0].pix_key, 'chave');
+      assert.equal(custo[0].paid_guest_count, 2);
+    },
+  },
+  {
+    name: 'partida sem custo de campo nao gera linha',
+    run() {
+      assert.deepEqual(derivarCustoDoCampo({ id: 'm1' }, CONTEXTO), []);
+      assert.deepEqual(derivarParticipantesDoCampo({ id: 'm1' }, CONTEXTO), []);
+    },
+  },
+  {
+    name: 'pagante vence isento quando a pessoa esta nas duas listas',
+    run() {
+      // A chave primaria so aceita um papel. Quem pagou, pagou: apagar esse
+      // fato criaria um devedor que ja acertou.
+      const participantes = derivarParticipantesDoCampo(
+        {
+          id: 'm1',
+          fieldPayment: {
+            payerPlayerIds: ['p1', 'p2'],
+            exemptPlayerIds: ['p2', 'p3'],
+          },
+          updatedAt: REFERENCIA,
+        },
+        CONTEXTO,
+      );
+
+      const porJogador = new Map(
+        participantes.map((linha) => [String(linha.player_id), String(linha.role)]),
+      );
+
+      assert.equal(porJogador.size, 3);
+      assert.equal(porJogador.get('p1'), 'payer');
+      assert.equal(porJogador.get('p2'), 'payer');
+      assert.equal(porJogador.get('p3'), 'exempt');
+    },
+  },
+  {
+    name: 'despesa nao carrega mais as listas paralelas',
+    run() {
+      const despesa = mapearDespesa(
+        {
+          id: 'e1',
+          teamId: 't1',
+          categoryId: 'c1',
+          date: '2026-08-18',
+          totalAmountCents: 1000,
+          participantPlayerIds: ['p1'],
+          settledPlayerIds: ['p1'],
+          manualSharesCents: { p1: 1000 },
+        },
+        CONTEXTO,
+      );
+
+      // Essas colunas sairam do schema: quem responde por elas e expense_shares.
+      assert.equal('participant_player_ids' in (despesa ?? {}), false);
+      assert.equal('settled_player_ids' in (despesa ?? {}), false);
+      assert.equal('manual_shares_cents' in (despesa ?? {}), false);
+      assert.equal(despesa?.split_mode, 'equal');
+    },
+  },
+  {
+    name: 'toda tabela filha tem chave de conflito declarada',
+    run() {
+      for (const tabela of TABELAS_FILHAS) {
+        const chave = CHAVE_DE_CONFLITO[tabela];
+
+        assert.equal(typeof chave, 'string');
+        // Chave composta: sem isso o upsert duplicaria em vez de atualizar.
+        assert.equal(chave.length > 0, true, `sem chave para ${tabela}`);
+      }
+
+      const declaradas = DEFINICOES.flatMap((definicao) =>
+        (definicao.filhas ?? []).map((filha) => filha.tabela),
+      );
+
+      assert.deepEqual([...declaradas].sort(), [...TABELAS_FILHAS].sort());
     },
   },
   {

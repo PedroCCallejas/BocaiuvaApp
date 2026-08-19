@@ -38,12 +38,15 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import {
+  CHAVE_DE_CONFLITO,
   DEFINICOES,
   ORDEM_DAS_TABELAS,
   dependenciasVazias,
   resolverReferencias,
   type Linha,
+  type LinhaFilha,
   type NomeDaTabela,
+  type NomeDaTabelaFilha,
 } from '@/lib/migracao/mapear-postgres';
 
 const CAMINHO_PADRAO_CREDENCIAL = path.resolve(
@@ -297,10 +300,15 @@ function ehCotaEstourada(erro: unknown) {
   return /RESOURCE_EXHAUSTED|Quota exceeded/i.test(mensagem);
 }
 
-async function gravar(supabase: SupabaseClient, tabela: NomeDaTabela, linhas: Linha[]) {
+async function gravar(
+  supabase: SupabaseClient,
+  tabela: NomeDaTabela | NomeDaTabelaFilha,
+  linhas: (Linha | LinhaFilha)[],
+  chave = 'id',
+) {
   for (let inicio = 0; inicio < linhas.length; inicio += TAMANHO_DO_LOTE) {
     const lote = linhas.slice(inicio, inicio + TAMANHO_DO_LOTE);
-    const { error } = await supabase.from(tabela).upsert(lote, { onConflict: 'id' });
+    const { error } = await supabase.from(tabela).upsert(lote, { onConflict: chave });
 
     if (error) {
       throw new Error(
@@ -365,17 +373,25 @@ async function main() {
 
     const documentos = await lerColecao(firestore, definicao.colecao);
     const mapeadas: Linha[] = [];
+    const filhasPorTabela = new Map<NomeDaTabelaFilha, LinhaFilha[]>();
     let semMapeamento = 0;
 
     for (const documento of documentos) {
       const linha = definicao.mapear(documento, { referencia });
 
-      if (linha) {
-        mapeadas.push(linha);
+      if (!linha) {
+        semMapeamento += 1;
         continue;
       }
 
-      semMapeamento += 1;
+      mapeadas.push(linha);
+
+      // Derivado do mesmo documento: normalizar nao custa leitura a mais.
+      for (const filha of definicao.filhas ?? []) {
+        const atual = filhasPorTabela.get(filha.tabela) ?? [];
+        atual.push(...filha.derivar(documento, { referencia }));
+        filhasPorTabela.set(filha.tabela, atual);
+      }
     }
 
     const { aceitas, descartadas, ajustadas } = resolverReferencias(
@@ -392,6 +408,41 @@ async function main() {
       await gravar(supabase, tabela, aceitas);
     }
 
+    // Filha entra depois do pai — e so a que sobreviveu ao filtro dele, senao
+    // a chave estrangeira recusaria a linha.
+    const idsAceitos = new Set(aceitas.map((linha) => linha.id));
+    const filhasGravadas: Record<string, number> = {};
+
+    for (const filha of definicao.filhas ?? []) {
+      const linhas = (filhasPorTabela.get(filha.tabela) ?? []).filter((linha) =>
+        idsAceitos.has(String(linha[filha.colunaDoPai] ?? '')),
+      );
+
+      // Jogador apagado deixa cota orfa para tras.
+      const comJogadorConhecido = linhas.filter((linha) => {
+        const playerId = textoOuNulo(linha.player_id);
+        const jogadores = idsConhecidos.players;
+        return !playerId || !jogadores || jogadores.has(playerId);
+      });
+
+      filhasGravadas[filha.tabela] = comJogadorConhecido.length;
+
+      if (supabase && comJogadorConhecido.length > 0) {
+        await gravar(
+          supabase,
+          filha.tabela,
+          comJogadorConhecido,
+          CHAVE_DE_CONFLITO[filha.tabela],
+        );
+      }
+
+      const orfas = linhas.length - comJogadorConhecido.length;
+
+      if (orfas > 0) {
+        log(`  ${filha.tabela}: ${orfas} linha(s) descartada(s) por jogador inexistente`);
+      }
+    }
+
     lidosDoFirestore += documentos.length;
 
     resumo.push({
@@ -402,9 +453,14 @@ async function main() {
       semMapeamento,
       descartadasPorReferencia: descartadas.length,
       camposZeradosPorReferencia: ajustadas.length,
+      ...(Object.keys(filhasGravadas).length > 0 ? { filhas: filhasGravadas } : {}),
     });
 
     log(`${tabela}: ${documentos.length} lidos, ${aceitas.length} prontos`);
+
+    for (const [nome, total] of Object.entries(filhasGravadas)) {
+      log(`  ${nome}: ${total} linha(s)`);
+    }
 
     if (semMapeamento > 0) {
       log(`  ${semMapeamento} documento(s) sem campo obrigatorio, fora da importacao`);

@@ -14,6 +14,8 @@
  * inteira. Por isso `resolverReferencias` existe.
  */
 
+import { splitEqualCents } from '@/lib/expenses';
+
 /** Ordem obrigatória de importação: a chave estrangeira depende dela. */
 export const ORDEM_DAS_TABELAS = [
   'users',
@@ -34,11 +36,36 @@ export const ORDEM_DAS_TABELAS = [
   'rating_criteria',
 ] as const;
 
+/**
+ * Tabelas preenchidas a partir do mesmo documento que gerou o pai.
+ *
+ * No Firestore isso vivia dentro do documento — array em `expenses`, jsonb em
+ * `matches`. Aqui viraram relação, mas continuam sendo lidas de uma vez só: são
+ * derivadas do documento que já está na mão, sem gastar leitura a mais.
+ */
+export const TABELAS_FILHAS = [
+  'expense_shares',
+  'match_field_costs',
+  'match_field_participants',
+] as const;
+
+export type NomeDaTabelaFilha = (typeof TABELAS_FILHAS)[number];
+
+/** Chave usada no `upsert`. Tabela filha tem chave composta, não `id`. */
+export const CHAVE_DE_CONFLITO: Record<NomeDaTabelaFilha, string> = {
+  expense_shares: 'expense_id,player_id',
+  match_field_costs: 'match_id',
+  match_field_participants: 'match_id,player_id',
+};
+
 export type NomeDaTabela = (typeof ORDEM_DAS_TABELAS)[number];
 
 type Documento = Record<string, unknown> & { id?: unknown };
 
 export type Linha = Record<string, unknown> & { id: string };
+
+/** Linha de tabela filha: chave composta, sem coluna `id`. */
+export type LinhaFilha = Record<string, unknown>;
 
 // ── Conversores de valor ───────────────────────────────────────────────────
 
@@ -684,15 +711,134 @@ export function mapearDespesa(documento: Documento, { referencia }: Contexto): L
     total_amount_cents: inteiro(documento.totalAmountCents),
     paid_by_player_id: textoOuNulo(documento.paidByPlayerId),
     split_mode: opcao(documento.splitMode, ['equal', 'manual'], 'equal'),
-    participant_player_ids: listaDeIds(documento.participantPlayerIds),
     extra_shares_count: inteiro(documento.extraSharesCount),
-    manual_shares_cents: objetoOuNulo(documento.manualSharesCents),
-    settled_player_ids: listaDeIds(documento.settledPlayerIds),
     created_by: textoOuNulo(documento.createdBy),
     deleted_at: instanteOuNulo(documento.deletedAt),
     created_at: instante(documento.createdAt, referencia),
     updated_at: instante(documento.updatedAt, referencia),
   };
+}
+
+// ── Tabelas filhas ─────────────────────────────────────────────────────────
+
+/**
+ * Cota de cada participante da despesa.
+ *
+ * O valor é congelado na importação em vez de recalculado toda vez. É de
+ * propósito: o rateio já foi combinado e cobrado no mundo real, e recalcular
+ * depois — com participante removido, ou com a lógica evoluindo — mudaria
+ * quanto alguém deve num acerto que já aconteceu.
+ *
+ * A divisão usa a mesma distribuição de resto de `splitEqualCents`: sobrando
+ * centavo, ele vai para os primeiros, e a soma fecha exatamente.
+ */
+export function derivarCotasDaDespesa(
+  documento: Documento,
+  { referencia }: Contexto,
+): LinhaFilha[] {
+  const expenseId = idOuNulo(documento);
+  const participantes = listaDeIds(documento.participantPlayerIds);
+
+  if (!expenseId || participantes.length === 0) {
+    return [];
+  }
+
+  const total = inteiro(documento.totalAmountCents);
+  const extras = inteiro(documento.extraSharesCount);
+  const manuais = objetoOuNulo(documento.manualSharesCents);
+  const manual = opcao(documento.splitMode, ['equal', 'manual'], 'equal') === 'manual';
+  const quitados = new Set(listaDeIds(documento.settledPlayerIds));
+
+  // Cotas extras (convidado que ninguém cadastrou) entram na divisão mas não
+  // viram linha: não há jogador a quem cobrar.
+  const divisoes = participantes.length + Math.max(0, extras);
+  const iguais = splitEqualCents(total, divisoes);
+
+  return participantes.map((playerId, indice) => {
+    const valorManual = manual && manuais ? inteiro(manuais[playerId], 0) : null;
+
+    return {
+      expense_id: expenseId,
+      player_id: playerId,
+      amount_cents: valorManual ?? iguais[indice] ?? 0,
+      settled_at: quitados.has(playerId) ? instante(documento.updatedAt, referencia) : null,
+      created_at: instante(documento.createdAt, referencia),
+      updated_at: instante(documento.updatedAt, referencia),
+    };
+  });
+}
+
+/** Custo do campo, que era jsonb dentro da partida. */
+export function derivarCustoDoCampo(
+  documento: Documento,
+  { referencia }: Contexto,
+): LinhaFilha[] {
+  const matchId = idOuNulo(documento);
+  const custo = objetoOuNulo(documento.fieldCost);
+  const pagamento = objetoOuNulo(documento.fieldPayment);
+
+  if (!matchId || (!custo && !pagamento)) {
+    return [];
+  }
+
+  // No Firestore o valor era float em reais. Dinheiro em float fecha conta
+  // errada; aqui entra em centavos inteiros.
+  const emCentavos = (valor: unknown) => Math.max(0, Math.round(decimal(valor) * 100));
+
+  return [
+    {
+      match_id: matchId,
+      total_amount_cents: custo ? emCentavos(custo.totalAmount) : 0,
+      split_count: custo ? inteiro(custo.splitCount) : 0,
+      amount_per_player_cents: custo ? emCentavos(custo.amountPerPlayer) : 0,
+      note: custo ? textoOuNulo(custo.note) : null,
+      pix_key: pagamento ? textoOuNulo(pagamento.pixKey) : null,
+      responsible_name: pagamento ? textoOuNulo(pagamento.responsibleName) : null,
+      paid_guest_count: pagamento ? inteiro(pagamento.paidGuestCount) : 0,
+      updated_by_user_id:
+        textoOuNulo(pagamento?.updatedByUserId) ?? textoOuNulo(custo?.updatedByUserId),
+      created_at: instante(documento.createdAt, referencia),
+      updated_at: instante(documento.updatedAt, referencia),
+    },
+  ];
+}
+
+/**
+ * Quem pagou e quem está isento do rateio do campo.
+ *
+ * Pagante vence isento quando a pessoa aparece nas duas listas. A chave
+ * primária só aceita um papel — e quem pagou, pagou: apagar esse fato criaria
+ * um devedor que já acertou.
+ */
+export function derivarParticipantesDoCampo(
+  documento: Documento,
+  { referencia }: Contexto,
+): LinhaFilha[] {
+  const matchId = idOuNulo(documento);
+  const pagamento = objetoOuNulo(documento.fieldPayment);
+
+  if (!matchId || !pagamento) {
+    return [];
+  }
+
+  const pagantes = listaDeIds(pagamento.payerPlayerIds);
+  const pagantesSet = new Set(pagantes);
+  const isentos = listaDeIds(pagamento.exemptPlayerIds).filter(
+    (playerId) => !pagantesSet.has(playerId),
+  );
+
+  const linha = (playerId: string, role: 'payer' | 'exempt') => ({
+    match_id: matchId,
+    player_id: playerId,
+    role,
+    created_at: instante(documento.createdAt, referencia),
+    updated_at: instante(documento.updatedAt, referencia),
+  });
+
+  return [
+    ...pagantes.map((playerId) => linha(playerId, 'payer')),
+    ...isentos.map((playerId) => linha(playerId, 'exempt')),
+  ];
 }
 
 // ── Integridade referencial ────────────────────────────────────────────────
@@ -878,6 +1024,18 @@ export interface DefinicaoDeTabela {
   /** Coleção no Firestore. */
   colecao: string;
   mapear: (documento: Documento, contexto: Contexto) => Linha | null;
+  /**
+   * Tabelas derivadas do mesmo documento, gravadas logo depois do pai.
+   *
+   * Deriva do documento que já está na mão: normalizar não custa leitura a
+   * mais no Firestore, que é o recurso racionado.
+   */
+  filhas?: {
+    tabela: NomeDaTabelaFilha;
+    /** Coluna que aponta para o pai, usada para descartar órfã. */
+    colunaDoPai: string;
+    derivar: (documento: Documento, contexto: Contexto) => LinhaFilha[];
+  }[];
 }
 
 export const DEFINICOES: DefinicaoDeTabela[] = [
@@ -886,7 +1044,23 @@ export const DEFINICOES: DefinicaoDeTabela[] = [
   { tabela: 'players', colecao: 'players', mapear: mapearJogador },
   { tabela: 'team_members', colecao: 'teamMembers', mapear: mapearVinculo },
   { tabela: 'seasons', colecao: 'seasons', mapear: mapearTemporada },
-  { tabela: 'matches', colecao: 'matches', mapear: mapearPartida },
+  {
+    tabela: 'matches',
+    colecao: 'matches',
+    mapear: mapearPartida,
+    filhas: [
+      {
+        tabela: 'match_field_costs',
+        colunaDoPai: 'match_id',
+        derivar: derivarCustoDoCampo,
+      },
+      {
+        tabela: 'match_field_participants',
+        colunaDoPai: 'match_id',
+        derivar: derivarParticipantesDoCampo,
+      },
+    ],
+  },
   { tabela: 'lineups', colecao: 'lineups', mapear: mapearEscalacao },
   { tabela: 'attendance', colecao: 'attendance', mapear: mapearPresenca },
   { tabela: 'match_stats', colecao: 'matchStats', mapear: mapearEstatistica },
@@ -895,6 +1069,17 @@ export const DEFINICOES: DefinicaoDeTabela[] = [
   { tabela: 'match_diary_entries', colecao: 'matchDiaryEntries', mapear: mapearResenha },
   { tabela: 'notifications', colecao: 'notifications', mapear: mapearAviso },
   { tabela: 'expense_categories', colecao: 'expenseCategories', mapear: mapearCategoria },
-  { tabela: 'expenses', colecao: 'expenses', mapear: mapearDespesa },
+  {
+    tabela: 'expenses',
+    colecao: 'expenses',
+    mapear: mapearDespesa,
+    filhas: [
+      {
+        tabela: 'expense_shares',
+        colunaDoPai: 'expense_id',
+        derivar: derivarCotasDaDespesa,
+      },
+    ],
+  },
   { tabela: 'rating_criteria', colecao: 'ratingCriteria', mapear: mapearCriterio },
 ];

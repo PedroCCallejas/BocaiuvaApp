@@ -22,7 +22,8 @@ categoria — não é otimizado, é eliminado.
 | Login | **Continua no Firebase Auth** | O Supabase aceita o JWT do Firebase e usa nas policies de RLS. Migramos dados, não pessoas: ninguém recria conta. |
 | Projeto | **BocaApp** (`xepbopkhsprfemqjzrkm`) | Já existia, `sa-east-1` (São Paulo), Postgres 17. Latência baixa e nada a montar do zero. |
 | IDs | **`text`, mantendo o id atual do Firestore** | `uuid` exigiria uma tabela de-para durante toda a convivência dos dois bancos. Qualquer erro nela vira dado órfão. |
-| Listas simples | **`text[]`** | `participantPlayerIds`, `benchPlayerIds` etc. Tabela de junção multiplicaria a superfície da migração sem ganho real nesta escala. |
+| Listas simples | **`text[]`** | `benchPlayerIds`, `secondaryPositions` — conjuntos sem atributo nenhum. |
+| Relação com atributo | **tabela** | Rateio de despesa e pagamento do campo. Ver abaixo. |
 | Estruturas | **`jsonb`** | `scoreboard`, `fieldCost`, `starters`, `criteriaSnapshot`. São documentos de verdade, não relações. |
 | Enums | **`text` + `check`** | Enum de Postgres exige migração para cada valor novo. O app evolui rápido demais para isso. |
 | Dinheiro | **centavos inteiros** | Float vira R$ 10,999 no extrato e o rateio nunca fecha. |
@@ -91,6 +92,35 @@ perder o time é catastrófico. Passaram a opcionais.
 **3. Conta sem e-mail.** `normalizeUserDocument` não garante o campo, e o
 mapeador descartava esses usuários — levando junto os times de que são donos.
 A coluna virou anulável.
+
+## O financeiro deixou de ser array
+
+Primeira versão do schema copiava o Firestore: três listas paralelas em
+`expenses` (`participant_player_ids`, `settled_player_ids`,
+`manual_shares_cents`) e um `jsonb` em `matches` com `payerPlayerIds` e
+`exemptPlayerIds` dentro.
+
+Isso não é documento — é **relação com atributo**. E lista paralela não tem como
+o banco garantir coerência. Foi exatamente daí que nasceram os bugs que a gente
+já corrigiu na mão: participante errado no rateio, isento virando devedor.
+
+| Antes | Agora |
+|---|---|
+| `expenses.participant_player_ids` + `settled_player_ids` + `manual_shares_cents` | `expense_shares (expense_id, player_id, amount_cents, settled_at)` |
+| `matches.field_cost` + `field_payment` (jsonb) | `match_field_costs` + `match_field_participants (match_id, player_id, role)` |
+
+O que muda na prática:
+
+- **"quanto o jogador X deve"** vira `sum()` no banco, em vez de carregar todas
+  as despesas e somar na memória do celular;
+- a **chave primária** `(match_id, player_id)` torna "pagante e isento ao mesmo
+  tempo" impossível por construção — antes era uma checagem em código;
+- o custo do campo virou **centavos inteiros**. No Firestore era `float` em
+  reais, e float em dinheiro fecha conta errada.
+
+O valor da cota é **congelado na importação**, não recalculado. O rateio já foi
+combinado e cobrado no mundo real; recalcular depois mudaria quanto alguém deve
+num acerto que já aconteceu.
 
 ## Fases
 

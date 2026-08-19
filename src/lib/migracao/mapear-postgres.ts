@@ -470,8 +470,9 @@ export function mapearPartida(documento: Documento, { referencia }: Contexto): L
     ),
     created_by: criadoPor,
     scoreboard: objetoOuNulo(documento.scoreboard),
-    field_cost: objetoOuNulo(documento.fieldCost),
-    field_payment: objetoOuNulo(documento.fieldPayment),
+    // `field_cost` e `field_payment` saíram desta tabela: viraram
+    // `match_field_costs` e `match_field_participants`, preenchidas por
+    // `derivarCustoDoCampo` e `derivarParticipantesDoCampo`.
     finished_at: instanteOuNulo(documento.finishedAt),
     mvp_winner_player_ids: listaDeIds(documento.mvpWinnerPlayerIds),
     mvp_total_votes: inteiro(documento.mvpTotalVotes),

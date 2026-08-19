@@ -28,6 +28,8 @@ import {
   type NomeDaTabela,
 } from '@/lib/migracao/mapear-postgres';
 
+import { COLUNAS_DO_POSTGRES, DOCUMENTO_COMPLETO } from './schema-postgres';
+
 type TestCase = {
   name: string;
   run: () => void | Promise<void>;
@@ -652,6 +654,86 @@ export const migracaoPostgresTestCases: TestCase[] = [
       );
 
       assert.deepEqual([...declaradas].sort(), [...TABELAS_FILHAS].sort());
+    },
+  },
+  {
+    name: 'nenhum mapeador emite coluna que nao existe no Postgres',
+    run() {
+      // Este e o teste que faltava. O mapeamento continuou mandando
+      // `field_cost` depois que a coluna saiu do schema, e o erro so apareceu
+      // no meio do lote da importacao.
+      for (const definicao of DEFINICOES) {
+        const linha = definicao.mapear(DOCUMENTO_COMPLETO, CONTEXTO);
+        assert.equal(Boolean(linha), true, `${definicao.tabela} nao mapeou o documento`);
+
+        const colunas = COLUNAS_DO_POSTGRES[definicao.tabela];
+        assert.equal(Boolean(colunas), true, `sem schema conhecido para ${definicao.tabela}`);
+
+        const sobrando = Object.keys(linha ?? {}).filter(
+          (coluna) => !colunas.includes(coluna),
+        );
+
+        assert.deepEqual(
+          sobrando,
+          [],
+          `${definicao.tabela} emite coluna inexistente: ${sobrando.join(', ')}`,
+        );
+      }
+    },
+  },
+  {
+    name: 'nenhuma tabela filha emite coluna que nao existe',
+    run() {
+      for (const definicao of DEFINICOES) {
+        for (const filha of definicao.filhas ?? []) {
+          const linhas = filha.derivar(DOCUMENTO_COMPLETO, CONTEXTO);
+
+          assert.equal(
+            linhas.length > 0,
+            true,
+            `${filha.tabela} nao derivou nada do documento completo`,
+          );
+
+          const colunas = COLUNAS_DO_POSTGRES[filha.tabela];
+
+          for (const linha of linhas) {
+            const sobrando = Object.keys(linha).filter((coluna) => !colunas.includes(coluna));
+
+            assert.deepEqual(
+              sobrando,
+              [],
+              `${filha.tabela} emite coluna inexistente: ${sobrando.join(', ')}`,
+            );
+          }
+        }
+      }
+    },
+  },
+  {
+    name: 'coluna obrigatoria sem valor padrao e sempre preenchida',
+    run() {
+      // NOT NULL sem default recusa a linha inteira. Melhor descobrir aqui.
+      const obrigatorias: Record<string, string[]> = {
+        users: ['id'],
+        teams: ['id', 'name', 'slug', 'primary_color', 'secondary_color', 'invite_code'],
+        players: ['id', 'team_id', 'full_name', 'nickname', 'primary_position'],
+        matches: ['id', 'team_id', 'date'],
+        expenses: ['id', 'team_id', 'category_id', 'date', 'total_amount_cents'],
+        mvp_votes: ['id', 'team_id', 'match_id', 'voter_player_id', 'target_player_id'],
+      };
+
+      for (const [tabela, colunas] of Object.entries(obrigatorias)) {
+        const definicao = DEFINICOES.find((item) => item.tabela === tabela);
+        const linha = definicao?.mapear(DOCUMENTO_COMPLETO, CONTEXTO);
+
+        for (const coluna of colunas) {
+          assert.notEqual(
+            linha?.[coluna] ?? null,
+            null,
+            `${tabela}.${coluna} veio nulo`,
+          );
+        }
+      }
     },
   },
   {

@@ -231,7 +231,7 @@ export default function LoginScreen() {
           )}
         />
         <AppButton
-          label="Entrar com e-mail"
+          label="Entrar com Senha"
           onPress={handleSubmit(onSubmit)}
           loading={isSubmitting}
           fullWidth

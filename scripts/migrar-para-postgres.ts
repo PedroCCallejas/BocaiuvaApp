@@ -40,6 +40,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
   DEFINICOES,
   ORDEM_DAS_TABELAS,
+  dependenciasVazias,
   resolverReferencias,
   type Linha,
   type NomeDaTabela,
@@ -345,6 +346,21 @@ async function main() {
 
       resumo.push({ tabela, lidos: 0, gravados: 0, pulada: true });
       continue;
+    }
+
+    // Antes de gastar leitura do Firestore: os pais desta tabela existem?
+    const pendentes = dependenciasVazias(tabela, idsConhecidos);
+
+    if (pendentes.length > 0) {
+      throw new Error(
+        [
+          `${tabela} depende de ${pendentes.join(', ')}, que esta(o) vazia(s) no Postgres.`,
+          '',
+          'Importar assim descartaria todas as linhas por referencia pendurada,',
+          'sem erro nenhum. Importe primeiro:',
+          `  npm run migrar:postgres -- --only=${pendentes.join(',')}`,
+        ].join('\n'),
+      );
     }
 
     const documentos = await lerColecao(firestore, definicao.colecao);

@@ -773,6 +773,41 @@ export interface ResultadoDeReferencias {
   ajustadas: { id: string; campo: string; valor: string }[];
 }
 
+/**
+ * Tabelas de que esta depende e que estão vazias — ou seja, ainda não
+ * importadas.
+ *
+ * `resolverReferencias` trata conjunto vazio como "esse alvo não existe" e
+ * descarta a linha. Se `players` ainda não foi importado, pedir
+ * `--only=player_ratings` descartaria as milhares de notas em silêncio, e a
+ * importação terminaria dizendo que deu certo com o banco vazio.
+ *
+ * Conjunto **ausente** é diferente de vazio: ausente significa "não sei quais
+ * existem", e aí não dá para verificar nada. Só o vazio acusa.
+ */
+export function dependenciasVazias(
+  tabela: NomeDaTabela,
+  idsConhecidos: Partial<Record<NomeDaTabela, Set<string>>>,
+): NomeDaTabela[] {
+  const obrigatorias = REGRAS_DE_REFERENCIA[tabela]?.obrigatorias ?? {};
+  const faltando = new Set<NomeDaTabela>();
+
+  for (const alvo of Object.values(obrigatorias)) {
+    // Auto-referência não conta: a própria tabela está sendo preenchida agora.
+    if (alvo === tabela) {
+      continue;
+    }
+
+    const conhecidos = idsConhecidos[alvo];
+
+    if (conhecidos && conhecidos.size === 0) {
+      faltando.add(alvo);
+    }
+  }
+
+  return [...faltando];
+}
+
 export function resolverReferencias(
   tabela: NomeDaTabela,
   linhas: Linha[],

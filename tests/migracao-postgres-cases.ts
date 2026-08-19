@@ -5,6 +5,7 @@ import {
   DEFINICOES,
   ORDEM_DAS_TABELAS,
   dataOuNulo,
+  dependenciasVazias,
   instante,
   instanteOuNulo,
   inteiro,
@@ -326,6 +327,48 @@ export const migracaoPostgresTestCases: TestCase[] = [
           `${alvo} precisa vir antes de ${quemAponta}`,
         );
       }
+    },
+  },
+  {
+    name: 'pedaco fora de ordem e acusado antes de descartar tudo em silencio',
+    run() {
+      // Pedir player_ratings antes de players descartaria as milhares de notas
+      // por referencia pendurada — e o script diria que deu certo.
+      assert.deepEqual(
+        dependenciasVazias(
+          'player_ratings',
+          conhecidos({ teams: ['t1'], matches: ['m1'], players: [] }),
+        ),
+        ['players'],
+      );
+
+      assert.deepEqual(
+        dependenciasVazias('teams', conhecidos({ users: [] })),
+        ['users'],
+      );
+    },
+  },
+  {
+    name: 'conjunto ausente nao e o mesmo que vazio',
+    run() {
+      // Ausente = "nao sei quais existem", entao nao da para acusar nada.
+      // So o conjunto vazio significa "conferi e nao tem nenhum".
+      assert.deepEqual(dependenciasVazias('player_ratings', conhecidos({})), []);
+
+      assert.deepEqual(
+        dependenciasVazias(
+          'player_ratings',
+          conhecidos({ teams: ['t1'], matches: ['m1'], players: ['p1'] }),
+        ),
+        [],
+      );
+    },
+  },
+  {
+    name: 'tabela sem dependencia obrigatoria nunca e barrada',
+    run() {
+      assert.deepEqual(dependenciasVazias('users', conhecidos({})), []);
+      assert.deepEqual(dependenciasVazias('users', conhecidos({ teams: [] })), []);
     },
   },
   {

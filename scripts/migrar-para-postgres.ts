@@ -24,7 +24,7 @@
  * A service key NUNCA entra no repositório nem em arquivo versionado.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -64,6 +64,10 @@ interface Opcoes {
   projectId: string | null;
   dryRun: boolean;
   somente: NomeDaTabela[] | null;
+  /** Grava o Firestore cru em JSON, além de seguir o fluxo normal. */
+  salvarEm: string | null;
+  /** Lê do JSON em vez do Firestore. Não gasta cota nenhuma. */
+  lerDe: string | null;
 }
 
 function log(mensagem: string, dados?: unknown) {
@@ -92,6 +96,8 @@ function lerOpcoes(argv: string[]): Opcoes {
   let projectId: string | null = null;
   let dryRun = false;
   let somente: NomeDaTabela[] | null = null;
+  let salvarEm: string | null = null;
+  let lerDe: string | null = null;
 
   for (let indice = 0; indice < argv.length; indice += 1) {
     const argumento = argv[indice];
@@ -102,6 +108,8 @@ function lerOpcoes(argv: string[]): Opcoes {
           'Uso: node --experimental-strip-types ./scripts/migrar-para-postgres.ts [opcoes]',
           '',
           '  --dry-run              le e mapeia, mas nao grava nada',
+          '  --salvar-em=pasta      grava o Firestore cru em JSON',
+          '  --ler-de=pasta         le do JSON em vez do Firestore (sem cota)',
           '  --only=a,b             importa apenas estas tabelas',
           '  --credentials <path>   service account do Firebase',
           '  --project-id <id>      projeto do Firebase',
@@ -116,6 +124,16 @@ function lerOpcoes(argv: string[]): Opcoes {
 
     if (argumento === '--dry-run') {
       dryRun = true;
+      continue;
+    }
+
+    if (argumento.startsWith('--salvar-em=')) {
+      salvarEm = path.resolve(argumento.slice('--salvar-em='.length));
+      continue;
+    }
+
+    if (argumento.startsWith('--ler-de=')) {
+      lerDe = path.resolve(argumento.slice('--ler-de='.length));
       continue;
     }
 
@@ -177,6 +195,8 @@ function lerOpcoes(argv: string[]): Opcoes {
       textoOuNulo(process.env.GCLOUD_PROJECT),
     dryRun,
     somente,
+    salvarEm,
+    lerDe,
   };
 }
 
@@ -223,6 +243,44 @@ function abrirSupabase(): SupabaseClient {
   return createClient(url, chave, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+type Documento = Record<string, unknown> & { id: string };
+
+/**
+ * Firestore serializa `Timestamp` como classe. Em JSON ele vira
+ * `{ _seconds, _nanoseconds }` — que o mapeador já sabe ler. Nada a converter
+ * aqui: guardar cru é o ponto, para o arquivo ser fiel ao que estava no banco.
+ */
+function caminhoDaColecao(pasta: string, colecao: string) {
+  return path.join(pasta, `${colecao}.json`);
+}
+
+function salvarColecao(pasta: string, colecao: string, documentos: Documento[]) {
+  mkdirSync(pasta, { recursive: true });
+  writeFileSync(
+    caminhoDaColecao(pasta, colecao),
+    JSON.stringify(documentos, null, 2),
+    'utf8',
+  );
+}
+
+function carregarColecao(pasta: string, colecao: string): Documento[] {
+  const caminho = caminhoDaColecao(pasta, colecao);
+
+  // Coleção ausente no dump é coleção vazia, não erro: nem todo time tem
+  // temporada, resenha ou despesa.
+  if (!existsSync(caminho)) {
+    return [];
+  }
+
+  const conteudo = JSON.parse(readFileSync(caminho, 'utf8')) as unknown;
+
+  if (!Array.isArray(conteudo)) {
+    throw new Error(`${caminho} nao contem uma lista de documentos.`);
+  }
+
+  return conteudo as Documento[];
 }
 
 /** Lê a coleção em páginas para não carregar o histórico inteiro na memória. */
@@ -321,10 +379,20 @@ async function gravar(
 async function main() {
   const opcoes = lerOpcoes(process.argv.slice(2));
   const referencia = new Date().toISOString();
-  const firestore = abrirFirestore(opcoes);
+
+  // Lendo do disco não há Firestore para abrir — e nem credencial a exigir.
+  const firestore = opcoes.lerDe ? null : abrirFirestore(opcoes);
   const supabase = opcoes.dryRun ? null : abrirSupabase();
 
   log(opcoes.dryRun ? 'modo simulacao: nada sera gravado' : 'importando de verdade');
+
+  if (opcoes.lerDe) {
+    log(`lendo do dump em ${opcoes.lerDe} (nao gasta cota)`);
+  }
+
+  if (opcoes.salvarEm) {
+    log(`salvando o Firestore cru em ${opcoes.salvarEm}`);
+  }
 
   const idsConhecidos: Partial<Record<NomeDaTabela, Set<string>>> = {};
   const resumo: Record<string, unknown>[] = [];
@@ -371,7 +439,17 @@ async function main() {
       );
     }
 
-    const documentos = await lerColecao(firestore, definicao.colecao);
+    const documentos = opcoes.lerDe
+      ? carregarColecao(opcoes.lerDe, definicao.colecao)
+      : await lerColecao(firestore!, definicao.colecao);
+
+    // Salvar antes de mapear: o arquivo tem de ser fiel ao Firestore, não ao
+    // que o mapeamento entendeu dele. Assim dá para reprocessar quando o
+    // mapeamento mudar, sem voltar a gastar leitura.
+    if (opcoes.salvarEm && !opcoes.lerDe) {
+      salvarColecao(opcoes.salvarEm, definicao.colecao, documentos);
+    }
+
     const mapeadas: Linha[] = [];
     const filhasPorTabela = new Map<NomeDaTabelaFilha, LinhaFilha[]>();
     let semMapeamento = 0;
@@ -476,7 +554,17 @@ async function main() {
   }
 
   log('resumo', resumo);
-  log(`documentos lidos do Firestore nesta rodada: ${lidosDoFirestore}`);
+  log(
+    opcoes.lerDe
+      ? `documentos lidos do dump: ${lidosDoFirestore} (nenhuma leitura do Firestore)`
+      : `documentos lidos do Firestore nesta rodada: ${lidosDoFirestore}`,
+  );
+
+  if (opcoes.salvarEm && !opcoes.lerDe) {
+    log(`dump salvo em ${opcoes.salvarEm}`);
+    log('daqui para frente use --ler-de para nao gastar cota de novo');
+  }
+
   log(opcoes.dryRun ? 'simulacao concluida' : 'importacao concluida');
 }
 
@@ -492,10 +580,13 @@ main().catch((erro) => {
         'O que fazer:',
         '  1. A cota reseta a meia-noite do Pacifico (~4h da manha no Brasil).',
         '     Rodar nessa janela nao tira leitura de quem vai usar o app no dia.',
-        '  2. Importar em pedacos, um dia de cada vez:',
+        '  2. Nessa janela, baixe o Firestore UMA vez:',
+        '       npm run migrar:baixar',
+        '     Depois disso, mapear e importar saem do arquivo e nao custam nada:',
+        '       npm run migrar:postgres:dry -- --ler-de=dados-firestore',
+        '       npm run migrar:postgres -- --ler-de=dados-firestore',
+        '  3. Se ainda assim faltar cota, importe em pedacos:',
         '       npm run migrar:postgres -- --only=users,teams,players,team_members',
-        '       npm run migrar:postgres -- --only=matches,attendance',
-        '       npm run migrar:postgres -- --only=player_ratings,mvp_votes,match_stats',
         '     Tabela fora do --only nao e lida do Firestore: os ids ja importados',
         '     sao consultados no Postgres, que nao tem cota.',
       ].join('\n'),

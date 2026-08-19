@@ -431,6 +431,43 @@ export const migracaoPostgresTestCases: TestCase[] = [
     },
   },
   {
+    name: 'baixar e importar sao etapas separadas',
+    run() {
+      const script = fs.readFileSync('scripts/migrar-para-postgres.ts', 'utf8');
+
+      // Ler e importar na mesma passada fazia cada tentativa custar uma leitura
+      // completa do banco. Erro no mapeamento = esperar o dia seguinte.
+      assert.match(script, /--salvar-em=/);
+      assert.match(script, /--ler-de=/);
+
+      // Sem Firestore aberto quando le do disco: nem credencial e exigida.
+      assert.match(script, /opcoes\.lerDe \? null : abrirFirestore\(opcoes\)/);
+    },
+  },
+  {
+    name: 'o dump guarda o documento cru, nao o resultado do mapeamento',
+    run() {
+      const script = fs.readFileSync('scripts/migrar-para-postgres.ts', 'utf8');
+      const inicio = script.indexOf('if (opcoes.salvarEm && !opcoes.lerDe)');
+      assert.equal(inicio > 0, true, 'gravacao do dump nao encontrada');
+
+      // Salvar o cru e o que permite reprocessar quando o mapeamento mudar.
+      // Se guardasse o mapeado, corrigir um erro exigiria reler o Firestore.
+      const mapeamento = script.indexOf('const mapeadas: Linha[] = []');
+      assert.equal(inicio < mapeamento, true, 'dump precisa vir antes do mapeamento');
+    },
+  },
+  {
+    name: 'colecao ausente no dump e vazia, nao erro',
+    run() {
+      const script = fs.readFileSync('scripts/migrar-para-postgres.ts', 'utf8');
+      const bloco = script.slice(script.indexOf('function carregarColecao'));
+
+      // Nem todo time tem temporada, resenha ou despesa.
+      assert.match(bloco.slice(0, 500), /if \(!existsSync\(caminho\)\) \{\s*return \[\];/);
+    },
+  },
+  {
     name: 'erro de cota explica a janela em vez de so repetir a mensagem',
     run() {
       const script = fs.readFileSync('scripts/migrar-para-postgres.ts', 'utf8');

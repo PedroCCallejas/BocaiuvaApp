@@ -73,3 +73,5 @@ dist/
 AGENTS.md
 .agents
 .codex
+# Dump cru do Firestore: dado pessoal do time, nao versionar
+dados-firestore/

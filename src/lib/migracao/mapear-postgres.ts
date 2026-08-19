@@ -216,16 +216,19 @@ const POSICOES_VALIDAS = [
 
 export function mapearUsuario(documento: Documento, { referencia }: Contexto): Linha | null {
   const id = idOuNulo(documento);
-  const email = textoOuNulo(documento.email);
 
-  // Sem id ou sem e-mail não há conta: `email` é NOT NULL.
-  if (!id || !email) {
+  if (!id) {
     return null;
   }
 
+  // Conta sem e-mail existe no banco atual (`normalizeUserDocument` não
+  // garante o campo). Descartar levaria junto os times onde a pessoa é dona e
+  // as partidas que ela criou.
+  const email = textoOuNulo(documento.email);
+
   return {
     id,
-    email: email.toLowerCase(),
+    email: email ? email.toLowerCase() : null,
     display_name: texto(documento.displayName),
     app_role: opcao(documento.appRole, ['owner', 'team_admin', 'player'], 'player'),
     active_team_id: textoOuNulo(documento.activeTeamId),
@@ -238,11 +241,14 @@ export function mapearUsuario(documento: Documento, { referencia }: Contexto): L
 
 export function mapearTime(documento: Documento, { referencia }: Contexto): Linha | null {
   const id = idOuNulo(documento);
-  const adminUserId = textoOuNulo(documento.adminUserId);
 
-  if (!id || !adminUserId) {
+  if (!id) {
     return null;
   }
+
+  // Dono ausente não descarta o time: um time sem dono se conserta depois, um
+  // time que sumiu leva junto elenco, partidas e histórico.
+  const adminUserId = textoOuNulo(documento.adminUserId);
 
   return {
     id,
@@ -401,11 +407,13 @@ export function mapearPartida(documento: Documento, { referencia }: Contexto): L
   const id = idOuNulo(documento);
   const teamId = textoOuNulo(documento.teamId);
   const data = dataOuNulo(documento.date);
-  const criadoPor = textoOuNulo(documento.createdBy);
 
-  if (!id || !teamId || !data || !criadoPor) {
+  // Sem data a partida não significa nada; sem autor ela ainda vale.
+  if (!id || !teamId || !data) {
     return null;
   }
+
+  const criadoPor = textoOuNulo(documento.createdBy);
 
   return {
     id,
@@ -584,12 +592,14 @@ export function mapearResenha(documento: Documento, { referencia }: Contexto): L
   const id = idOuNulo(documento);
   const teamId = textoOuNulo(documento.teamId);
   const matchId = textoOuNulo(documento.matchId);
-  const authorUserId = textoOuNulo(documento.authorUserId);
   const conteudo = textoOuNulo(documento.content);
 
-  if (!id || !teamId || !matchId || !authorUserId || !conteudo) {
+  if (!id || !teamId || !matchId || !conteudo) {
     return null;
   }
+
+  // O texto é a resenha. Autor desconhecido não apaga o que foi escrito.
+  const authorUserId = textoOuNulo(documento.authorUserId);
 
   return {
     id,
@@ -703,7 +713,9 @@ export interface RegraDeReferencia {
 }
 
 export const REGRAS_DE_REFERENCIA: Partial<Record<NomeDaTabela, RegraDeReferencia>> = {
-  teams: { obrigatorias: { admin_user_id: 'users' } },
+  // `admin_user_id` é opcional de propósito: time sem dono se conserta, time
+  // descartado leva junto elenco, partidas e histórico.
+  teams: { opcionais: { admin_user_id: 'users' } },
   seasons: { obrigatorias: { team_id: 'teams' } },
   players: {
     obrigatorias: { team_id: 'teams' },
@@ -715,8 +727,9 @@ export const REGRAS_DE_REFERENCIA: Partial<Record<NomeDaTabela, RegraDeReferenci
   },
   rating_criteria: { obrigatorias: { team_id: 'teams' } },
   matches: {
-    obrigatorias: { team_id: 'teams', created_by: 'users' },
+    obrigatorias: { team_id: 'teams' },
     opcionais: {
+      created_by: 'users',
       season_id: 'seasons',
       opponent_team_id: 'teams',
       manual_mvp_player_id: 'players',
@@ -749,7 +762,8 @@ export const REGRAS_DE_REFERENCIA: Partial<Record<NomeDaTabela, RegraDeReferenci
     },
   },
   match_diary_entries: {
-    obrigatorias: { team_id: 'teams', match_id: 'matches', author_user_id: 'users' },
+    obrigatorias: { team_id: 'teams', match_id: 'matches' },
+    opcionais: { author_user_id: 'users' },
   },
   notifications: {
     obrigatorias: { team_id: 'teams' },

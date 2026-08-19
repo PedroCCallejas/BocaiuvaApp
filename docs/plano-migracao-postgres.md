@@ -59,6 +59,39 @@ Migrações versionadas em `supabase/migrations/`:
 próprio vínculo, status e estatísticas — escalada de privilégio disfarçada de
 edição de perfil.
 
+## Auditoria do Firestore atual
+
+Feita lendo o código que **escreve** no Firestore (`FIRESTORE_COLLECTIONS` e os
+normalizadores), sem gastar cota.
+
+### Coleções que existem e não vão para o Postgres
+
+| Coleção | Por quê |
+|---|---|
+| `publicTeams` | Projeção denormalizada do time público, gerada por `syncPublicTeamProjection`. No Postgres é uma consulta com `where is_public`. |
+| `teamInvites` | Documento cujo id **é** o código de convite; todos os campos são cópia do time. Vira `select * from teams where invite_code = ?`. |
+| `teamMembershipIndex` | O índice espelhado que existia só porque regra do Firestore não consulta coleção. É justamente o que a migração elimina. |
+
+### O que a auditoria corrigiu antes de importar
+
+**1. Código de convite sem unicidade.** No Firestore o código era o id do
+documento, então era único de graça. Como coluna em `teams`, dois times podiam
+ficar com o mesmo código e "entrar com o código" levaria ao time errado. Virou
+índice único.
+
+> Se a importação falhar aí, o dado já está divergente hoje — e é melhor
+> descobrir agora do que depois que o app depender disso.
+
+**2. Três chaves estrangeiras que não valiam perder a linha.** `admin_user_id`
+do time, `created_by` da partida e `author_user_id` da resenha eram
+obrigatórias. Um documento de usuário apagado descartaria o **time inteiro** e,
+em cascata, elenco, partidas e histórico. Perder de quem foi a autoria é ruim;
+perder o time é catastrófico. Passaram a opcionais.
+
+**3. Conta sem e-mail.** `normalizeUserDocument` não garante o campo, e o
+mapeador descartava esses usuários — levando junto os times de que são donos.
+A coluna virou anulável.
+
 ## Fases
 
 ### Fase 0 — Schema ✅ concluída

@@ -127,11 +127,50 @@ export const migracaoPostgresTestCases: TestCase[] = [
     run() {
       // Melhor perder a linha e ver no relatorio do que derrubar a importacao
       // inteira num erro de constraint no meio do lote.
-      assert.equal(mapearUsuario({ id: 'u1' }, CONTEXTO), null);
       assert.equal(mapearUsuario({ email: 'a@b.com' }, CONTEXTO), null);
-      assert.equal(mapearTime({ id: 't1' }, CONTEXTO), null);
-      assert.equal(mapearPartida({ id: 'm1', teamId: 't1', date: '2026-08-18' }, CONTEXTO), null);
+      assert.equal(mapearTime({ name: 'Sem id' }, CONTEXTO), null);
+      assert.equal(mapearPartida({ id: 'm1', teamId: 't1' }, CONTEXTO), null);
       assert.equal(mapearDespesa({ id: 'e1', teamId: 't1', categoryId: 'c1' }, CONTEXTO), null);
+    },
+  },
+  {
+    name: 'campo que so identifica autoria nao descarta a linha',
+    run() {
+      // Descartar por autoria seria desproporcional: sem o usuario, o time
+      // inteiro sumiria e levaria elenco, partidas e historico junto.
+      const usuario = mapearUsuario({ id: 'u1' }, CONTEXTO);
+      assert.equal(usuario?.id, 'u1');
+      assert.equal(usuario?.email, null);
+
+      const time = mapearTime({ id: 't1', name: 'Bocaiuva' }, CONTEXTO);
+      assert.equal(time?.id, 't1');
+      assert.equal(time?.admin_user_id, null);
+
+      const partida = mapearPartida({ id: 'm1', teamId: 't1', date: '2026-08-18' }, CONTEXTO);
+      assert.equal(partida?.id, 'm1');
+      assert.equal(partida?.created_by, null);
+    },
+  },
+  {
+    name: 'dono e autor pendurados zeram o campo em vez de apagar a linha',
+    run() {
+      const times = resolverReferencias(
+        'teams',
+        [{ id: 't1', admin_user_id: 'usuario-apagado' }],
+        conhecidos({ users: ['u1'] }),
+      );
+
+      assert.equal(times.aceitas.length, 1);
+      assert.equal(times.aceitas[0].admin_user_id, null);
+
+      const partidas = resolverReferencias(
+        'matches',
+        [{ id: 'm1', team_id: 't1', created_by: 'usuario-apagado' }],
+        conhecidos({ teams: ['t1'], users: ['u1'] }),
+      );
+
+      assert.equal(partidas.aceitas.length, 1);
+      assert.equal(partidas.aceitas[0].created_by, null);
     },
   },
   {
@@ -342,10 +381,11 @@ export const migracaoPostgresTestCases: TestCase[] = [
         ['players'],
       );
 
-      assert.deepEqual(
-        dependenciasVazias('teams', conhecidos({ users: [] })),
-        ['users'],
-      );
+      assert.deepEqual(dependenciasVazias('players', conhecidos({ teams: [] })), ['teams']);
+
+      // `teams` nao depende mais de `users`: dono ausente vira campo nulo, nao
+      // motivo para barrar a importacao.
+      assert.deepEqual(dependenciasVazias('teams', conhecidos({ users: [] })), []);
     },
   },
   {

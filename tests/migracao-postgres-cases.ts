@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 import {
   DEFINICOES,
@@ -325,6 +326,34 @@ export const migracaoPostgresTestCases: TestCase[] = [
           `${alvo} precisa vir antes de ${quemAponta}`,
         );
       }
+    },
+  },
+  {
+    name: 'tabela pulada nao gasta leitura do Firestore',
+    run() {
+      const script = fs.readFileSync('scripts/migrar-para-postgres.ts', 'utf8');
+      const laco = script.slice(script.indexOf('for (const tabela of ORDEM_DAS_TABELAS)'));
+      const trecho = laco.slice(0, laco.indexOf('const documentos = await lerColecao'));
+
+      // Importar em pedacos so ajuda se o pedaco pulado nao for lido: a leitura
+      // do Firestore e justamente o recurso racionado.
+      assert.match(trecho, /if \(pular\) \{/);
+      assert.match(trecho, /lerIdsExistentes\(supabase, tabela\)/);
+      assert.match(trecho, /continue;/);
+    },
+  },
+  {
+    name: 'erro de cota explica a janela em vez de so repetir a mensagem',
+    run() {
+      const script = fs.readFileSync('scripts/migrar-para-postgres.ts', 'utf8');
+
+      assert.match(script, /RESOURCE_EXHAUSTED\|Quota exceeded/);
+
+      const bloco = script.slice(script.indexOf('if (ehCotaEstourada(erro))'));
+
+      // "Quota exceeded" sozinho parece bug do script. Nao e.
+      assert.match(bloco.slice(0, 1200), /meia-noite do Pacifico/);
+      assert.match(bloco.slice(0, 1200), /--only=/);
     },
   },
   {

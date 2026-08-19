@@ -97,6 +97,28 @@ variável de ambiente e **nunca** entra em arquivo versionado.
 **Idempotente.** `upsert` por id, e os ids são os mesmos do Firestore — rodar
 duas vezes não duplica nada.
 
+**A importação disputa a mesma cota do app.** Ler o Firestore inteiro custa
+aproximadamente uma leitura completa do banco, na mesma cota de 50 mil/dia. Duas
+saídas, que se combinam:
+
+1. **Rodar na virada.** A cota reseta à meia-noite do Pacífico, ~4h da manhã no
+   Brasil. Nessa janela a importação não tira leitura de quem vai usar o app.
+2. **Importar em pedaços**, um dia de cada vez:
+
+   ```bash
+   npm run migrar:postgres -- --only=users,teams,players,team_members
+   npm run migrar:postgres -- --only=matches,attendance
+   npm run migrar:postgres -- --only=player_ratings,mvp_votes,match_stats
+   ```
+
+   Tabela fora do `--only` **não é lida do Firestore**: os ids já importados são
+   consultados no Postgres, que não tem cota. Sem isso, cada pedaço releria o
+   banco inteiro só para validar chave estrangeira — e a leitura do Firestore é
+   justamente o recurso racionado.
+
+   Ressalva: em `--dry-run` não há Postgres para consultar, então as tabelas
+   puladas ficam sem verificação de referência.
+
 **Ordem obrigatória** por causa das FKs: `users` → `teams` → `players` →
 `team_members` → `seasons` → `matches` → resto. Coberta por teste.
 

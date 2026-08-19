@@ -253,6 +253,49 @@ async function lerColecao(firestore: Firestore, colecao: string) {
   return documentos;
 }
 
+/**
+ * Ids que já estão no Postgres.
+ *
+ * Usado para as tabelas puladas por `--only`. Sem isto, uma importação em
+ * pedaços releria o Firestore inteiro em cada pedaço só para validar chave
+ * estrangeira — e é exatamente a leitura do Firestore que está racionada.
+ * Aqui a consulta é no Postgres, que não tem cota de leitura.
+ */
+async function lerIdsExistentes(supabase: SupabaseClient, tabela: NomeDaTabela) {
+  const ids = new Set<string>();
+  const passo = 1000;
+
+  for (let inicio = 0; ; inicio += passo) {
+    const { data, error } = await supabase
+      .from(tabela)
+      .select('id')
+      .range(inicio, inicio + passo - 1);
+
+    if (error) {
+      throw new Error(`Falha ao ler ids de ${tabela} no Postgres: ${error.message}`);
+    }
+
+    for (const linha of data ?? []) {
+      const id = textoOuNulo((linha as { id?: unknown }).id);
+
+      if (id) {
+        ids.add(id);
+      }
+    }
+
+    if (!data || data.length < passo) {
+      break;
+    }
+  }
+
+  return ids;
+}
+
+function ehCotaEstourada(erro: unknown) {
+  const mensagem = erro instanceof Error ? erro.message : String(erro);
+  return /RESOURCE_EXHAUSTED|Quota exceeded/i.test(mensagem);
+}
+
 async function gravar(supabase: SupabaseClient, tabela: NomeDaTabela, linhas: Linha[]) {
   for (let inicio = 0; inicio < linhas.length; inicio += TAMANHO_DO_LOTE) {
     const lote = linhas.slice(inicio, inicio + TAMANHO_DO_LOTE);
@@ -276,12 +319,31 @@ async function main() {
 
   const idsConhecidos: Partial<Record<NomeDaTabela, Set<string>>> = {};
   const resumo: Record<string, unknown>[] = [];
+  // Cada documento lido aqui sai da mesma cota diária de 50 mil que o app usa.
+  let lidosDoFirestore = 0;
 
   // A ordem importa: chave estrangeira exige que o alvo já exista.
   for (const tabela of ORDEM_DAS_TABELAS) {
     const definicao = DEFINICOES.find((item) => item.tabela === tabela);
 
     if (!definicao) {
+      continue;
+    }
+
+    const pular = Boolean(opcoes.somente && !opcoes.somente.includes(tabela));
+
+    // Tabela fora do `--only` não é lida do Firestore: os ids vêm do Postgres,
+    // que é onde eles já estão depois do primeiro pedaço da importação.
+    if (pular) {
+      if (supabase) {
+        idsConhecidos[tabela] = await lerIdsExistentes(supabase, tabela);
+        log(`${tabela}: pulada, ${idsConhecidos[tabela]?.size ?? 0} ids vindos do Postgres`);
+      } else {
+        // Sem conjunto de ids, `resolverReferencias` não valida esta origem.
+        log(`${tabela}: pulada, sem verificacao de referencia (simulacao)`);
+      }
+
+      resumo.push({ tabela, lidos: 0, gravados: 0, pulada: true });
       continue;
     }
 
@@ -310,26 +372,23 @@ async function main() {
     // seguintes precisam dele para validar as próprias referências.
     idsConhecidos[tabela] = new Set(aceitas.map((linha) => linha.id));
 
-    const pular = opcoes.somente && !opcoes.somente.includes(tabela);
-
-    if (!pular && supabase && aceitas.length > 0) {
+    if (supabase && aceitas.length > 0) {
       await gravar(supabase, tabela, aceitas);
     }
+
+    lidosDoFirestore += documentos.length;
 
     resumo.push({
       tabela,
       lidos: documentos.length,
-      gravados: pular ? 0 : aceitas.length,
-      pulada: Boolean(pular),
+      gravados: aceitas.length,
+      pulada: false,
       semMapeamento,
       descartadasPorReferencia: descartadas.length,
       camposZeradosPorReferencia: ajustadas.length,
     });
 
-    log(
-      `${tabela}: ${documentos.length} lidos, ${aceitas.length} prontos` +
-        (pular ? ' (pulada por --only)' : ''),
-    );
+    log(`${tabela}: ${documentos.length} lidos, ${aceitas.length} prontos`);
 
     if (semMapeamento > 0) {
       log(`  ${semMapeamento} documento(s) sem campo obrigatorio, fora da importacao`);
@@ -345,10 +404,33 @@ async function main() {
   }
 
   log('resumo', resumo);
+  log(`documentos lidos do Firestore nesta rodada: ${lidosDoFirestore}`);
   log(opcoes.dryRun ? 'simulacao concluida' : 'importacao concluida');
 }
 
 main().catch((erro) => {
+  if (ehCotaEstourada(erro)) {
+    console.error(
+      [
+        '[migracao] a cota diaria de leitura do Firestore acabou.',
+        '',
+        'Nao e erro do script: importar exige ler o banco inteiro, e essa',
+        'leitura sai da mesma cota de 50 mil/dia que o app usa.',
+        '',
+        'O que fazer:',
+        '  1. A cota reseta a meia-noite do Pacifico (~4h da manha no Brasil).',
+        '     Rodar nessa janela nao tira leitura de quem vai usar o app no dia.',
+        '  2. Importar em pedacos, um dia de cada vez:',
+        '       npm run migrar:postgres -- --only=users,teams,players,team_members',
+        '       npm run migrar:postgres -- --only=matches,attendance',
+        '       npm run migrar:postgres -- --only=player_ratings,mvp_votes,match_stats',
+        '     Tabela fora do --only nao e lida do Firestore: os ids ja importados',
+        '     sao consultados no Postgres, que nao tem cota.',
+      ].join('\n'),
+    );
+    process.exit(2);
+  }
+
   console.error('[migracao] falhou', erro instanceof Error ? erro.message : erro);
   process.exit(1);
 });

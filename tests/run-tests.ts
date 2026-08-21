@@ -126,6 +126,7 @@ import { joinTeamTestCases } from './join-team-cases';
 import { matchHighlightsTestCases } from './match-highlights-cases';
 import { mobileLayoutTestCases } from './mobile-layout-cases';
 import { mvpVotePermissionTestCases } from './mvp-vote-permission-cases';
+import { lineupShareTestCases } from './lineup-share-cases';
 import { migracaoPostgresTestCases } from './migracao-postgres-cases';
 import { realtimeBootstrapTestCases } from './realtime-bootstrap-cases';
 import { ratingAverageTestCases } from './rating-average-cases';
@@ -156,6 +157,7 @@ const testCases: TestCase[] = [
   ...mvpVotePermissionTestCases,
   ...realtimeBootstrapTestCases,
   ...migracaoPostgresTestCases,
+  ...lineupShareTestCases,
   {
     name: 'sitemap oficial contem somente as dez URLs publicas canonicas',
     run() {

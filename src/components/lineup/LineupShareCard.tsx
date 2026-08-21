@@ -22,7 +22,33 @@ interface LineupShareCardProps {
 
 const TOKEN_SIZE = 64;
 const BENCH_PHOTO_SIZE = 28;
-const MAX_BENCH_DISPLAY = 6;
+
+/**
+ * O banco encolhe conforme cresce, em vez de cortar.
+ *
+ * Antes o card mostrava no máximo 6 reservas e descartava o resto em silêncio —
+ * quem estava no banco simplesmente não aparecia na imagem que o time
+ * compartilha. Ficar de fora da escalação sem motivo é pior do que uma foto
+ * menor.
+ *
+ * A partir de 17, a foto sai e sobra número e apelido: com esse tamanho a foto
+ * já não identificava ninguém mesmo.
+ */
+function resolverDensidadeDoBanco(total: number) {
+  if (total <= 6) {
+    return { foto: BENCH_PHOTO_SIZE, nome: 10, numero: 9, larguraDoNome: 72, espaco: 5 };
+  }
+
+  if (total <= 10) {
+    return { foto: 22, nome: 9, numero: 8, larguraDoNome: 60, espaco: 4 };
+  }
+
+  if (total <= 16) {
+    return { foto: 18, nome: 8, numero: 7, larguraDoNome: 52, espaco: 3 };
+  }
+
+  return { foto: 0, nome: 8, numero: 7, larguraDoNome: 48, espaco: 3 };
+}
 
 // Estimated field pixel dimensions at export (1080×1350 card, padding 18, compact header/bench)
 const FIELD_W_EST = 1044;
@@ -81,10 +107,12 @@ export function LineupShareCard({
 
   const shouldRenderLogo = Boolean(teamLogoUrl);
 
+  // Todo mundo que está no banco entra no card. O tamanho é que se ajusta.
   const benchPlayers = benchPlayerIds
-    .slice(0, MAX_BENCH_DISPLAY)
     .map((playerId) => playerById.get(playerId))
     .filter((player): player is Player => Boolean(player));
+
+  const densidade = resolverDensidadeDoBanco(benchPlayers.length);
 
   const visibleStarters = starters
     .map((node) => ({ node, player: playerById.get(node.playerId) }))
@@ -234,36 +262,69 @@ export function LineupShareCard({
       {benchPlayers.length > 0 ? (
         <View style={styles.benchSection}>
           <Text style={styles.sectionLabel}>Banco</Text>
-          <View style={styles.benchWrap}>
+          <View style={[styles.benchWrap, { gap: densidade.espaco }]}>
             {benchPlayers.map((player) => {
               const hasPhoto = Boolean(player.photoUrl);
+              const mostrarFoto = densidade.foto > 0;
+
               return (
-                <View key={player.id} style={styles.benchChip}>
-                  <View style={styles.benchPhotoWrap}>
-                    {hasPhoto ? (
-                      <Image
-                        source={{ uri: player.photoUrl ?? undefined }}
-                        style={styles.benchPhoto}
-                      />
-                    ) : (
-                      <LinearGradient
-                        colors={[colors.primary, mixColor(colors.primary, colors.secondary, 0.5)]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={StyleSheet.absoluteFillObject}
-                      />
-                    )}
-                    {!hasPhoto ? (
-                      <Text style={styles.benchInitialsText}>
-                        {buildInitials(player.nickname)}
-                      </Text>
-                    ) : null}
-                  </View>
+                <View
+                  key={player.id}
+                  style={[
+                    styles.benchChip,
+                    { gap: densidade.espaco, paddingLeft: mostrarFoto ? 0 : 8 },
+                  ]}>
+                  {mostrarFoto ? (
+                    <View
+                      style={[
+                        styles.benchPhotoWrap,
+                        {
+                          width: densidade.foto,
+                          height: densidade.foto,
+                          borderRadius: densidade.foto / 2,
+                        },
+                      ]}>
+                      {hasPhoto ? (
+                        <Image
+                          source={{ uri: player.photoUrl ?? undefined }}
+                          style={{
+                            width: densidade.foto,
+                            height: densidade.foto,
+                            borderRadius: densidade.foto / 2,
+                          }}
+                        />
+                      ) : (
+                        <LinearGradient
+                          colors={[
+                            colors.primary,
+                            mixColor(colors.primary, colors.secondary, 0.5),
+                          ]}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={StyleSheet.absoluteFillObject}
+                        />
+                      )}
+                      {!hasPhoto ? (
+                        <Text style={styles.benchInitialsText}>
+                          {buildInitials(player.nickname)}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ) : null}
                   <View style={styles.benchChipText}>
-                    <Text style={[styles.benchNumber, { color: accent }]}>
+                    <Text
+                      style={[
+                        styles.benchNumber,
+                        { color: accent, fontSize: densidade.numero },
+                      ]}>
                       #{player.jerseyNumber}
                     </Text>
-                    <Text numberOfLines={1} style={styles.benchName}>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.benchName,
+                        { fontSize: densidade.nome, maxWidth: densidade.larguraDoNome },
+                      ]}>
                       {player.nickname}
                     </Text>
                   </View>

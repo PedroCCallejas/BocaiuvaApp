@@ -83,6 +83,11 @@ export default function ForgotPasswordScreen() {
           loading={isSubmitting}
           fullWidth
         />
+        <AppButton
+          label="Voltar ao login"
+          variant="ghost"
+          onPress={() => router.back()}
+        />
       </View>
     </Screen>
   );

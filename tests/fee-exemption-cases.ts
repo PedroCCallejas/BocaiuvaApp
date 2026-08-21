@@ -9,7 +9,14 @@ import {
   isPlayerFeeExemptOnDate,
   isValidExemptionDate,
 } from '@/lib/fee-exemption';
-import type { Player, PlayerFeeExemption } from '@/types/domain';
+import { buildPlayerBalances, collectTeamExpenses } from '@/lib/expenses';
+import type {
+  AttendanceRecord,
+  Expense,
+  Match,
+  Player,
+  PlayerFeeExemption,
+} from '@/types/domain';
 
 type TestCase = {
   name: string;
@@ -33,7 +40,132 @@ function createPlayer(id: string, feeExemption: PlayerFeeExemption | null = null
   } as Player;
 }
 
+const ISENTO = createPlayer('goleiro', { mode: 'always', reason: 'Goleiro' });
+const PAGANTE = createPlayer('lateral');
+
+/**
+ * Campo de R$ 100 com dois confirmados, mas dividido por 1: o goleiro é isento,
+ * então o admin informa que só uma pessoa racha.
+ */
+function partidaComCampo(splitCount = 1): Match {
+  return {
+    id: 'match-1',
+    teamId: 'team-1',
+    date: '2026-08-13',
+    time: '20:00',
+    venue: 'Campo',
+    opponentName: 'Adversario',
+    linePlayersCount: 5,
+    matchType: 'society',
+    status: 'finished',
+    createdBy: 'user-1',
+    fieldCost: {
+      totalAmount: 100,
+      splitCount,
+      amountPerPlayer: 100 / splitCount,
+      currency: 'BRL',
+    },
+    createdAt: '2026-08-13T00:00:00.000Z',
+    updatedAt: '2026-08-13T00:00:00.000Z',
+  } as Match;
+}
+
+function presenca(playerId: string): AttendanceRecord {
+  return {
+    id: `match-1__${playerId}`,
+    teamId: 'team-1',
+    matchId: 'match-1',
+    playerId,
+    status: 'confirmed',
+    createdAt: '2026-08-13T00:00:00.000Z',
+    updatedAt: '2026-08-13T00:00:00.000Z',
+  } as AttendanceRecord;
+}
+
+/** Cerveja de R$ 60 dividida entre os dois. */
+function despesaAvulsa(): Expense {
+  return {
+    id: 'expense-1',
+    teamId: 'team-1',
+    categoryId: 'cerveja',
+    date: '2026-08-13',
+    totalAmountCents: 6000,
+    splitMode: 'equal',
+    participantPlayerIds: ['goleiro', 'lateral'],
+    settledPlayerIds: [],
+    createdAt: '2026-08-13T00:00:00.000Z',
+    updatedAt: '2026-08-13T00:00:00.000Z',
+  } as Expense;
+}
+
 export const feeExemptionTestCases: TestCase[] = [
+  {
+    name: 'a isencao tira o jogador da cota do campo',
+    run() {
+      const [campo] = collectTeamExpenses({
+        teamId: 'team-1',
+        matches: [partidaComCampo()],
+        attendance: [presenca('goleiro'), presenca('lateral')],
+        players: [ISENTO, PAGANTE],
+      });
+
+      // Os R$ 100 ficam inteiros com quem paga; o goleiro nao deve nada.
+      assert.equal(campo.sharesCents.goleiro, undefined);
+      assert.equal(campo.sharesCents.lateral, 10000);
+    },
+  },
+  {
+    name: 'cota do isento vira cota de convidado, nao e jogada em quem paga',
+    run() {
+      // Admin informou "dividir por 2" mas um dos dois e isento. O app NAO
+      // redistribui os R$ 50 restantes em cima de quem paga — inventaria uma
+      // divida que ninguem combinou. A sobra fica como cota nao identificada,
+      // e `checkFieldCostSplit` avisa o admin da divergencia.
+      const [campo] = collectTeamExpenses({
+        teamId: 'team-1',
+        matches: [partidaComCampo(2)],
+        attendance: [presenca('goleiro'), presenca('lateral')],
+        players: [ISENTO, PAGANTE],
+      });
+
+      assert.equal(campo.sharesCents.goleiro, undefined);
+      assert.equal(campo.sharesCents.lateral, 5000);
+      assert.equal(campo.extraSharesCount, 1);
+    },
+  },
+  {
+    name: 'a isencao NAO vale para despesa fora do jogo',
+    run() {
+      // A isencao e da cota do campo. Cerveja, bola e churrasco continuam
+      // sendo rateados entre quem o admin marcou — quem bebeu, bebeu.
+      const [cerveja] = collectTeamExpenses({
+        teamId: 'team-1',
+        expenses: [despesaAvulsa()],
+        players: [ISENTO, PAGANTE],
+        includeFieldCosts: false,
+      });
+
+      assert.equal(cerveja.sharesCents.goleiro, 3000);
+      assert.equal(cerveja.sharesCents.lateral, 3000);
+    },
+  },
+  {
+    name: 'o mesmo jogador pode ser isento no campo e devedor na cerveja',
+    run() {
+      const tudo = collectTeamExpenses({
+        teamId: 'team-1',
+        expenses: [despesaAvulsa()],
+        matches: [partidaComCampo()],
+        attendance: [presenca('goleiro'), presenca('lateral')],
+        players: [ISENTO, PAGANTE],
+      });
+
+      const saldo = buildPlayerBalances(tudo).find((item) => item.playerId === 'goleiro');
+
+      // So a cerveja: R$ 30. Se a isencao vazasse para as despesas, daria 0.
+      assert.equal(saldo?.owedCents, 3000);
+    },
+  },
   {
     name: 'goleiro com isencao permanente nunca entra no rateio',
     run() {

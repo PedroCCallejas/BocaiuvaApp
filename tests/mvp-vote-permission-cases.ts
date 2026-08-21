@@ -32,6 +32,50 @@ export const mvpVotePermissionTestCases: TestCase[] = [
     },
   },
   {
+    name: 'ler voto que ainda nao existe e permitido',
+    run() {
+      const rules = fs.readFileSync(RULES, 'utf8');
+      const bloco = rulesBlock(rules, 'match /mvpVotes/{voteId}');
+
+      // A transacao le o proprio voto antes de grava-lo, para barrar voto
+      // duplicado. Nesse instante `resource` e nulo, e `resource.data.teamId`
+      // derrubava a regra — a transacao morria antes de escrever.
+      assert.match(bloco, /allow get: if isSignedIn\(\) &&/);
+      assert.match(bloco, /resource == null \|\| canReadTeamScopedData\(resource\.data\.teamId\)/);
+
+      // `list` continua exigindo vinculo: ali `resource` nunca e nulo.
+      assert.match(bloco, /allow list: if canReadTeamScopedData\(resource\.data\.teamId\);/);
+    },
+  },
+  {
+    name: 'ler avaliacao que ainda nao existe e permitido',
+    run() {
+      const rules = fs.readFileSync(RULES, 'utf8');
+      const bloco = rulesBlock(rules, 'match /playerRatings/{ratingId}');
+
+      assert.match(bloco, /resource == null \|\| canReadTeamScopedData\(resource\.data\.teamId\)/);
+      assert.match(bloco, /allow list: if canReadTeamScopedData\(resource\.data\.teamId\);/);
+    },
+  },
+  {
+    name: 'toda transacao que le antes de criar tem a regra correspondente',
+    run() {
+      const repo = fs.readFileSync(REPO, 'utf8');
+      const rules = fs.readFileSync(RULES, 'utf8');
+
+      // Se alguem adicionar outra transacao com get de documento novo, esta
+      // conta acusa: hoje sao duas, voto e avaliacao, e as duas tem a excecao.
+      const transacoes = (repo.match(/await transaction\.get\(/g) ?? []).length;
+      const excecoes = (rules.match(/resource == null \|\| canReadTeamScopedData/g) ?? []).length;
+
+      assert.equal(
+        excecoes >= transacoes,
+        true,
+        `${transacoes} transacoes leem documento novo, mas so ${excecoes} regras permitem`,
+      );
+    },
+  },
+  {
     name: 'presenca, voto e nota nao dependem so do indice de membership',
     run() {
       const rules = fs.readFileSync(RULES, 'utf8');

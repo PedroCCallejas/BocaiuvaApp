@@ -581,7 +581,24 @@ service cloud.firestore {
     }
 
     match /mvpVotes/{voteId} {
-      allow get, list: if canReadTeamScopedData(resource.data.teamId);
+      /**
+       * Ler documento que ainda nao existe precisa ser permitido.
+       *
+       * O voto e gravado dentro de uma transacao que primeiro LE o proprio voto,
+       * para nao deixar a pessoa votar duas vezes. Nesse instante o documento
+       * nao existe, entao `resource` e nulo e `resource.data.teamId` derruba a
+       * regra — a transacao morria antes de tentar escrever.
+       *
+       * Era por isso que ninguem conseguia votar: nao era a permissao de
+       * escrever, era a de ler o vazio. O mesmo ja tinha acontecido com as
+       * notificacoes, e la foi contornado no codigo em vez de na regra.
+       *
+       * O que isso abre: uma pessoa autenticada descobre se um voto existe.
+       * Quem pode votar ja enxerga todos os votos do time de qualquer forma.
+       */
+      allow get: if isSignedIn() &&
+        (resource == null || canReadTeamScopedData(resource.data.teamId));
+      allow list: if canReadTeamScopedData(resource.data.teamId);
       allow create: if request.resource.data.id == voteId &&
         hasActiveTeamMembership(request.resource.data.teamId) &&
         request.resource.data.voterPlayerId != request.resource.data.targetPlayerId &&
@@ -608,7 +625,10 @@ service cloud.firestore {
     }
 
     match /playerRatings/{ratingId} {
-      allow get, list: if canReadTeamScopedData(resource.data.teamId);
+      // Mesma transacao, mesmo problema: a avaliacao e lida antes de existir.
+      allow get: if isSignedIn() &&
+        (resource == null || canReadTeamScopedData(resource.data.teamId));
+      allow list: if canReadTeamScopedData(resource.data.teamId);
       allow create: if request.resource.data.id == ratingId &&
         hasActiveTeamMembership(request.resource.data.teamId) &&
         request.resource.data.raterPlayerId != request.resource.data.targetPlayerId &&

@@ -188,6 +188,7 @@ export default function FinanceiroScreen() {
             expenses,
             matches: teamMatches,
             attendance,
+            players: teamPlayers,
             categoryLabels,
             filters: {
               year: selectedYear,

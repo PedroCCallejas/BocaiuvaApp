@@ -14,7 +14,8 @@
  * eventual migração futura muda apenas o adaptador, não as telas.
  */
 
-import type { AttendanceRecord, Expense, Match } from '@/types/domain';
+import type { AttendanceRecord, Expense, Match, Player } from '@/types/domain';
+import { getExemptPlayerIdsForDate } from '@/lib/fee-exemption';
 
 import { centsFromAmount } from '@/lib/money';
 
@@ -232,6 +233,12 @@ export function toUnifiedExpense(
 export function fieldCostToUnifiedExpense(
   match: Match,
   confirmedPlayerIds: string[] = [],
+  /**
+   * Isentos pela ficha do jogador nesta data (goleiro que nunca paga, cortesia
+   * com prazo). Vale mesmo que o admin nunca tenha aberto o pagamento da
+   * partida — senão a dívida apareceria só porque ninguém mexeu na tela.
+   */
+  standingExemptPlayerIds: string[] = [],
 ): UnifiedExpense | null {
   const fieldCost = match.fieldCost;
 
@@ -247,10 +254,14 @@ export function fieldCostToUnifiedExpense(
   // Isentos jogaram, mas o time decidiu que não entram no rateio (goleiro
   // convidado, aniversariante). Deixá-los na lista criaria devedor onde não
   // existe dívida — exatamente o que acontecia antes deste campo existir.
+  //
+  // Duas origens: o que o admin marcou nesta partida e o que está na ficha do
+  // jogador. Quem pagou vence as duas — pagou, pagou.
   const exemptPlayerIds = new Set(
-    sanitizeParticipants(payment?.exemptPlayerIds ?? []).filter(
-      (playerId) => !payerPlayerIds.includes(playerId),
-    ),
+    [
+      ...sanitizeParticipants(payment?.exemptPlayerIds ?? []),
+      ...sanitizeParticipants(standingExemptPlayerIds),
+    ].filter((playerId) => !payerPlayerIds.includes(playerId)),
   );
 
   // Um jogador pode ter pago sem constar como confirmado (entrou de última
@@ -334,6 +345,8 @@ export function collectTeamExpenses(input: {
   matches?: Match[];
   /** Presenças do time. Define quem deve o rateio do campo de cada partida. */
   attendance?: AttendanceRecord[];
+  /** Elenco, para ler a isenção recorrente da ficha de cada jogador. */
+  players?: Player[];
   categoryLabels?: Record<string, string>;
   includeFieldCosts?: boolean;
   filters?: ExpenseFilters;
@@ -343,6 +356,7 @@ export function collectTeamExpenses(input: {
     expenses = [],
     matches = [],
     attendance = [],
+    players = [],
     categoryLabels = {},
     includeFieldCosts = true,
     filters = {},
@@ -372,7 +386,13 @@ export function collectTeamExpenses(input: {
     ? matches
         .filter((match) => match.teamId === teamId && !match.deletedAt)
         .map((match) =>
-          fieldCostToUnifiedExpense(match, confirmedByMatchId.get(match.id) ?? []),
+          fieldCostToUnifiedExpense(
+            match,
+            confirmedByMatchId.get(match.id) ?? [],
+            // A isenção é por data: a mesma pessoa pode estar isenta em julho e
+            // pagante em setembro, e o histórico responde certo para cada jogo.
+            getExemptPlayerIdsForDate(players, match.date),
+          ),
         )
         .filter((expense): expense is UnifiedExpense => expense !== null)
     : [];

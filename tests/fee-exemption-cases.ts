@@ -161,14 +161,56 @@ export const feeExemptionTestCases: TestCase[] = [
     },
   },
   {
-    name: 'decisao ja salva na partida tem prioridade sobre a isencao recorrente',
+    name: 'a isencao da ficha vale sozinha, sem depender de quando a tela abriu',
     run() {
       const screen = fs.readFileSync('src/app/(app)/matches/[matchId].tsx', 'utf8');
 
-      // A pre-marcacao automatica so pode acontecer quando ainda nao existe
-      // fieldPayment salvo; senao desfazer a isencao num jogo nunca duraria.
-      assert.match(screen, /if \(fp\) \{\s*setExemptPlayerIdsDraft\(fp\.exemptPlayerIds \?\? \[\]\);/);
-      assert.match(screen, /getExemptPlayerIdsForDate\(/);
+      // Antes so era aplicada se o admin abrisse o pagamento depois de todo
+      // mundo confirmar e antes de salvar qualquer coisa. Na pratica, nunca.
+      assert.match(screen, /const effectiveExemptPlayerIds = useMemo/);
+
+      const derivada = screen.slice(
+        screen.indexOf('const effectiveExemptPlayerIds = useMemo'),
+        screen.indexOf('// Confere quem realmente paga'),
+      );
+
+      assert.match(derivada, /getExemptPlayerIdsForDate\(/);
+      assert.match(derivada, /exemptPlayerIdsDraft/);
+      // Quem pagou sai da lista de isentos: pagou, pagou.
+      assert.match(derivada, /!payerPlayerIdsDraft\.includes\(playerId\)/);
+    },
+  },
+  {
+    name: 'isento nao aparece com botao de marcar como pago',
+    run() {
+      const screen = fs.readFileSync('src/app/(app)/matches/[matchId].tsx', 'utf8');
+
+      // O admin tinha de marcar "nao paga" em toda partida mesmo com a ficha
+      // dizendo que o jogador e isento.
+      assert.match(screen, /const isExempt = effectiveExemptPlayerIds\.includes\(player\.id\);/);
+      assert.match(screen, /\{!isExempt \? \(\s*<Pressable/);
+    },
+  },
+  {
+    name: 'isencao da ficha nao oferece botao que nao desfaz nada',
+    run() {
+      const screen = fs.readFileSync('src/app/(app)/matches/[matchId].tsx', 'utf8');
+
+      // Quem manda e a data configurada no jogador. Um "Voltar ao rateio" que
+      // nao volta seria pior do que nao existir.
+      assert.match(screen, /hasStandingExemption \? \(/);
+      assert.match(screen, /Isenção na ficha/);
+    },
+  },
+  {
+    name: 'o rateio respeita a ficha mesmo sem pagamento salvo',
+    run() {
+      const lib = fs.readFileSync('src/lib/expenses.ts', 'utf8');
+
+      // Sem isto, a divida aparecia so porque ninguem tinha aberto a tela de
+      // pagamento daquela partida.
+      assert.match(lib, /standingExemptPlayerIds: string\[\] = \[\]/);
+      assert.match(lib, /getExemptPlayerIdsForDate\(players, match\.date\)/);
     },
   },
 ];

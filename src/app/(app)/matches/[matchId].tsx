@@ -187,6 +187,30 @@ export default function MatchDetailsScreen() {
     return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
   }, [paidGuestCountDraft]);
 
+  /**
+   * Quem não entra no rateio desta partida.
+   *
+   * Duas origens: o que o admin marcou aqui e a isenção da ficha do jogador
+   * válida nesta data. A da ficha vale sozinha — o admin não precisa lembrar
+   * dela em toda partida, que era o que acontecia antes.
+   *
+   * Quem já foi marcado como pago sai da lista: pagou, pagou.
+   */
+  const effectiveExemptPlayerIds = useMemo(() => {
+    if (!match) {
+      return [] as string[];
+    }
+
+    const daFicha = getExemptPlayerIdsForDate(
+      getConfirmedPlayers(snapshot, match.id),
+      match.date,
+    );
+
+    return [...new Set([...exemptPlayerIdsDraft, ...daFicha])].filter(
+      (playerId) => !payerPlayerIdsDraft.includes(playerId),
+    );
+  }, [exemptPlayerIdsDraft, match, payerPlayerIdsDraft, snapshot]);
+
   // Confere quem realmente paga contra a divisao informada no pos-jogo.
   const fieldSplitCheck = useMemo(() => {
     const fc = match?.fieldCost ?? null;
@@ -198,10 +222,10 @@ export default function MatchDetailsScreen() {
     return checkFieldCostSplit({
       splitCount: fc.splitCount,
       confirmedPlayerIds: getConfirmedPlayers(snapshot, match.id).map((player) => player.id),
-      exemptPlayerIds: exemptPlayerIdsDraft,
+      exemptPlayerIds: effectiveExemptPlayerIds,
       paidGuestCount: paidGuestCountValue,
     });
-  }, [exemptPlayerIdsDraft, match?.fieldCost, match?.id, paidGuestCountValue, snapshot]);
+  }, [effectiveExemptPlayerIds, match?.fieldCost, match?.id, paidGuestCountValue, snapshot]);
 
   const fieldPaymentSummary = useMemo(() => {
     const fc = match?.fieldCost ?? null;
@@ -382,7 +406,9 @@ export default function MatchDetailsScreen() {
       await updateMatchFieldPayment(currentMatch.id, {
         fieldPayment: {
           payerPlayerIds: payerPlayerIdsDraft,
-          exemptPlayerIds: exemptPlayerIdsDraft,
+          // Salva a lista efetiva: congela quem estava isento naquele jogo,
+          // mesmo que a isenção da ficha vença depois.
+          exemptPlayerIds: effectiveExemptPlayerIds,
           paidGuestCount: paidGuestCountValue,
           pixKey: pixKeyDraft.trim() || null,
           responsibleName: responsibleNameDraft.trim() || null,
@@ -933,12 +959,15 @@ export default function MatchDetailsScreen() {
 
                 {confirmedPlayers.map((player) => {
                   const isPaid = payerPlayerIdsDraft.includes(player.id);
-                  const isExempt = exemptPlayerIdsDraft.includes(player.id);
                   // Isenção configurada na ficha do jogador, válida nesta data.
                   const hasStandingExemption = isPlayerFeeExemptOnDate(
                     player,
                     currentMatch.date,
                   );
+                  // A isenção da ficha vale sozinha: o admin não precisa
+                  // lembrar dela em toda partida. Quem já foi marcado como
+                  // pago continua pagante — pagou, pagou.
+                  const isExempt = effectiveExemptPlayerIds.includes(player.id);
 
                   return (
                     <View
@@ -994,6 +1023,17 @@ export default function MatchDetailsScreen() {
                           </Pressable>
                         ) : null}
 
+                        {/*
+                          Isenção que vem da ficha não se desfaz aqui: quem
+                          manda é a data configurada no jogador. Oferecer um
+                          botão que não desfaz nada seria pior que não ter.
+                        */}
+                        {hasStandingExemption ? (
+                          <Text
+                            style={[styles.playerSub, { color: theme.colors.textMuted }]}>
+                            Isenção na ficha
+                          </Text>
+                        ) : (
                         <Pressable
                           onPress={() => handleTogglePlayerExempt(player.id)}
                           accessibilityRole="button"
@@ -1024,6 +1064,7 @@ export default function MatchDetailsScreen() {
                             {isExempt ? 'Voltar ao rateio' : 'Não paga'}
                           </Text>
                         </Pressable>
+                        )}
                       </View>
                     </View>
                   );

@@ -33,12 +33,14 @@ export function CounterField({
         ]}>
         <CounterButton
           label="-"
+          accessibilityLabel={`Diminuir ${label}`}
           onPress={() => onChange(Math.max(min, value - 1))}
           disabled={value <= min}
         />
         <Text style={[styles.value, { color: theme.colors.text }]}>{value}</Text>
         <CounterButton
           label="+"
+          accessibilityLabel={`Aumentar ${label}`}
           onPress={() => onChange(Math.min(max, value + 1))}
           disabled={value >= max}
         />
@@ -49,10 +51,12 @@ export function CounterField({
 
 function CounterButton({
   label,
+  accessibilityLabel,
   onPress,
   disabled,
 }: {
   label: string;
+  accessibilityLabel: string;
   onPress: () => void;
   disabled?: boolean;
 }) {
@@ -60,6 +64,9 @@ function CounterButton({
 
   return (
     <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: Boolean(disabled) }}
       onPress={onPress}
       disabled={disabled}
       style={[
@@ -96,8 +103,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   button: {
-    width: 34,
-    height: 34,
+    width: 44,
+    height: 44,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',

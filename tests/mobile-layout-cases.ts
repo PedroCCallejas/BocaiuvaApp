@@ -43,6 +43,19 @@ export const mobileLayoutTestCases: TestCase[] = [
     },
   },
   {
+    name: 'cabecalho desktop no web depende de breakpoint',
+    run() {
+      const screen = fs.readFileSync(SCREEN, 'utf8');
+
+      assert.match(screen, /const isWideWeb = Platform\.OS === 'web' && width >= \d+;/);
+      assert.match(screen, /\{isWideWeb && !hideWebHeader \? <WebScreenHeader \/> : null\}/);
+      assert.doesNotMatch(
+        screen,
+        /\{Platform\.OS === 'web' && !hideWebHeader \? <WebScreenHeader \/> : null\}/,
+      );
+    },
+  },
+  {
     name: 'telas reservam folga para a barra de abas no fim do conteudo',
     run() {
       const screen = fs.readFileSync(SCREEN, 'utf8');

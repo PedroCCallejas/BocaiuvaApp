@@ -842,6 +842,61 @@ export function derivarParticipantesDoCampo(
   ];
 }
 
+// ── Conferência pós-gravação ───────────────────────────────────────────────
+
+/**
+ * Quantos caracteres de id cabem numa consulta antes de a URL virar problema.
+ *
+ * A conferência usa `.in('id', [...])`, que o PostgREST recebe como query
+ * string. Com id composto — `attendance` usa `matchId__playerId`, 42 caracteres
+ * — um lote de 400 gera ~18 KB de URL e o gateway recusa a requisição antes de
+ * ela chegar no banco. O erro chega como `fetch failed`, sem nenhuma pista.
+ */
+export const LIMITE_DE_URL = 4000;
+
+/**
+ * Teto de itens por lote, independente do tamanho.
+ *
+ * O PostgREST devolve no máximo 1000 linhas por resposta. Um lote maior que
+ * isso voltaria truncado e a conferência acusaria ids "ausentes" que na verdade
+ * foram gravados — falso alarme pior que alarme nenhum.
+ */
+export const MAXIMO_POR_LOTE = 500;
+
+/**
+ * Fatia os ids pelo espaço que ocupam na URL, não por quantidade fixa.
+ *
+ * Assim id curto continua indo em lote grande e id longo é fatiado sozinho,
+ * sem ninguém precisar escolher um número mágico que serve para os dois.
+ */
+export function lotesQueCabemNaUrl(ids: string[]): string[][] {
+  const lotes: string[][] = [];
+  let atual: string[] = [];
+  let tamanho = 0;
+
+  for (const id of ids) {
+    // +3 cobre a vírgula e o escape que a serialização acrescenta.
+    const custo = id.length + 3;
+    const estouraUrl = tamanho + custo > LIMITE_DE_URL;
+    const estouraContagem = atual.length >= MAXIMO_POR_LOTE;
+
+    if (atual.length > 0 && (estouraUrl || estouraContagem)) {
+      lotes.push(atual);
+      atual = [];
+      tamanho = 0;
+    }
+
+    atual.push(id);
+    tamanho += custo;
+  }
+
+  if (atual.length > 0) {
+    lotes.push(atual);
+  }
+
+  return lotes;
+}
+
 // ── Integridade referencial ────────────────────────────────────────────────
 
 /**
@@ -932,6 +987,24 @@ export interface ResultadoDeReferencias {
   aceitas: Linha[];
   descartadas: { id: string; campo: string; valor: string }[];
   ajustadas: { id: string; campo: string; valor: string }[];
+}
+
+export function classificarReferenciasDescartadas(
+  descartadas: ResultadoDeReferencias['descartadas'],
+  timesConhecidos: Set<string> | undefined,
+) {
+  const deTimesAusentes = descartadas.filter(
+    (item) =>
+      item.campo === 'team_id' &&
+      Boolean(timesConhecidos) &&
+      !timesConhecidos!.has(item.valor),
+  );
+  const idsDeTimesAusentes = new Set(deTimesAusentes.map((item) => item.id));
+
+  return {
+    deTimesAusentes,
+    inesperadas: descartadas.filter((item) => !idsDeTimesAusentes.has(item.id)),
+  };
 }
 
 /**

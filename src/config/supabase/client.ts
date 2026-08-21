@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
+import { auth } from '@/config/firebase/client';
+
 const rawSupabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim() ?? '';
 const rawSupabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim() ?? '';
 const rawSupabaseLegacyKey = process.env.EXPO_PUBLIC_SUPABASE_KEY?.trim() ?? '';
@@ -124,8 +126,31 @@ export const supabaseConfigError =
 
 export const supabaseEnabled = supabaseConfigError === null;
 
+/**
+ * O login continua no Firebase. O Supabase valida este JWT como provedor de
+ * terceiros e usa `sub`/`role` nas policies do Postgres e do Storage.
+ */
+let tokenRefreshedForUserId: string | null = null;
+
+export async function getFirebaseAccessToken() {
+  const currentUser = auth?.currentUser;
+
+  if (!currentUser) {
+    tokenRefreshedForUserId = null;
+    return null;
+  }
+
+  // A primeira chamada da sessao precisa buscar claims novos. Isso evita que
+  // um usuario ja logado continue como `anon` depois do backfill do claim.
+  const forceRefresh = tokenRefreshedForUserId !== currentUser.uid;
+  const token = await currentUser.getIdToken(forceRefresh);
+  tokenRefreshedForUserId = currentUser.uid;
+  return token;
+}
+
 export const supabase: SupabaseClient | null = supabaseEnabled
   ? createClient(normalizedSupabaseUrlResult.normalizedUrl, supabaseAnonKey, {
+      accessToken: getFirebaseAccessToken,
       auth: {
         autoRefreshToken: false,
         persistSession: false,

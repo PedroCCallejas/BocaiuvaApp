@@ -12,6 +12,7 @@ import {
   ScrollView,
   StyleSheet,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import {
   SafeAreaView,
@@ -68,8 +69,10 @@ export function Screen({
 }: ScreenProps) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const scrollRef = useRef<ScrollView>(null);
   const keyboardAvoidanceEnabled = keyboardAware && Platform.OS === 'ios';
+  const isWideWeb = Platform.OS === 'web' && width >= 768;
   // A barra de abas flutua sobre o conteudo, entao o fim da lista precisa de
   // folga suficiente para nao ficar escondido atras dela. No navegador do
   // celular os 32px antigos eram menores que a propria barra (~68px + area
@@ -107,44 +110,6 @@ export function Screen({
     [formMode, scroll],
   );
 
-  const content = scroll ? (
-    <ScrollView
-      ref={scrollRef}
-      automaticallyAdjustKeyboardInsets={keyboardAvoidanceEnabled}
-      contentInsetAdjustmentBehavior={Platform.OS === 'ios' ? 'automatic' : 'never'}
-      contentContainerStyle={[
-        styles.content,
-        { paddingBottom: contentPaddingBottom },
-        contentContainerStyle,
-      ]}
-      keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
-      keyboardShouldPersistTaps={keyboardShouldPersistTaps}
-      scrollEnabled={scrollEnabled}
-      refreshControl={
-        onRefresh && Platform.OS !== 'web' ? (
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={theme.colors.action}
-            colors={[theme.colors.action]}
-            progressBackgroundColor={theme.colors.surface}
-          />
-        ) : undefined
-      }
-      showsVerticalScrollIndicator={false}>
-      {children}
-    </ScrollView>
-  ) : (
-    <View
-      style={[
-        styles.content,
-        { paddingBottom: contentPaddingBottom },
-        contentContainerStyle,
-      ]}>
-      {children}
-    </View>
-  );
-
   return (
     <SafeAreaView
       edges={['top', 'left', 'right']}
@@ -168,9 +133,57 @@ export function Screen({
         enabled={keyboardAvoidanceEnabled}
         keyboardVerticalOffset={keyboardVerticalOffset}
         style={styles.flex}>
-        {Platform.OS === 'web' && !hideWebHeader ? <WebScreenHeader /> : null}
+        {isWideWeb && !hideWebHeader ? <WebScreenHeader /> : null}
         <ScreenKeyboardContext.Provider value={keyboardContextValue}>
-          {content}
+          {scroll ? (
+            <ScrollView
+              ref={scrollRef}
+              automaticallyAdjustKeyboardInsets={keyboardAvoidanceEnabled}
+              contentInsetAdjustmentBehavior={Platform.OS === 'ios' ? 'automatic' : 'never'}
+              contentContainerStyle={[
+                styles.content,
+                {
+                  maxWidth: isWideWeb ? 1200 : 1080,
+                  paddingHorizontal: isWideWeb ? 28 : 18,
+                  paddingTop: isWideWeb ? 28 : 20,
+                  paddingBottom: contentPaddingBottom,
+                  gap: isWideWeb ? 24 : 20,
+                },
+                contentContainerStyle,
+              ]}
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              keyboardShouldPersistTaps={keyboardShouldPersistTaps}
+              scrollEnabled={scrollEnabled}
+              refreshControl={
+                onRefresh && Platform.OS !== 'web' ? (
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={onRefresh}
+                    tintColor={theme.colors.action}
+                    colors={[theme.colors.action]}
+                    progressBackgroundColor={theme.colors.surface}
+                  />
+                ) : undefined
+              }
+              showsVerticalScrollIndicator={false}>
+              {children}
+            </ScrollView>
+          ) : (
+            <View
+              style={[
+                styles.content,
+                {
+                  maxWidth: isWideWeb ? 1200 : 1080,
+                  paddingHorizontal: isWideWeb ? 28 : 18,
+                  paddingTop: isWideWeb ? 28 : 20,
+                  paddingBottom: contentPaddingBottom,
+                  gap: isWideWeb ? 24 : 20,
+                },
+                contentContainerStyle,
+              ]}>
+              {children}
+            </View>
+          )}
         </ScreenKeyboardContext.Provider>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -187,11 +200,7 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     width: '100%',
-    maxWidth: Platform.OS === 'web' ? 1200 : 1080,
     alignSelf: 'center',
-    paddingHorizontal: Platform.OS === 'web' ? 28 : 18,
-    paddingTop: Platform.OS === 'web' ? 28 : 20,
-    gap: Platform.OS === 'web' ? 24 : 20,
   },
   ambientTop: {
     position: 'absolute',

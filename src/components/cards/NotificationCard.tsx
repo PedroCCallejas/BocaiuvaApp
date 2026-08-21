@@ -99,7 +99,11 @@ export function NotificationCard({
         },
       ]}>
       {onPress ? (
-        <Pressable onPress={onPress} style={styles.content}>
+        <Pressable
+          accessibilityLabel={`${unread ? 'Não lida. ' : ''}${notification.title}. ${notification.message}`}
+          accessibilityRole="button"
+          onPress={onPress}
+          style={styles.content}>
           {content}
         </Pressable>
       ) : (
@@ -111,7 +115,10 @@ export function NotificationCard({
           {formatDateTimeBR(notification.updatedAt)}
         </Text>
         {unread && onMarkAsRead ? (
-          <Pressable onPress={onMarkAsRead}>
+          <Pressable
+            accessibilityLabel={`Marcar ${notification.title} como lida`}
+            accessibilityRole="button"
+            onPress={onMarkAsRead}>
             <Text
               style={[
                 styles.action,

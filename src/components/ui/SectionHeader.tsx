@@ -23,7 +23,12 @@ export function SectionHeader({
       <View style={styles.copy}>
         <View style={styles.titleRow}>
           <View style={[styles.accent, { backgroundColor: theme.colors.action }]} />
-          <Text style={[styles.title, { color: theme.colors.text }]}>{title}</Text>
+          <Text
+            accessibilityRole="header"
+            aria-level={2}
+            style={[styles.title, { color: theme.colors.text }]}>
+            {title}
+          </Text>
         </View>
         {subtitle ? (
           <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>{subtitle}</Text>
@@ -31,6 +36,8 @@ export function SectionHeader({
       </View>
       {actionLabel && onAction ? (
         <Pressable
+          accessibilityLabel={actionLabel}
+          accessibilityRole="button"
           onPress={onAction}
           style={[
             styles.actionWrap,

@@ -83,6 +83,8 @@ export function WebScreenHeader() {
           <View style={styles.breadcrumbRow}>
             {meta.backHref ? (
               <Pressable
+                accessibilityLabel="Voltar"
+                accessibilityRole="button"
                 onPress={() => router.push(meta.backHref! as never)}
                 style={[
                   styles.backChip,
@@ -109,7 +111,10 @@ export function WebScreenHeader() {
                     </Text>
                   ) : null}
                   {item.href && index < meta.breadcrumbs.length - 1 ? (
-                    <Pressable onPress={() => router.push(item.href! as never)}>
+                    <Pressable
+                      accessibilityLabel={`Abrir ${item.label}`}
+                      accessibilityRole="link"
+                      onPress={() => router.push(item.href! as never)}>
                       <Text
                         style={[
                           styles.breadcrumbText,
@@ -149,7 +154,12 @@ export function WebScreenHeader() {
 
         <View style={styles.mainRow}>
           <View style={styles.copy}>
-            <Text style={[styles.title, { color: theme.colors.text }]}>{meta.title}</Text>
+            <Text
+              accessibilityRole="header"
+              aria-level={1}
+              style={[styles.title, { color: theme.colors.text }]}>
+              {meta.title}
+            </Text>
             {meta.subtitle ? (
               <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>
                 {meta.subtitle}

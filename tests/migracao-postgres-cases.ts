@@ -6,9 +6,13 @@ import {
   DEFINICOES,
   ORDEM_DAS_TABELAS,
   TABELAS_FILHAS,
+  classificarReferenciasDescartadas,
   dataOuNulo,
+  LIMITE_DE_URL,
+  MAXIMO_POR_LOTE,
   dependenciasVazias,
   derivarCotasDaDespesa,
+  lotesQueCabemNaUrl,
   derivarCustoDoCampo,
   derivarParticipantesDoCampo,
   instante,
@@ -433,6 +437,49 @@ export const migracaoPostgresTestCases: TestCase[] = [
     },
   },
   {
+    name: 'id composto longo nao estoura a URL da conferencia',
+    run() {
+      // `attendance` usa `matchId__playerId`, 42 caracteres. Em lote de 400 a
+      // URL passava de 18 KB e o gateway recusava antes de chegar no banco —
+      // o erro chegava como "fetch failed", sem pista nenhuma.
+      const ids = Array.from({ length: 1679 }, (_, i) =>
+        `${'m'.repeat(20)}__${String(i).padStart(20, 'p')}`,
+      );
+
+      for (const lote of lotesQueCabemNaUrl(ids)) {
+        const tamanho = lote.reduce((total, id) => total + id.length + 3, 0);
+        assert.equal(tamanho <= LIMITE_DE_URL, true, `lote com ${tamanho} caracteres`);
+      }
+
+      // E nenhum id pode se perder no fatiamento.
+      assert.deepEqual(lotesQueCabemNaUrl(ids).flat(), ids);
+    },
+  },
+  {
+    name: 'lote nunca passa do teto de linhas que o PostgREST devolve',
+    run() {
+      // Resposta truncada faria a conferencia acusar id "ausente" que na
+      // verdade foi gravado. Falso alarme e pior que alarme nenhum.
+      const curtinhos = Array.from({ length: 5000 }, (_, i) => String(i));
+
+      for (const lote of lotesQueCabemNaUrl(curtinhos)) {
+        assert.equal(lote.length <= MAXIMO_POR_LOTE, true, `lote com ${lote.length} itens`);
+      }
+    },
+  },
+  {
+    name: 'id curto continua indo em lote grande',
+    run() {
+      // Fatiar por caracteres nao pode virar uma requisicao por id.
+      const [primeiro] = lotesQueCabemNaUrl(
+        Array.from({ length: 300 }, (_, i) => `id-${i}`),
+      );
+
+      assert.equal(primeiro.length, 300);
+      assert.deepEqual(lotesQueCabemNaUrl([]), []);
+    },
+  },
+  {
     name: 'baixar e importar sao etapas separadas',
     run() {
       const script = fs.readFileSync('scripts/migrar-para-postgres.ts', 'utf8');
@@ -734,6 +781,32 @@ export const migracaoPostgresTestCases: TestCase[] = [
           );
         }
       }
+    },
+  },
+  {
+    name: 'preflight aceita somente legado de time ausente',
+    run() {
+      const descartadas = [
+        { id: 'legado-1', campo: 'team_id', valor: 'time-removido' },
+        { id: 'ativo-1', campo: 'player_id', valor: 'jogador-ausente' },
+      ];
+      const resultado = classificarReferenciasDescartadas(
+        descartadas,
+        new Set(['time-ativo']),
+      );
+
+      assert.deepEqual(resultado.deTimesAusentes, [descartadas[0]]);
+      assert.deepEqual(resultado.inesperadas, [descartadas[1]]);
+    },
+  },
+  {
+    name: 'preflight nao mascara team_id quebrado quando a lista de times e desconhecida',
+    run() {
+      const descartada = { id: 'x', campo: 'team_id', valor: 'time-x' };
+      const resultado = classificarReferenciasDescartadas([descartada], undefined);
+
+      assert.deepEqual(resultado.deTimesAusentes, []);
+      assert.deepEqual(resultado.inesperadas, [descartada]);
     },
   },
   {

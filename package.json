@@ -21,6 +21,7 @@
     "auth:claim:dry": "node --no-warnings --experimental-strip-types ./scripts/definir-claim-supabase.ts --dry-run",
     "auth:claim": "node --no-warnings --experimental-strip-types ./scripts/definir-claim-supabase.ts",
     "migrar:baixar": "node --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./scripts/migrar-para-postgres.ts --dry-run --salvar-em=dados-firestore",
+    "migrar:preflight": "node --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./scripts/migrar-para-postgres.ts --dry-run --ler-de=dados-firestore",
     "migrar:postgres:dry": "node --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./scripts/migrar-para-postgres.ts --dry-run",
     "migrar:postgres": "node --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./scripts/migrar-para-postgres.ts"
   },

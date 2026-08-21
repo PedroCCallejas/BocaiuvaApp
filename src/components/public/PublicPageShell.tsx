@@ -1,5 +1,5 @@
 import { useEffect, useState, type PropsWithChildren } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { router, usePathname } from 'expo-router';
 
 import { AppButton } from '@/components/ui/AppButton';
@@ -58,7 +58,9 @@ export function PublicPageShell({
 }: PublicPageShellProps) {
   const pathname = usePathname();
   const theme = useAppTheme();
+  const { width } = useWindowDimensions();
   const [mounted, setMounted] = useState(false);
+  const isCompact = width < 600;
 
   useEffect(() => {
     setMounted(true);
@@ -75,7 +77,11 @@ export function PublicPageShell({
             borderColor: theme.colors.border,
           },
         ]}>
-        <Pressable onPress={() => router.push('/')} style={styles.brandBlock}>
+        <Pressable
+          accessibilityLabel={`${APP_NAME}, voltar ao início`}
+          accessibilityRole="link"
+          onPress={() => router.push('/')}
+          style={styles.brandBlock}>
           <Text style={[styles.brandName, { color: theme.colors.text }]}>{APP_NAME}</Text>
           <Text style={[styles.brandSubtitle, { color: theme.colors.textMuted }]}>
             Plataforma para organização de times de futebol amador e society.
@@ -88,6 +94,9 @@ export function PublicPageShell({
 
             return (
               <Pressable
+                accessibilityLabel={item.label}
+                accessibilityRole="link"
+                accessibilityState={{ selected: active }}
                 key={item.href}
                 onPress={() => router.push(item.href as never)}
                 style={[
@@ -115,6 +124,7 @@ export function PublicPageShell({
       <View
         style={[
           styles.hero,
+          isCompact ? styles.heroCompact : null,
           {
             backgroundColor: theme.colors.surface,
             borderColor: theme.colors.border,
@@ -124,7 +134,16 @@ export function PublicPageShell({
         {eyebrow ? (
           <Text style={[styles.eyebrow, { color: theme.colors.secondary }]}>{eyebrow}</Text>
         ) : null}
-        <Text style={[styles.title, { color: theme.colors.text }]}>{title}</Text>
+        <Text
+          accessibilityRole="header"
+          aria-level={1}
+          style={[
+            styles.title,
+            isCompact ? styles.titleCompact : null,
+            { color: theme.colors.text },
+          ]}>
+          {title}
+        </Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>{description}</Text>
         {actions?.length ? (
           <View style={styles.actionsRow}>
@@ -150,7 +169,10 @@ export function PublicPageShell({
             borderColor: theme.colors.border,
           },
         ]}>
-        <Text style={[styles.footerTitle, { color: theme.colors.text }]}>
+        <Text
+          accessibilityRole="header"
+          aria-level={2}
+          style={[styles.footerTitle, { color: theme.colors.text }]}>
           Professô FC para times que querem se organizar melhor
         </Text>
         <Text style={[styles.footerCopy, { color: theme.colors.textMuted }]}>
@@ -164,6 +186,8 @@ export function PublicPageShell({
             ),
           ).map((item) => (
             <Pressable
+              accessibilityLabel={item.label}
+              accessibilityRole="link"
               key={`footer-${item.href}`}
               onPress={() => router.push(item.href as never)}
               style={styles.footerLinkButton}>
@@ -234,6 +258,11 @@ const styles = StyleSheet.create({
     gap: 12,
     overflow: 'hidden',
   },
+  heroCompact: {
+    minHeight: 260,
+    paddingHorizontal: 20,
+    paddingVertical: 26,
+  },
   heroAccent: {
     position: 'absolute',
     left: 0,
@@ -256,6 +285,10 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 49,
     maxWidth: 920,
+  },
+  titleCompact: {
+    fontSize: 36,
+    lineHeight: 40,
   },
   description: {
     fontFamily: fonts.body,

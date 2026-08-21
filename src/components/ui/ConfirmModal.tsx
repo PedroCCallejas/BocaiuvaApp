@@ -31,14 +31,24 @@ export function ConfirmModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable style={styles.overlay} onPress={loading ? undefined : onCancel}>
+      <Pressable
+        accessible={false}
+        style={styles.overlay}
+        onPress={loading ? undefined : onCancel}>
         <Pressable
+          accessibilityLabel={`${title}. ${description}`}
+          accessibilityRole="alert"
+          accessibilityViewIsModal
           style={[
             styles.card,
             { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong },
           ]}
           onPress={() => {}}>
-          <Text style={[styles.title, { color: theme.colors.text }]}>{title}</Text>
+          <Text
+            accessibilityRole="header"
+            style={[styles.title, { color: theme.colors.text }]}>
+            {title}
+          </Text>
           <Text style={[styles.description, { color: theme.colors.textMuted }]}>{description}</Text>
           <View style={styles.buttons}>
             <AppButton

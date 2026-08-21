@@ -41,7 +41,9 @@ import {
   CHAVE_DE_CONFLITO,
   DEFINICOES,
   ORDEM_DAS_TABELAS,
+  classificarReferenciasDescartadas,
   dependenciasVazias,
+  lotesQueCabemNaUrl,
   resolverReferencias,
   type Linha,
   type LinhaFilha,
@@ -376,6 +378,43 @@ async function gravar(
   }
 }
 
+async function confirmarIdsGravados(
+  supabase: SupabaseClient,
+  tabela: NomeDaTabela,
+  linhas: Linha[],
+) {
+  const todosOsIds = linhas
+    .map((linha) => textoOuNulo(linha.id))
+    .filter((id): id is string => Boolean(id));
+
+  for (const idsEsperados of lotesQueCabemNaUrl(todosOsIds)) {
+
+    const { data, error } = await supabase
+      .from(tabela)
+      .select('id')
+      .in('id', idsEsperados);
+
+    if (error) {
+      throw new Error(`Falha ao conferir ${tabela} no Postgres: ${error.message}`);
+    }
+
+    const encontrados = new Set(
+      (data ?? [])
+        .map((linha) => textoOuNulo((linha as { id?: unknown }).id))
+        .filter((id): id is string => Boolean(id)),
+    );
+    const ausentes = idsEsperados.filter((id) => !encontrados.has(id));
+
+    if (ausentes.length > 0) {
+      throw new Error(
+        `${tabela}: ${ausentes.length} id(s) nao apareceram apos o upsert: ${ausentes
+          .slice(0, 10)
+          .join(', ')}`,
+      );
+    }
+  }
+}
+
 async function main() {
   const opcoes = lerOpcoes(process.argv.slice(2));
   const referencia = new Date().toISOString();
@@ -478,12 +517,32 @@ async function main() {
       idsConhecidos,
     );
 
+    // Documento de um time que ja foi apagado pode ter ficado orfao nas
+    // colecoes globais do Firestore. Esse legado nao pertence a nenhum time
+    // migravel. Qualquer outro tipo de referencia quebrada, porem, e perda de
+    // dado do escopo ativo e precisa interromper a virada.
+    const {
+      deTimesAusentes: descartadasDeTimesAusentes,
+      inesperadas: descartadasInesperadas,
+    } = classificarReferenciasDescartadas(descartadas, idsConhecidos.teams);
+
+    if (descartadasInesperadas.length > 0) {
+      throw new Error(
+        [
+          `${tabela} tem ${descartadasInesperadas.length} referencia(s) quebrada(s) em dados de times ativos.`,
+          'A importacao foi interrompida para nao perder dados.',
+          JSON.stringify(descartadasInesperadas.slice(0, 10), null, 2),
+        ].join('\n'),
+      );
+    }
+
     // O conjunto é preenchido sempre, inclusive em simulação: as tabelas
     // seguintes precisam dele para validar as próprias referências.
     idsConhecidos[tabela] = new Set(aceitas.map((linha) => linha.id));
 
     if (supabase && aceitas.length > 0) {
       await gravar(supabase, tabela, aceitas);
+      await confirmarIdsGravados(supabase, tabela, aceitas);
     }
 
     // Filha entra depois do pai — e so a que sobreviveu ao filtro dele, senao
@@ -530,6 +589,8 @@ async function main() {
       pulada: false,
       semMapeamento,
       descartadasPorReferencia: descartadas.length,
+      descartadasDeTimesAusentes: descartadasDeTimesAusentes.length,
+      descartadasInesperadas: descartadasInesperadas.length,
       camposZeradosPorReferencia: ajustadas.length,
       ...(Object.keys(filhasGravadas).length > 0 ? { filhas: filhasGravadas } : {}),
     });
@@ -545,7 +606,9 @@ async function main() {
     }
 
     if (descartadas.length > 0) {
-      log('  descartados por referencia pendurada', descartadas.slice(0, 10));
+      log(
+        `  ${descartadasDeTimesAusentes.length} documento(s) legado(s) de time ausente, fora da migracao`,
+      );
     }
 
     if (ajustadas.length > 0) {

@@ -124,9 +124,15 @@ num acerto que já aconteceu.
 
 ## Fases
 
-### Fase 0 — Schema ✅ concluída
+### Fase 0 — Schema e carga inicial ✅ concluídos parcialmente
 
-Tabelas, RLS, helpers e triggers no ar. **Nenhum dado migrado, app intocado.**
+O projeto remoto já possui schema e uma carga inicial. O histórico remoto de
+migrations ainda precisa receber `0012` e `20260821071359_seguranca_pre_migracao`
+antes da virada. O app continua lendo do Firestore.
+
+O dump atual contém documentos legados de times que já não existem em `teams`.
+O preflight os separa de referências quebradas reais e interrompe a migração se
+qualquer descarte inesperado aparecer.
 
 ### Fase 1 — Ligar o Supabase ao Firebase Auth
 
@@ -136,6 +142,12 @@ para o projeto `bocaiuva-app`. Também é preciso o custom claim
 esse campo, e sem ele a RLS recusa tudo.
 
 > Isso mexe em autenticação. Não faço sem pedido explícito.
+
+O cliente já envia o JWT Firebase ao Supabase. Ainda é obrigatório confirmar no
+Dashboard que a integração Third-Party Auth aponta para o projeto Firebase
+correto e rodar o backfill de claims antes da virada. Novas contas precisam de
+automação server-side para receber o claim; até ela ser implantada, rode a
+auditoria de claims antes de liberar leitura Supabase para novos cadastros.
 
 ### Fase 2 — Importação inicial ✅ script pronto
 

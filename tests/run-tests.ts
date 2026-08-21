@@ -119,6 +119,7 @@ import {
   createTeamMember,
   createUser,
 } from './test-helpers';
+import { accessibilityHardeningTestCases } from './accessibility-hardening-cases';
 import { expensesTestCases } from './expenses-cases';
 import { expensesRepositoryTestCases } from './expenses-repository-cases';
 import { feeExemptionTestCases } from './fee-exemption-cases';
@@ -134,6 +135,7 @@ import { playerDeletionTestCases } from './player-deletion-cases';
 import { fieldCostExemptTestCases } from './field-cost-exempt-cases';
 import { searchTestCases } from './search-cases';
 import { statsBreakdownFinanceTestCases } from './stats-breakdown-finance-cases';
+import { supabaseHardeningTestCases } from './supabase-hardening-cases';
 import { themeContrastTestCases } from './theme-contrast-cases';
 
 type TestCase = {
@@ -142,6 +144,7 @@ type TestCase = {
 };
 
 const testCases: TestCase[] = [
+  ...accessibilityHardeningTestCases,
   ...statsBreakdownFinanceTestCases,
   ...themeContrastTestCases,
   ...expensesTestCases,
@@ -156,6 +159,7 @@ const testCases: TestCase[] = [
   ...mobileLayoutTestCases,
   ...mvpVotePermissionTestCases,
   ...realtimeBootstrapTestCases,
+  ...supabaseHardeningTestCases,
   ...migracaoPostgresTestCases,
   ...lineupShareTestCases,
   {

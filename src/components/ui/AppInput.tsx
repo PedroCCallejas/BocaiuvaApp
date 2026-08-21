@@ -25,6 +25,8 @@ export function AppInput({
   style,
   onBlur,
   onFocus,
+  accessibilityHint,
+  accessibilityLabel,
   ...props
 }: AppInputProps) {
   const theme = useAppTheme();
@@ -47,6 +49,9 @@ export function AppInput({
       <Text style={[styles.label, { color: theme.colors.textMuted }]}>{label}</Text>
       <TextInput
         ref={inputRef}
+        accessibilityHint={error ?? accessibilityHint}
+        accessibilityLabel={accessibilityLabel ?? label}
+        aria-invalid={Boolean(error)}
         placeholderTextColor={theme.colors.textMuted}
         returnKeyType={props.multiline ? 'default' : props.returnKeyType ?? 'next'}
         style={[
@@ -89,7 +94,14 @@ export function AppInput({
         selectionColor={theme.colors.action}
         {...props}
       />
-      {error ? <Text style={[styles.error, { color: theme.colors.danger }]}>{error}</Text> : null}
+      {error ? (
+        <Text
+          accessibilityLiveRegion="polite"
+          accessibilityRole="alert"
+          style={[styles.error, { color: theme.colors.danger }]}>
+          {error}
+        </Text>
+      ) : null}
     </View>
   );
 }

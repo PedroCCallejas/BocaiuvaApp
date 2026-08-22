@@ -128,6 +128,7 @@ import { matchHighlightsTestCases } from './match-highlights-cases';
 import { mobileLayoutTestCases } from './mobile-layout-cases';
 import { mvpVotePermissionTestCases } from './mvp-vote-permission-cases';
 import { lineupShareTestCases } from './lineup-share-cases';
+import { supabaseFinanceiroTestCases } from './supabase-financeiro-cases';
 import { supabaseModulosTestCases } from './supabase-modulos-cases';
 import { migracaoPostgresTestCases } from './migracao-postgres-cases';
 import { realtimeBootstrapTestCases } from './realtime-bootstrap-cases';
@@ -164,6 +165,7 @@ const testCases: TestCase[] = [
   ...migracaoPostgresTestCases,
   ...lineupShareTestCases,
   ...supabaseModulosTestCases,
+  ...supabaseFinanceiroTestCases,
   {
     name: 'sitemap oficial contem somente as dez URLs publicas canonicas',
     run() {

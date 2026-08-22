@@ -1,0 +1,173 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+import { traduzirErroDoPostgres } from '@/services/repository/supabase/erros';
+
+type TestCase = {
+  name: string;
+  run: () => void | Promise<void>;
+};
+
+const RPC = 'supabase/migrations/20260821180000_rpc_salvar_despesa.sql';
+const MODULO = 'src/services/repository/supabase/financeiro.ts';
+
+/**
+ * Só o código, sem comentário.
+ *
+ * Este arquivo explica no comentário o que NÃO pode existir no código —
+ * "`security definer` aqui viraria um buraco". Procurar no texto cru faria a
+ * própria explicação reprovar a implementação correta.
+ */
+function apenasCodigoSql(fonte: string) {
+  return fonte
+    .split('\n')
+    .filter((linha) => !linha.trim().startsWith('--'))
+    .join('\n');
+}
+
+function apenasCodigoTs(fonte: string) {
+  return fonte
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((linha) => !linha.trim().startsWith('//'))
+    .join('\n');
+}
+
+export const supabaseFinanceiroTestCases: TestCase[] = [
+  {
+    name: 'violacao de RLS vira mensagem de permissao, nao codigo cru',
+    run() {
+      // `new row violates row-level security policy for table "expenses"` nao
+      // diz nada para quem so queria lancar uma cerveja.
+      const porCodigo = traduzirErroDoPostgres({ code: '42501', message: 'denied' }, 'padrao');
+      assert.equal(porCodigo.code, 'permission-denied');
+      assert.match(porCodigo.message, /não tem permissão/);
+
+      // Nem sempre vem com codigo: em alguns caminhos so o texto chega.
+      const porTexto = traduzirErroDoPostgres(
+        { message: 'new row violates row-level security policy' },
+        'padrao',
+      );
+      assert.equal(porTexto.code, 'permission-denied');
+    },
+  },
+  {
+    name: 'queda de rede nao vira erro de permissao',
+    run() {
+      // Mandar a pessoa "pedir acesso ao admin" quando o problema e o 4G dela
+      // e pior do que nao dizer nada.
+      const erro = traduzirErroDoPostgres({ message: 'fetch failed' }, 'padrao');
+
+      assert.equal(erro.code, 'unavailable');
+      assert.match(erro.message, /Sem conexão/);
+    },
+  },
+  {
+    name: 'a causa tecnica e preservada para o log',
+    run() {
+      const erro = traduzirErroDoPostgres(
+        { code: '23503', message: 'violates foreign key', details: 'categoria sumiu' },
+        'padrao',
+      );
+
+      assert.equal(erro.code, 'failed-precondition');
+      assert.match(erro.causaTecnica ?? '', /violates foreign key/);
+      assert.match(erro.causaTecnica ?? '', /categoria sumiu/);
+    },
+  },
+  {
+    name: 'erro desconhecido cai na mensagem padrao do chamador',
+    run() {
+      const erro = traduzirErroDoPostgres({ code: 'XX999', message: 'algo raro' }, 'Deu ruim.');
+
+      assert.equal(erro.code, 'unknown');
+      assert.equal(erro.message, 'Deu ruim.');
+    },
+  },
+  {
+    name: 'despesa e rateio entram na mesma transacao',
+    run() {
+      const rpc = fs.readFileSync(RPC, 'utf8');
+
+      // Duas escritas soltas podiam deixar despesa sem cota, e o painel de
+      // pendencias passaria a mentir sobre quem deve o que.
+      assert.match(rpc, /insert into public\.expenses/);
+      assert.match(rpc, /delete from public\.expense_shares/);
+      assert.match(rpc, /insert into public\.expense_shares/);
+    },
+  },
+  {
+    name: 'a RPC nao ganha privilegio de quem a criou',
+    run() {
+      const rpc = apenasCodigoSql(fs.readFileSync(RPC, 'utf8'));
+
+      // `security definer` aqui viraria um buraco por onde qualquer membro
+      // gravaria despesa, contornando a RLS que restringe ao admin.
+      assert.match(rpc, /security invoker/);
+      assert.doesNotMatch(rpc, /security definer/);
+    },
+  },
+  {
+    name: 'despesa nao troca de time nem de autor no update',
+    run() {
+      const rpc = apenasCodigoSql(fs.readFileSync(RPC, 'utf8'));
+      const doUpdate = rpc.slice(rpc.indexOf('on conflict (id) do update set'));
+      const ateOReturning = doUpdate.slice(0, doUpdate.indexOf('returning'));
+
+      // Deixar `team_id` no update abriria caminho para mover despesa entre
+      // times — e a RLS do destino nem seria consultada.
+      assert.doesNotMatch(ateOReturning, /team_id = excluded/);
+      assert.doesNotMatch(ateOReturning, /created_by = excluded/);
+    },
+  },
+  {
+    name: 'a permissao mora na RLS, nao repetida no cliente',
+    run() {
+      const modulo = apenasCodigoTs(fs.readFileSync(MODULO, 'utf8'));
+
+      // Uma checagem a mais aqui so criaria um segundo lugar para divergir da
+      // policy — e foi assim que nasceram os bugs do Firestore.
+      assert.doesNotMatch(modulo, /ensureTeamAdmin/);
+      assert.doesNotMatch(modulo, /canManageTeam/);
+    },
+  },
+  {
+    name: 'apagar despesa e soft delete, o historico financeiro nao some',
+    run() {
+      const modulo = fs.readFileSync(MODULO, 'utf8');
+      const bloco = modulo.slice(modulo.indexOf('export async function apagarDespesa'));
+
+      assert.match(bloco.slice(0, 400), /deletedAt: agora\(\)/);
+      assert.doesNotMatch(bloco.slice(0, 400), /\.delete\(\)/);
+    },
+  },
+  {
+    name: 'categoria e arquivada, nunca apagada',
+    run() {
+      const modulo = fs.readFileSync(MODULO, 'utf8');
+      const bloco = modulo.slice(modulo.indexOf('export async function arquivarCategoria'));
+
+      // Despesa antiga aponta para a categoria: apagar deixaria o historico
+      // sem nome, e a FK recusaria de qualquer forma.
+      assert.match(bloco.slice(0, 400), /archived_at: agora\(\)/);
+      assert.doesNotMatch(bloco.slice(0, 400), /\.delete\(\)/);
+    },
+  },
+  {
+    name: 'quitado de quem nao participa e descartado',
+    run() {
+      const modulo = fs.readFileSync(MODULO, 'utf8');
+
+      // Seria divida inexistente marcada como paga.
+      const ocorrencias = modulo.match(
+        /\.filter\(\(playerId\) =>\s*\n?\s*participantes\.includes\(playerId\)/g,
+      );
+
+      assert.equal(
+        (ocorrencias ?? []).length >= 2,
+        true,
+        'criar e atualizar precisam filtrar os quitados',
+      );
+    },
+  },
+];

@@ -154,6 +154,91 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     },
   },
   {
+    name: 'o firebase-repository nao foi tocado para migrar um modulo',
+    run() {
+      const firebase = fs.readFileSync('src/services/repository/firebase-repository.ts', 'utf8');
+
+      // Ele sustenta o app inteiro hoje. Mexer nele para migrar um modulo
+      // colocaria os outros quinze em risco sem necessidade.
+      assert.doesNotMatch(firebase, /supabase/i);
+    },
+  },
+  {
+    name: 'o modulo desligado devolve o repositorio base sem camada nenhuma',
+    run() {
+      const index = fs.readFileSync('src/services/repository/index.ts', 'utf8');
+
+      assert.match(index, /moduloUsaSupabase\('financeiro'\)/);
+      assert.match(index, /: baseRepository/);
+
+      // Mock existe para desenvolver sem banco. Empilhar Supabase em cima
+      // misturaria dado de mentira com dado real.
+      assert.match(index, /shouldUseFirebase && moduloUsaSupabase/);
+    },
+  },
+  {
+    name: 'toda escrita do financeiro invalida o cache da leitura',
+    run() {
+      const repo = apenasCodigoTs(
+        fs.readFileSync('src/services/repository/supabase/financeiro-repositorio.ts', 'utf8'),
+      );
+
+      // Cache que nao invalida mostra o valor antigo depois de salvar, e a
+      // pessoa acha que o botao nao funcionou.
+      const escritas = repo.match(/async (create|update|delete|set)[A-Za-z]+\(/g) ?? [];
+      const invalidacoes = repo.match(/invalidarCache\(\);/g) ?? [];
+
+      assert.equal(escritas.length, 7, `esperava 7 escritas, achei ${escritas.length}`);
+      assert.equal(
+        invalidacoes.length >= escritas.length,
+        true,
+        `${escritas.length} escritas para ${invalidacoes.length} invalidacoes`,
+      );
+    },
+  },
+  {
+    name: 'o tempo real do Firestore continua entregando a fatia financeira',
+    run() {
+      const repo = apenasCodigoTs(
+        fs.readFileSync('src/services/repository/supabase/financeiro-repositorio.ts', 'utf8'),
+      );
+
+      // Sem isso o app mostraria o financeiro vazio a cada atualizacao vinda
+      // do outro banco.
+      assert.match(repo, /composto\.subscribeSnapshot = async/);
+      assert.match(repo, /comFinanceiro\(snapshot, fatiaEmCache \?\? VAZIO\)/);
+    },
+  },
+  {
+    name: 'financeiro fora do ar nao derruba o app inteiro',
+    run() {
+      const repo = fs.readFileSync(
+        'src/services/repository/supabase/financeiro-repositorio.ts',
+        'utf8',
+      );
+      const leitura = repo.slice(repo.indexOf('async function lerFatiaFinanceira'));
+
+      // E uma aba so. Ficar sem ela e muito melhor do que a tela inicial nao
+      // abrir.
+      assert.match(leitura.slice(0, 900), /catch \(erro\)/);
+      assert.match(leitura.slice(0, 900), /return VAZIO;/);
+    },
+  },
+  {
+    name: 'o time ativo vem do banco, nao de estado guardado no modulo',
+    run() {
+      const repo = apenasCodigoTs(
+        fs.readFileSync('src/services/repository/supabase/financeiro-repositorio.ts', 'utf8'),
+      );
+
+      // Guardar o time numa variavel criaria uma segunda fonte da verdade que
+      // sai de sincronia ao trocar de time — e o sintoma seria despesa gravada
+      // no time errado.
+      assert.match(repo, /from\('users'\)\s*\n?\s*\.select\('active_team_id'\)/);
+      assert.doesNotMatch(repo, /let timeAtivo/);
+    },
+  },
+  {
     name: 'quitado de quem nao participa e descartado',
     run() {
       const modulo = fs.readFileSync(MODULO, 'utf8');

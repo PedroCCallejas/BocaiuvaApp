@@ -14,11 +14,15 @@
  */
 
 import type {
+  AttendanceRecord,
   Expense,
   ExpenseCategory,
   ExpenseSplitMode,
+  Lineup,
+  Match,
   MatchDiaryEntry,
   MatchDiaryMood,
+  MatchStat,
 } from '@/types/domain';
 
 type Linha = Record<string, unknown>;
@@ -153,6 +157,222 @@ export function paraDespesa(linha: Linha, cotas: LinhaDeCota[] = []): Expense {
     createdAt: instante(linha.created_at, agora),
     updatedAt: instante(linha.updated_at, agora),
   };
+}
+
+// ── Partida ────────────────────────────────────────────────────────────────
+
+const STATUS_DE_PARTIDA = ['scheduled', 'confirmed', 'finished', 'canceled'] as const;
+const TIPOS_DE_PARTIDA = ['society', 'futsal', 'field', 'training'] as const;
+const STATUS_DE_PRESENCA = ['confirmed', 'absent', 'pending'] as const;
+
+function opcao<T extends string>(valor: unknown, permitidos: readonly T[], padrao: T): T {
+  const bruto = textoOuNulo(valor);
+  return bruto && (permitidos as readonly string[]).includes(bruto) ? (bruto as T) : padrao;
+}
+
+/** Objeto para campo `jsonb`. Array e primitivo não entram. */
+function objetoOuNulo(valor: unknown): Record<string, unknown> | null {
+  if (!valor || typeof valor !== 'object' || Array.isArray(valor)) {
+    return null;
+  }
+
+  return valor as Record<string, unknown>;
+}
+
+export interface LinhaDeCustoDeCampo {
+  match_id?: unknown;
+  total_amount_cents?: unknown;
+  split_count?: unknown;
+  amount_per_player_cents?: unknown;
+  note?: unknown;
+  pix_key?: unknown;
+  responsible_name?: unknown;
+  paid_guest_count?: unknown;
+  updated_at?: unknown;
+  updated_by_user_id?: unknown;
+}
+
+export interface LinhaDeParticipanteDoCampo {
+  match_id?: unknown;
+  player_id?: unknown;
+  role?: unknown;
+}
+
+/**
+ * Remonta a partida.
+ *
+ * `fieldCost` e `fieldPayment` deixaram de ser `jsonb` dentro da partida: viraram
+ * `match_field_costs` e `match_field_participants`. O domínio ainda espera os
+ * dois objetos, então a reconstrução mora aqui.
+ *
+ * O valor volta para **reais** porque é o que o domínio usa hoje. No banco ele
+ * está em centavos inteiros — a conversão de ida arredondou uma vez, e refazer
+ * a divisão aqui só acumularia erro.
+ */
+export function paraPartida(
+  linha: Linha,
+  custo?: LinhaDeCustoDeCampo | null,
+  participantes: LinhaDeParticipanteDoCampo[] = [],
+): Match {
+  const agora = new Date().toISOString();
+  const id = texto(linha.id);
+
+  const meusParticipantes = participantes.filter(
+    (item) => texto(item.match_id) === id,
+  );
+
+  const porPapel = (papel: 'payer' | 'exempt') =>
+    meusParticipantes
+      .filter((item) => texto(item.role) === papel)
+      .map((item) => texto(item.player_id))
+      .filter((playerId) => playerId.length > 0)
+      .sort((esquerda, direita) => esquerda.localeCompare(direita));
+
+  const temCusto = Boolean(custo) && inteiro(custo?.total_amount_cents) > 0;
+
+  return {
+    id,
+    teamId: texto(linha.team_id),
+    seasonId: textoOuNulo(linha.season_id),
+    date: dataOuNulo(linha.date) ?? agora.slice(0, 10),
+    time: texto(linha.time),
+    venue: texto(linha.venue),
+    locationUrl: textoOuNulo(linha.location_url),
+    opponentName: texto(linha.opponent_name),
+    opponentLogoUrl: textoOuNulo(linha.opponent_logo_url),
+    opponentTeamId: textoOuNulo(linha.opponent_team_id),
+    opponentTeamName: textoOuNulo(linha.opponent_team_name),
+    opponentTeamLogoUrl: textoOuNulo(linha.opponent_team_logo_url),
+    opponentSource: opcao(
+      linha.opponent_source,
+      ['manual', 'public_team'] as const,
+      'manual',
+    ),
+    linePlayersCount: inteiro(linha.line_players_count),
+    matchType: opcao(linha.match_type, TIPOS_DE_PARTIDA, 'society'),
+    notes: texto(linha.notes),
+    status: opcao(linha.status, STATUS_DE_PARTIDA, 'scheduled'),
+    createdBy: texto(linha.created_by),
+    scoreboard: objetoOuNulo(linha.scoreboard) as Match['scoreboard'],
+    fieldCost: temCusto
+      ? {
+          totalAmount: inteiro(custo?.total_amount_cents) / 100,
+          splitCount: inteiro(custo?.split_count),
+          amountPerPlayer: inteiro(custo?.amount_per_player_cents) / 100,
+          currency: 'BRL',
+          note: textoOuNulo(custo?.note),
+          updatedAt: instante(custo?.updated_at, agora),
+          updatedByUserId: textoOuNulo(custo?.updated_by_user_id) ?? undefined,
+        }
+      : null,
+    fieldPayment:
+      meusParticipantes.length > 0 || custo
+        ? {
+            payerPlayerIds: porPapel('payer'),
+            exemptPlayerIds: porPapel('exempt'),
+            paidGuestCount: inteiro(custo?.paid_guest_count),
+            pixKey: textoOuNulo(custo?.pix_key),
+            responsibleName: textoOuNulo(custo?.responsible_name),
+            updatedAt: instante(custo?.updated_at, agora),
+            updatedByUserId: textoOuNulo(custo?.updated_by_user_id) ?? undefined,
+          }
+        : null,
+    finishedAt: instanteOuNulo(linha.finished_at),
+    mvpWinnerPlayerIds: listaDeTextos(linha.mvp_winner_player_ids),
+    mvpTotalVotes: inteiro(linha.mvp_total_votes),
+    manualMvpPlayerId: textoOuNulo(linha.manual_mvp_player_id),
+    manualMvpSelectedBy: textoOuNulo(linha.manual_mvp_selected_by),
+    manualMvpSelectedAt: instanteOuNulo(linha.manual_mvp_selected_at),
+    deletedAt: instanteOuNulo(linha.deleted_at),
+    deletedBy: textoOuNulo(linha.deleted_by),
+    createdAt: instante(linha.created_at, agora),
+    updatedAt: instante(linha.updated_at, agora),
+  };
+}
+
+export function paraPresenca(linha: Linha): AttendanceRecord {
+  const agora = new Date().toISOString();
+
+  return {
+    id: texto(linha.id),
+    teamId: texto(linha.team_id),
+    matchId: texto(linha.match_id),
+    playerId: texto(linha.player_id),
+    userId: textoOuNulo(linha.user_id),
+    status: opcao(linha.status, STATUS_DE_PRESENCA, 'pending'),
+    respondedAt: instanteOuNulo(linha.responded_at),
+    createdAt: instante(linha.created_at, agora),
+    updatedAt: instante(linha.updated_at, agora),
+  };
+}
+
+export function paraEstatistica(linha: Linha): MatchStat {
+  const agora = new Date().toISOString();
+
+  return {
+    id: texto(linha.id),
+    teamId: texto(linha.team_id),
+    matchId: texto(linha.match_id),
+    playerId: texto(linha.player_id),
+    played: linha.played === true,
+    started: linha.started === true,
+    goals: inteiro(linha.goals),
+    assists: inteiro(linha.assists),
+    yellowCards: inteiro(linha.yellow_cards),
+    redCards: inteiro(linha.red_cards),
+    notes: texto(linha.notes),
+    createdAt: instante(linha.created_at, agora),
+    updatedAt: instante(linha.updated_at, agora),
+  };
+}
+
+/**
+ * Escalação.
+ *
+ * `starters` é `jsonb` de propósito: são coordenadas x/y para desenhar o campo,
+ * não relação. O que vem do banco é validado aqui porque um nó sem `playerId`
+ * quebraria o desenho.
+ */
+export function paraEscalacao(linha: Linha): Lineup {
+  const agora = new Date().toISOString();
+
+  const titulares = Array.isArray(linha.starters)
+    ? linha.starters
+        .filter(
+          (item): item is Record<string, unknown> =>
+            Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+        )
+        .map((item) => ({
+          playerId: texto(item.playerId),
+          x: decimal(item.x),
+          y: decimal(item.y),
+          zone: opcao(
+            item.zone,
+            ['goalkeeper', 'defense', 'midfield', 'attack'] as const,
+            'midfield',
+          ),
+          label: textoOuNulo(item.label),
+        }))
+        .filter((no) => no.playerId.length > 0)
+    : [];
+
+  return {
+    id: texto(linha.id),
+    teamId: texto(linha.team_id),
+    matchId: texto(linha.match_id),
+    formationKey: texto(linha.formation_key),
+    starters: titulares,
+    benchPlayerIds: listaDeTextos(linha.bench_player_ids),
+    createdAt: instante(linha.created_at, agora),
+    updatedAt: instante(linha.updated_at, agora),
+  };
+}
+
+function decimal(valor: unknown, padrao = 0): number {
+  const numero =
+    typeof valor === 'number' ? valor : typeof valor === 'string' ? Number(valor) : Number.NaN;
+
+  return Number.isFinite(numero) ? numero : padrao;
 }
 
 const HUMORES: MatchDiaryMood[] = ['funny', 'highlight', 'warning', 'praise', 'neutral'];

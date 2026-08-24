@@ -1831,10 +1831,42 @@ async function fetchSeasonsByTeamId(teamId: string) {
  * "Unsupported field value: undefined" e a gravacao inteira falha.
  * `null` e aceito normalmente — o problema e so `undefined`.
  */
-function stripUndefined<T extends object>(value: T): T {
+/**
+ * Remove `undefined` em qualquer profundidade.
+ *
+ * O Firestore recusa o documento inteiro quando encontra `undefined` em
+ * qualquer campo. A versão anterior só olhava o primeiro nível, e por isso um
+ * `feeExemption.updatedByUserId` indefinido derrubava o salvamento da isenção
+ * com uma mensagem que só faz sentido para quem escreveu o código.
+ *
+ * Array é percorrido também: `undefined` dentro de lista tem o mesmo efeito.
+ */
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item) => item !== undefined)
+      .map((item) => stripUndefined(item)) as unknown as T;
+  }
+
+  // `Date` e afins não são objetos simples: percorrer destruiria o valor.
+  if (value === null || typeof value !== 'object' || !isPlainObject(value)) {
+    return value;
+  }
+
   return Object.fromEntries(
-    Object.entries(value).filter(([, item]) => item !== undefined),
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, item]) => item !== undefined)
+      .map(([chave, item]) => [chave, stripUndefined(item)]),
   ) as T;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object') {
+    return false;
+  }
+
+  const prototipo = Object.getPrototypeOf(value);
+  return prototipo === Object.prototype || prototipo === null;
 }
 
 function requireExpenseLabel(label: string) {

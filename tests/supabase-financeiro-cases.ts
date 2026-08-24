@@ -183,16 +183,16 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
         fs.readFileSync('src/services/repository/supabase/financeiro-repositorio.ts', 'utf8'),
       );
 
-      // Cache que nao invalida mostra o valor antigo depois de salvar, e a
+      // Cache que nao recarrega mostra o valor antigo depois de salvar, e a
       // pessoa acha que o botao nao funcionou.
       const escritas = repo.match(/async (create|update|delete|set)[A-Za-z]+\(/g) ?? [];
-      const invalidacoes = repo.match(/invalidarCache\(\);/g) ?? [];
+      const recargas = repo.match(/await recarregarFatia\(\);/g) ?? [];
 
       assert.equal(escritas.length, 7, `esperava 7 escritas, achei ${escritas.length}`);
       assert.equal(
-        invalidacoes.length >= escritas.length,
+        recargas.length >= escritas.length,
         true,
-        `${escritas.length} escritas para ${invalidacoes.length} invalidacoes`,
+        `${escritas.length} escritas para ${recargas.length} recargas`,
       );
     },
   },
@@ -207,6 +207,28 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
       // do outro banco.
       assert.match(repo, /composto\.subscribeSnapshot = async/);
       assert.match(repo, /comFinanceiro\(snapshot, fatiaEmCache \?\? VAZIO\)/);
+    },
+  },
+  {
+    name: 'escrita no Postgres avisa a tela sem esperar o Firestore',
+    run() {
+      const repo = apenasCodigoTs(
+        fs.readFileSync('src/services/repository/supabase/financeiro-repositorio.ts', 'utf8'),
+      );
+
+      // So invalidar o cache deixava a fatia nula, e a proxima emissao do
+      // Firestore saia com o financeiro VAZIO — as despesas sumiam da tela
+      // depois de marcar alguem como quitado.
+      assert.doesNotMatch(repo, /invalidarCache\(\)/);
+      assert.match(repo, /fatiaEmCache = fatia;/);
+
+      const recarga = repo.slice(repo.indexOf('async function recarregarFatia'));
+      assert.match(recarga.slice(0, 500), /emitirParaOApp\(comFinanceiro\(ultimoSnapshotBase, fatia\)\)/);
+
+      // O tempo real e do Firestore e ele nao sabe que o Postgres mudou; quem
+      // escreveu precisa guardar para onde reemitir.
+      assert.match(repo, /ultimoSnapshotBase = snapshot;/);
+      assert.match(repo, /emitirParaOApp = handlers\.onSnapshot;/);
     },
   },
   {

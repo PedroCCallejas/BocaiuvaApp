@@ -75,3 +75,5 @@ AGENTS.md
 .codex
 # Dump cru do Firestore: dado pessoal do time, nao versionar
 dados-firestore/
+
+.vercel

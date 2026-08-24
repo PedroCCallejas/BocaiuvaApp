@@ -110,13 +110,19 @@ export function buildPlayerFeeExemption(input: {
 
   const reason = input.reason?.trim() || null;
 
+  // Sem autor conhecido, a chave nem existe. Gravar `undefined` fazia o
+  // Firestore recusar o documento inteiro — e o tipo não aceita `null` aqui.
+  const autor = input.updatedByUserId?.trim()
+    ? { updatedByUserId: input.updatedByUserId.trim() }
+    : {};
+
   if (input.mode === 'always') {
     return {
       mode: 'always',
       until: null,
       reason,
       updatedAt: input.updatedAt,
-      updatedByUserId: input.updatedByUserId ?? undefined,
+      ...autor,
     };
   }
 
@@ -129,6 +135,6 @@ export function buildPlayerFeeExemption(input: {
     until: input.until.trim(),
     reason,
     updatedAt: input.updatedAt,
-    updatedByUserId: input.updatedByUserId ?? undefined,
+    ...autor,
   };
 }

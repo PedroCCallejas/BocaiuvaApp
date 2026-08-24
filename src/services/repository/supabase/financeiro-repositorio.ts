@@ -113,6 +113,10 @@ async function lerFatiaFinanceira(): Promise<FatiaFinanceira> {
 let fatiaEmCache: FatiaFinanceira | null = null;
 let leituraEmVoo: Promise<FatiaFinanceira> | null = null;
 
+/** Último snapshot do Firestore e para onde reemitir, quando o tempo real está ligado. */
+let ultimoSnapshotBase: AppSnapshot | null = null;
+let emitirParaOApp: ((snapshot: AppSnapshot) => void) | null = null;
+
 async function obterFatia(): Promise<FatiaFinanceira> {
   if (fatiaEmCache) {
     return fatiaEmCache;
@@ -128,9 +132,27 @@ async function obterFatia(): Promise<FatiaFinanceira> {
   return await leituraEmVoo;
 }
 
-function invalidarCache() {
-  fatiaEmCache = null;
+/**
+ * Relê o financeiro e avisa a tela na hora.
+ *
+ * Só invalidar o cache não bastava: a fatia ficava nula e a próxima emissão
+ * vinda do Firestore saía com o financeiro VAZIO — as despesas sumiam da tela
+ * depois de marcar alguém como quitado, que foi exatamente o que apareceu no
+ * teste.
+ *
+ * O tempo real é do Firestore e ele não tem como saber que o Postgres mudou.
+ * Quem escreveu precisa avisar.
+ */
+async function recarregarFatia(): Promise<FatiaFinanceira> {
   leituraEmVoo = null;
+  const fatia = await lerFatiaFinanceira();
+  fatiaEmCache = fatia;
+
+  if (ultimoSnapshotBase && emitirParaOApp) {
+    emitirParaOApp(comFinanceiro(ultimoSnapshotBase, fatia));
+  }
+
+  return fatia;
 }
 
 function comFinanceiro(base: AppSnapshot, fatia: FatiaFinanceira): AppSnapshot {
@@ -155,42 +177,42 @@ export function comFinanceiroNoSupabase(base: AppRepository): AppRepository {
 
     async createExpense(input, actorUserId) {
       const despesa = await criarDespesa(await exigirTimeAtivo(), input, actorUserId);
-      invalidarCache();
+      await recarregarFatia();
       return despesa;
     },
 
     async updateExpense(expenseId, input) {
       const despesa = await atualizarDespesa(expenseId, input);
-      invalidarCache();
+      await recarregarFatia();
       return despesa;
     },
 
     async deleteExpense(expenseId) {
       await apagarDespesa(expenseId);
-      invalidarCache();
+      await recarregarFatia();
     },
 
     async setExpenseSettlement(expenseId, playerId, settled) {
       const despesa = await definirQuitacao(expenseId, playerId, settled);
-      invalidarCache();
+      await recarregarFatia();
       return despesa;
     },
 
     async createExpenseCategory(input) {
       const categoria = await criarCategoria(await exigirTimeAtivo(), input);
-      invalidarCache();
+      await recarregarFatia();
       return categoria;
     },
 
     async updateExpenseCategory(categoryId, input) {
       const categoria = await atualizarCategoria(categoryId, input);
-      invalidarCache();
+      await recarregarFatia();
       return categoria;
     },
 
     async deleteExpenseCategory(categoryId) {
       await arquivarCategoria(categoryId);
-      invalidarCache();
+      await recarregarFatia();
     },
   };
 
@@ -202,6 +224,11 @@ export function comFinanceiroNoSupabase(base: AppRepository): AppRepository {
       await base.subscribeSnapshot!(currentUserId, {
         ...handlers,
         onSnapshot: (snapshot) => {
+          // Guardados para o reenvio depois de uma escrita no Postgres: o
+          // tempo real do Firestore não tem como saber que o outro banco mudou.
+          ultimoSnapshotBase = snapshot;
+          emitirParaOApp = handlers.onSnapshot;
+
           handlers.onSnapshot(comFinanceiro(snapshot, fatiaEmCache ?? VAZIO));
 
           if (!fatiaEmCache) {
@@ -219,7 +246,10 @@ export function comFinanceiroNoSupabase(base: AppRepository): AppRepository {
   return composto;
 }
 
-/** Só para teste: zera o cache entre casos. */
+/** Só para teste: zera o cache e o destino do reenvio entre casos. */
 export function limparCacheDoFinanceiro() {
-  invalidarCache();
+  fatiaEmCache = null;
+  leituraEmVoo = null;
+  ultimoSnapshotBase = null;
+  emitirParaOApp = null;
 }

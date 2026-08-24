@@ -293,6 +293,46 @@ export const feeExemptionTestCases: TestCase[] = [
     },
   },
   {
+    name: 'isencao sem autor nao grava undefined no Firestore',
+    run() {
+      // O Firestore recusa o documento INTEIRO ao encontrar `undefined` em
+      // qualquer campo, por mais fundo que esteja. Era o que derrubava
+      // "Salvar isenção" com uma mensagem so compreensivel para quem escreveu
+      // o codigo.
+      const semAutor = buildPlayerFeeExemption({
+        mode: 'always',
+        reason: 'Presidente',
+        updatedAt: '2026-08-24T16:00:00.000Z',
+      });
+
+      assert.equal('updatedByUserId' in (semAutor ?? {}), false);
+
+      const comAutor = buildPlayerFeeExemption({
+        mode: 'always',
+        updatedAt: '2026-08-24T16:00:00.000Z',
+        updatedByUserId: 'user-1',
+      });
+
+      assert.equal(comAutor?.updatedByUserId, 'user-1');
+    },
+  },
+  {
+    name: 'undefined aninhado e removido antes de ir ao Firestore',
+    run() {
+      const repo = fs.readFileSync(
+        'src/services/repository/firebase-repository.ts',
+        'utf8',
+      );
+      const funcao = repo.slice(repo.indexOf('function stripUndefined'));
+
+      // A versao rasa so olhava o primeiro nivel, e por isso
+      // `feeExemption.updatedByUserId` passava batido.
+      assert.match(funcao.slice(0, 800), /stripUndefined\(item\)/);
+      assert.match(funcao.slice(0, 800), /Array\.isArray\(value\)/);
+      assert.match(funcao.slice(0, 800), /isPlainObject/);
+    },
+  },
+  {
     name: 'a isencao da ficha vale sozinha, sem depender de quando a tela abriu',
     run() {
       const screen = fs.readFileSync('src/app/(app)/matches/[matchId].tsx', 'utf8');

@@ -41,6 +41,7 @@ import {
   CHAVE_DE_CONFLITO,
   DEFINICOES,
   ORDEM_DAS_TABELAS,
+  TABELAS_DE_MODULO_JA_MIGRADO,
   classificarReferenciasDescartadas,
   dependenciasVazias,
   lotesQueCabemNaUrl,
@@ -70,6 +71,8 @@ interface Opcoes {
   salvarEm: string | null;
   /** Lê do JSON em vez do Firestore. Não gasta cota nenhuma. */
   lerDe: string | null;
+  /** Tabelas de módulo já migrado que o operador aceita sobrescrever. */
+  forcar: NomeDaTabela[];
 }
 
 function log(mensagem: string, dados?: unknown) {
@@ -100,6 +103,7 @@ function lerOpcoes(argv: string[]): Opcoes {
   let somente: NomeDaTabela[] | null = null;
   let salvarEm: string | null = null;
   let lerDe: string | null = null;
+  let forcar: NomeDaTabela[] = [];
 
   for (let indice = 0; indice < argv.length; indice += 1) {
     const argumento = argv[indice];
@@ -113,6 +117,7 @@ function lerOpcoes(argv: string[]): Opcoes {
           '  --salvar-em=pasta      grava o Firestore cru em JSON',
           '  --ler-de=pasta         le do JSON em vez do Firestore (sem cota)',
           '  --only=a,b             importa apenas estas tabelas',
+          '  --forcar=a,b           sobrescreve tabela de modulo ja migrado (perigoso)',
           '  --credentials <path>   service account do Firebase',
           '  --project-id <id>      projeto do Firebase',
           '',
@@ -136,6 +141,25 @@ function lerOpcoes(argv: string[]): Opcoes {
 
     if (argumento.startsWith('--ler-de=')) {
       lerDe = path.resolve(argumento.slice('--ler-de='.length));
+      continue;
+    }
+
+    if (argumento.startsWith('--forcar=')) {
+      const pedidas = argumento
+        .slice('--forcar='.length)
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      const invalidas = pedidas.filter(
+        (item) => !(ORDEM_DAS_TABELAS as readonly string[]).includes(item),
+      );
+
+      if (invalidas.length > 0) {
+        throw new Error(`Tabela desconhecida em --forcar: ${invalidas.join(', ')}`);
+      }
+
+      forcar = pedidas as NomeDaTabela[];
       continue;
     }
 
@@ -199,6 +223,7 @@ function lerOpcoes(argv: string[]): Opcoes {
     somente,
     salvarEm,
     lerDe,
+    forcar,
   };
 }
 
@@ -443,6 +468,24 @@ async function main() {
     const definicao = DEFINICOES.find((item) => item.tabela === tabela);
 
     if (!definicao) {
+      continue;
+    }
+
+    // Módulo que já roda no Postgres não pode ser sobrescrito pelo Firestore:
+    // o app grava aqui agora, e lá só existe a versão de antes da virada.
+    const moduloMigrado = TABELAS_DE_MODULO_JA_MIGRADO[tabela];
+
+    if (moduloMigrado && !opcoes.forcar.includes(tabela)) {
+      idsConhecidos[tabela] = supabase
+        ? await lerIdsExistentes(supabase, tabela)
+        : new Set<string>();
+
+      log(
+        `${tabela}: protegida — o modulo "${moduloMigrado}" ja roda no Postgres. ` +
+          `Reimportar apagaria dado real. Use --forcar=${tabela} se for mesmo isso.`,
+      );
+
+      resumo.push({ tabela, lidos: 0, gravados: 0, protegida: true, modulo: moduloMigrado });
       continue;
     }
 

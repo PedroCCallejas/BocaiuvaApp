@@ -51,6 +51,25 @@ export const TABELAS_FILHAS = [
 
 export type NomeDaTabelaFilha = (typeof TABELAS_FILHAS)[number];
 
+/**
+ * Tabelas cujo módulo já roda no Postgres em produção.
+ *
+ * Reimportar essas do Firestore **apaga dado real**: o app grava aqui agora, e
+ * o Firestore só tem a versão congelada de antes da virada. Uma despesa criada
+ * hoje sumiria; uma quitação marcada voltaria a aberta.
+ *
+ * O importador recusa essas tabelas por padrão. Documentar não bastaria — este
+ * é exatamente o tipo de detalhe que se esquece meses depois, quando quem
+ * migrou não está mais por perto.
+ *
+ * Ao migrar um módulo novo, acrescente as tabelas dele aqui **no mesmo commit**
+ * que liga a flag em produção.
+ */
+export const TABELAS_DE_MODULO_JA_MIGRADO: Partial<Record<NomeDaTabela, string>> = {
+  expenses: 'financeiro',
+  expense_categories: 'financeiro',
+};
+
 /** Chave usada no `upsert`. Tabela filha tem chave composta, não `id`. */
 export const CHAVE_DE_CONFLITO: Record<NomeDaTabelaFilha, string> = {
   expense_shares: 'expense_id,player_id',

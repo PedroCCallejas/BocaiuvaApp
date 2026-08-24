@@ -10,6 +10,7 @@ import {
   dataOuNulo,
   LIMITE_DE_URL,
   MAXIMO_POR_LOTE,
+  TABELAS_DE_MODULO_JA_MIGRADO,
   dependenciasVazias,
   derivarCotasDaDespesa,
   lotesQueCabemNaUrl,
@@ -434,6 +435,34 @@ export const migracaoPostgresTestCases: TestCase[] = [
       assert.match(trecho, /if \(pular\) \{/);
       assert.match(trecho, /lerIdsExistentes\(supabase, tabela\)/);
       assert.match(trecho, /continue;/);
+    },
+  },
+  {
+    name: 'modulo ja em producao no Postgres nao e sobrescrito pelo Firestore',
+    run() {
+      // O app grava no Postgres agora; o Firestore so tem a versao congelada
+      // de antes da virada. Reimportar apagaria despesa criada hoje e
+      // devolveria quitacao marcada para "em aberto".
+      assert.equal(TABELAS_DE_MODULO_JA_MIGRADO.expenses, 'financeiro');
+      assert.equal(TABELAS_DE_MODULO_JA_MIGRADO.expense_categories, 'financeiro');
+
+      const script = fs.readFileSync('scripts/migrar-para-postgres.ts', 'utf8');
+      assert.match(script, /moduloMigrado && !opcoes\.forcar\.includes\(tabela\)/);
+      assert.match(script, /protegida/);
+    },
+  },
+  {
+    name: 'toda tabela protegida existe e o modulo dela e nomeado',
+    run() {
+      for (const [tabela, modulo] of Object.entries(TABELAS_DE_MODULO_JA_MIGRADO)) {
+        assert.equal(
+          (ORDEM_DAS_TABELAS as readonly string[]).includes(tabela),
+          true,
+          `${tabela} nao existe no schema`,
+        );
+        assert.equal(typeof modulo, 'string');
+        assert.equal((modulo ?? '').length > 0, true, `${tabela} sem modulo nomeado`);
+      }
     },
   },
   {

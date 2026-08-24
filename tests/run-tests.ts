@@ -131,6 +131,7 @@ import { lineupShareTestCases } from './lineup-share-cases';
 import { supabaseFinanceiroTestCases } from './supabase-financeiro-cases';
 import { supabaseModulosTestCases } from './supabase-modulos-cases';
 import { supabasePartidasTestCases } from './supabase-partidas-cases';
+import { supabaseRpcsPartidaTestCases } from './supabase-rpcs-partida-cases';
 import { supabaseResenhasTestCases } from './supabase-resenhas-cases';
 import { migracaoPostgresTestCases } from './migracao-postgres-cases';
 import { realtimeBootstrapTestCases } from './realtime-bootstrap-cases';
@@ -170,6 +171,7 @@ const testCases: TestCase[] = [
   ...supabaseFinanceiroTestCases,
   ...supabaseResenhasTestCases,
   ...supabasePartidasTestCases,
+  ...supabaseRpcsPartidaTestCases,
   {
     name: 'sitemap oficial contem somente as dez URLs publicas canonicas',
     run() {

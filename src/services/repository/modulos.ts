@@ -16,10 +16,21 @@
  * tempo de execução. Mudar o valor exige um build novo.
  */
 
-/** Módulos que podem migrar de forma independente, na ordem sugerida. */
+/**
+ * Módulos que podem migrar de forma independente, na ordem sugerida.
+ *
+ * A ordem é por acoplamento, não por importância. `avaliacoes` vem antes de
+ * `partidas` porque votos e notas têm um escritor cada; já as estatísticas da
+ * partida (`match_stats`) são gravadas dentro do `finishMatch`, junto com a
+ * partida e a presença — separá-las obrigaria a escrever em dois bancos numa
+ * operação só, sem transação possível entre eles.
+ *
+ * Por isso `match_stats` migra junto com `partidas`, e não como módulo próprio.
+ */
 export const MODULOS_MIGRAVEIS = [
   'financeiro',
-  'estatisticas',
+  'resenhas',
+  'avaliacoes',
   'partidas',
   'elenco',
   'notificacoes',

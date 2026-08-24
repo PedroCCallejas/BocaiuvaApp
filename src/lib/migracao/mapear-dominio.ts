@@ -13,7 +13,13 @@
  *    listas paralelas. A remontagem acontece aqui, num lugar só.
  */
 
-import type { Expense, ExpenseCategory, ExpenseSplitMode } from '@/types/domain';
+import type {
+  Expense,
+  ExpenseCategory,
+  ExpenseSplitMode,
+  MatchDiaryEntry,
+  MatchDiaryMood,
+} from '@/types/domain';
 
 type Linha = Record<string, unknown>;
 
@@ -144,6 +150,37 @@ export function paraDespesa(linha: Linha, cotas: LinhaDeCota[] = []): Expense {
       .map((cota) => cota.playerId),
     createdBy: textoOuNulo(linha.created_by),
     deletedAt: instanteOuNulo(linha.deleted_at),
+    createdAt: instante(linha.created_at, agora),
+    updatedAt: instante(linha.updated_at, agora),
+  };
+}
+
+const HUMORES: MatchDiaryMood[] = ['funny', 'highlight', 'warning', 'praise', 'neutral'];
+
+/**
+ * Resenha da partida.
+ *
+ * `authorName` é cópia denormalizada de propósito: vive na resenha para o
+ * histórico não mudar quando a pessoa troca o nome depois.
+ */
+export function paraResenha(linha: Linha): MatchDiaryEntry {
+  const agora = new Date().toISOString();
+  const humor = textoOuNulo(linha.mood);
+
+  return {
+    id: texto(linha.id),
+    teamId: texto(linha.team_id),
+    matchId: texto(linha.match_id),
+    authorUserId: texto(linha.author_user_id),
+    authorName: texto(linha.author_name),
+    title: textoOuNulo(linha.title),
+    content: texto(linha.content),
+    mentionedPlayerIds: listaDeTextos(linha.mentioned_player_ids),
+    visibility: 'team',
+    pinned: linha.pinned === true,
+    // Valor fora da lista renderizaria um ícone inexistente na tela.
+    mood: humor && HUMORES.includes(humor as MatchDiaryMood) ? (humor as MatchDiaryMood) : null,
+    emoji: textoOuNulo(linha.emoji),
     createdAt: instante(linha.created_at, agora),
     updatedAt: instante(linha.updated_at, agora),
   };

@@ -2,8 +2,7 @@ import { isFirebaseDataSource } from '@/config/firebase/client'
 
 import { firebaseRepository } from '@/services/repository/firebase-repository'
 import { mockRepository } from '@/services/repository/mock-repository'
-import { moduloUsaSupabase } from '@/services/repository/modulos'
-import { comFinanceiroNoSupabase } from '@/services/repository/supabase/financeiro-repositorio'
+import { comModulosNoSupabase } from '@/services/repository/supabase/composicao'
 import type { AppRepository } from '@/services/repository/types'
 
 const shouldUseFirebase = isFirebaseDataSource
@@ -24,9 +23,8 @@ const baseRepository: AppRepository = shouldUseFirebase
  * sem banco nenhum, e empilhar Supabase em cima dele misturaria dado de mentira
  * com dado real.
  */
-export const repository: AppRepository =
-  shouldUseFirebase && moduloUsaSupabase('financeiro')
-    ? comFinanceiroNoSupabase(baseRepository)
-    : baseRepository
+export const repository: AppRepository = shouldUseFirebase
+  ? comModulosNoSupabase(baseRepository)
+  : baseRepository
 
 export const isUsingFirebase = shouldUseFirebase

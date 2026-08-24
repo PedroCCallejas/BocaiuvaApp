@@ -167,28 +167,34 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     name: 'o modulo desligado devolve o repositorio base sem camada nenhuma',
     run() {
       const index = fs.readFileSync('src/services/repository/index.ts', 'utf8');
-
-      assert.match(index, /moduloUsaSupabase\('financeiro'\)/);
-      assert.match(index, /: baseRepository/);
+      const composicao = fs.readFileSync(
+        'src/services/repository/supabase/composicao.ts',
+        'utf8',
+      );
 
       // Mock existe para desenvolver sem banco. Empilhar Supabase em cima
       // misturaria dado de mentira com dado real.
-      assert.match(index, /shouldUseFirebase && moduloUsaSupabase/);
+      assert.match(index, /shouldUseFirebase\s*\n?\s*\? comModulosNoSupabase/);
+      assert.match(index, /: baseRepository/);
+
+      // Nenhum modulo ligado devolve o objeto original, nao uma copia inerte.
+      assert.match(composicao, /if \(ligados\.length === 0\) \{\s*\n\s*return base;/);
     },
   },
   {
     name: 'toda escrita do financeiro invalida o cache da leitura',
     run() {
       const repo = apenasCodigoTs(
-        fs.readFileSync('src/services/repository/supabase/financeiro-repositorio.ts', 'utf8'),
+        fs.readFileSync('src/services/repository/supabase/composicao.ts', 'utf8'),
       );
 
       // Cache que nao recarrega mostra o valor antigo depois de salvar, e a
       // pessoa acha que o botao nao funcionou.
       const escritas = repo.match(/async (create|update|delete|set)[A-Za-z]+\(/g) ?? [];
-      const recargas = repo.match(/await recarregarFatia\(\);/g) ?? [];
+      const recargas = repo.match(/\.recarregar\(\);/g) ?? [];
 
-      assert.equal(escritas.length, 7, `esperava 7 escritas, achei ${escritas.length}`);
+      // 7 do financeiro + 3 de resenhas.
+      assert.equal(escritas.length, 10, `esperava 10 escritas, achei ${escritas.length}`);
       assert.equal(
         recargas.length >= escritas.length,
         true,
@@ -200,62 +206,60 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     name: 'o tempo real do Firestore continua entregando a fatia financeira',
     run() {
       const repo = apenasCodigoTs(
-        fs.readFileSync('src/services/repository/supabase/financeiro-repositorio.ts', 'utf8'),
+        fs.readFileSync('src/services/repository/supabase/composicao.ts', 'utf8'),
       );
 
       // Sem isso o app mostraria o financeiro vazio a cada atualizacao vinda
       // do outro banco.
-      assert.match(repo, /composto\.subscribeSnapshot = async/);
-      assert.match(repo, /comFinanceiro\(snapshot, fatiaEmCache \?\? VAZIO\)/);
+      assert.match(repo, /comSnapshot\.subscribeSnapshot = async/);
+      assert.match(repo, /handlers\.onSnapshot\(aplicarTodasAsFatias\(snapshot\)\)/);
     },
   },
   {
     name: 'escrita no Postgres avisa a tela sem esperar o Firestore',
     run() {
-      const repo = apenasCodigoTs(
-        fs.readFileSync('src/services/repository/supabase/financeiro-repositorio.ts', 'utf8'),
+      const fatias = apenasCodigoTs(
+        fs.readFileSync('src/services/repository/supabase/fatias.ts', 'utf8'),
       );
 
       // So invalidar o cache deixava a fatia nula, e a proxima emissao do
-      // Firestore saia com o financeiro VAZIO — as despesas sumiam da tela
-      // depois de marcar alguem como quitado.
-      assert.doesNotMatch(repo, /invalidarCache\(\)/);
-      assert.match(repo, /fatiaEmCache = fatia;/);
-
-      const recarga = repo.slice(repo.indexOf('async function recarregarFatia'));
-      assert.match(recarga.slice(0, 500), /emitirParaOApp\(comFinanceiro\(ultimoSnapshotBase, fatia\)\)/);
+      // Firestore saia VAZIA — as despesas sumiam da tela depois de marcar
+      // alguem como quitado.
+      const recarregar = fatias.slice(fatias.indexOf('async recarregar()'));
+      assert.match(recarregar.slice(0, 300), /cache = await lerComSeguranca\(\)/);
+      assert.match(recarregar.slice(0, 300), /reemitir\(\)/);
 
       // O tempo real e do Firestore e ele nao sabe que o Postgres mudou; quem
       // escreveu precisa guardar para onde reemitir.
-      assert.match(repo, /ultimoSnapshotBase = snapshot;/);
-      assert.match(repo, /emitirParaOApp = handlers\.onSnapshot;/);
+      assert.match(fatias, /ultimoSnapshotBase = snapshot;/);
+      assert.match(fatias, /emitirParaOApp = emitir;/);
     },
   },
   {
-    name: 'financeiro fora do ar nao derruba o app inteiro',
+    name: 'modulo fora do ar nao derruba o app inteiro',
     run() {
-      const repo = fs.readFileSync(
-        'src/services/repository/supabase/financeiro-repositorio.ts',
+      const fatias = fs.readFileSync(
+        'src/services/repository/supabase/fatias.ts',
         'utf8',
       );
-      const leitura = repo.slice(repo.indexOf('async function lerFatiaFinanceira'));
+      const leitura = fatias.slice(fatias.indexOf('async function lerComSeguranca'));
 
       // E uma aba so. Ficar sem ela e muito melhor do que a tela inicial nao
-      // abrir.
-      assert.match(leitura.slice(0, 900), /catch \(erro\)/);
-      assert.match(leitura.slice(0, 900), /return VAZIO;/);
+      // abrir — e vale para qualquer modulo, nao so o financeiro.
+      assert.match(leitura.slice(0, 700), /catch \(erro\)/);
+      assert.match(leitura.slice(0, 700), /return input\.vazio;/);
     },
   },
   {
     name: 'o time ativo vem do banco, nao de estado guardado no modulo',
     run() {
       const repo = apenasCodigoTs(
-        fs.readFileSync('src/services/repository/supabase/financeiro-repositorio.ts', 'utf8'),
+        fs.readFileSync('src/services/repository/supabase/composicao.ts', 'utf8'),
       );
 
       // Guardar o time numa variavel criaria uma segunda fonte da verdade que
-      // sai de sincronia ao trocar de time — e o sintoma seria despesa gravada
-      // no time errado.
+      // sai de sincronia ao trocar de time — e o sintoma seria dado gravado no
+      // time errado.
       assert.match(repo, /from\('users'\)\s*\n?\s*\.select\('active_team_id'\)/);
       assert.doesNotMatch(repo, /let timeAtivo/);
     },

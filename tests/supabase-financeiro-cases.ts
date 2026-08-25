@@ -168,7 +168,7 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     run() {
       const index = fs.readFileSync('src/services/repository/index.ts', 'utf8');
       const composicao = fs.readFileSync(
-        'src/services/repository/supabase/composicao.ts',
+        'src/services/repository/supabase/composicao/index.ts',
         'utf8',
       );
 
@@ -184,21 +184,30 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
   {
     name: 'toda escrita do financeiro invalida o cache da leitura',
     run() {
-      const repo = apenasCodigoTs(
-        fs.readFileSync('src/services/repository/supabase/composicao.ts', 'utf8'),
-      );
+      // Cada modulo tem seu arquivo desde que o quarto chegou.
+      const repo = ['financeiro', 'resenhas', 'partidas', 'elenco']
+        .map((modulo) =>
+          apenasCodigoTs(
+            fs.readFileSync(`src/services/repository/supabase/composicao/${modulo}.ts`, 'utf8'),
+          ),
+        )
+        .join('\n');
 
       // Cache que nao recarrega mostra o valor antigo depois de salvar, e a
       // pessoa acha que o botao nao funcionou.
-      const escritas = repo.match(/async (create|update|delete|set)[A-Za-z]+\(/g) ?? [];
-      const recargas = repo.match(/\.recarregar\(\);/g) ?? [];
+      // Metodo que delega para outro nao recarrega duas vezes: quem faz o
+      // trabalho ja avisou a tela. `updateFinishedMatchStats` e assim.
+      const blocos = repo.split(/\n    async /).slice(1);
+      const gravam = blocos.filter(
+        (bloco) => !/return await this\.[a-zA-Z]+\(/.test(bloco.slice(0, 400)),
+      );
+      const semRecarga = gravam.filter((bloco) => !bloco.includes('.recarregar()'));
 
-      // 7 do financeiro + 3 de resenhas.
-      assert.equal(escritas.length, 10, `esperava 10 escritas, achei ${escritas.length}`);
-      assert.equal(
-        recargas.length >= escritas.length,
-        true,
-        `${escritas.length} escritas para ${recargas.length} recargas`,
+      assert.equal(gravam.length > 0, true, 'nenhuma escrita encontrada');
+      assert.deepEqual(
+        semRecarga.map((bloco) => bloco.slice(0, bloco.indexOf('('))),
+        [],
+        'toda escrita precisa recarregar a fatia',
       );
     },
   },
@@ -206,7 +215,7 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     name: 'o tempo real do Firestore continua entregando a fatia financeira',
     run() {
       const repo = apenasCodigoTs(
-        fs.readFileSync('src/services/repository/supabase/composicao.ts', 'utf8'),
+        fs.readFileSync('src/services/repository/supabase/composicao/index.ts', 'utf8'),
       );
 
       // Sem isso o app mostraria o financeiro vazio a cada atualizacao vinda
@@ -254,7 +263,7 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     name: 'o time ativo vem do banco, nao de estado guardado no modulo',
     run() {
       const repo = apenasCodigoTs(
-        fs.readFileSync('src/services/repository/supabase/composicao.ts', 'utf8'),
+        fs.readFileSync('src/services/repository/supabase/composicao/comum.ts', 'utf8'),
       );
 
       // Guardar o time numa variavel criaria uma segunda fonte da verdade que

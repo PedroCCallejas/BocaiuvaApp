@@ -203,6 +203,49 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     },
   },
   {
+    name: 'toda escrita diz em qual linha mexe',
+    run() {
+      // `definirTimeAtivo` fazia UPDATE sem filtro, confiando so na RLS para
+      // limitar a linha. A policy realmente limita — mas o Supabase carrega a
+      // extensao `safeupdate` na conexao do PostgREST, e ela recusa UPDATE sem
+      // WHERE antes de a RLS entrar. Trocar de time simplesmente falhava.
+      //
+      // Fora isso, escrita sem filtro e perigosa por natureza: se um dia uma
+      // policy for afrouxada, o update pega a tabela inteira.
+      const semFiltro: string[] = [];
+
+      for (const nome of ['elenco', 'avaliacoes', 'partidas', 'financeiro', 'resenhas']) {
+        const caminho = `src/services/repository/supabase/${nome}.ts`;
+        const linhas = fs.readFileSync(caminho, 'utf8').split('\n');
+
+        linhas.forEach((linha, indice) => {
+          if (!/\.(update|delete)\(/.test(linha)) {
+            return;
+          }
+
+          // Janela ate o fim do statement: a cadeia de metodos ocupa varias
+          // linhas e o filtro pode vir depois do `update`.
+          let janela = '';
+
+          for (let i = indice; i < Math.min(linhas.length, indice + 14); i += 1) {
+            janela += `${linhas[i]}\n`;
+            if (/;\s*$/.test(linhas[i])) break;
+          }
+
+          if (!/\.eq\(|\.in\(|\.match\(/.test(janela)) {
+            semFiltro.push(`${nome}.ts:${indice + 1}`);
+          }
+        });
+      }
+
+      assert.deepEqual(
+        semFiltro,
+        [],
+        'update/delete sem .eq/.in/.match: o PostgREST recusa e a RLS nem e consultada',
+      );
+    },
+  },
+  {
     name: 'reimportar nao pode apagar o que ja vive no Postgres',
     run() {
       // A trava existia desde o financeiro, mas ficou para tras: quatro modulos

@@ -228,9 +228,18 @@ function getDerivedSelectors(state: Slice): DerivedSnapshotSelectors {
         .filter((player) => isPlayerAvailable(player))
         .sort((left, right) => left.jerseyNumber - right.jerseyNumber)
     : [];
+  // Partida excluída não entra em lista nenhuma.
+  //
+  // Antes o filtro era só `status !== 'canceled'`, e funcionava por tabela: o
+  // Firestore marcava os dois campos ao excluir. Depender disso é frágil — uma
+  // exclusão que esqueça o status faz a partida reaparecer como agendada, que
+  // foi exatamente o que aconteceu. Aqui a pergunta passa a ser a certa:
+  // "foi excluída?", não "que status ficou?".
   const teamMatches = currentTeam
     ? sortMatchesByDate(
-        state.snapshot.matches.filter((match) => match.teamId === currentTeam.id),
+        state.snapshot.matches.filter(
+          (match) => match.teamId === currentTeam.id && !match.deletedAt,
+        ),
       )
     : [];
   const teamMatchDiaryEntries = currentTeam

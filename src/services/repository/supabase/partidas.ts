@@ -315,7 +315,16 @@ export async function encerrarPartida(input: {
 export async function apagarPartida(matchId: string, actorUserId: string): Promise<void> {
   const { error } = await cliente()
     .from('matches')
-    .update({ deleted_at: agora(), deleted_by: actorUserId, updated_at: agora() })
+    .update({
+      deleted_at: agora(),
+      deleted_by: actorUserId,
+      // `canceled` junto com `deleted_at`, como o Firestore sempre fez. As
+      // listas da tela ("Em aberto", "Próximas") filtram por status, não por
+      // `deletedAt` — marcar só a exclusão deixava a partida apagada aparecendo
+      // como agendada, e só a tela de detalhe sabia que ela não existia mais.
+      status: 'canceled',
+      updated_at: agora(),
+    })
     .eq('id', matchId);
 
   if (error) {

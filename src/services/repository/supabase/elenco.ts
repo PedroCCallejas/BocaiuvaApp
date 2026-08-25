@@ -235,9 +235,25 @@ export async function buscarContextoDaSessao(): Promise<ContextoDaSessao> {
 }
 
 export async function definirTimeAtivo(teamId: string): Promise<User> {
+  const sessao = authService.getCurrentUser() ?? (await authService.restoreSession());
+
+  if (!sessao) {
+    throw criarErroDoRepositorio('Sessão expirada.', 'permission-denied');
+  }
+
+  // O `.eq('id', ...)` não é redundante com a RLS.
+  //
+  // A policy `users_update_self` já limita a linha, e por isso este update foi
+  // escrito sem filtro. Só que o Supabase carrega a extensão `safeupdate` na
+  // conexão do PostgREST, e ela recusa UPDATE sem WHERE — a troca de time
+  // falhava com "não foi possível trocar de time agora" e nunca chegava na RLS.
+  //
+  // Vale como regra: escrita sempre diz em qual linha mexe. A RLS é a segunda
+  // tranca, não a primeira.
   const { data, error } = await cliente()
     .from('users')
     .update({ active_team_id: teamId, updated_at: agora() })
+    .eq('id', sessao.authId)
     .select()
     .single();
 

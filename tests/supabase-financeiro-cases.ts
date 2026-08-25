@@ -29,7 +29,7 @@ function lista(snapshot: AppSnapshot): string[] {
 }
 
 const RPC = 'supabase/migrations/20260821180000_rpc_salvar_despesa.sql';
-const RPC_CRIAR_TIME = 'supabase/migrations/20260825120000_rpc_criar_time.sql';
+const RPC_CRIAR_TIME = 'supabase/migrations/20260825045940_rpc_criar_time.sql';
 const MODULO = 'src/services/repository/supabase/financeiro.ts';
 
 /**

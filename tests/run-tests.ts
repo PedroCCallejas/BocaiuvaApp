@@ -134,6 +134,7 @@ import { supabasePartidasTestCases } from './supabase-partidas-cases';
 import { supabasePartidasModuloTestCases } from './supabase-partidas-modulo-cases';
 import { supabaseRpcsPartidaTestCases } from './supabase-rpcs-partida-cases';
 import { supabaseResenhasTestCases } from './supabase-resenhas-cases';
+import { migracaoConferirTestCases } from './migracao-conferir-cases';
 import { migracaoPostgresTestCases } from './migracao-postgres-cases';
 import { realtimeBootstrapTestCases } from './realtime-bootstrap-cases';
 import { ratingAverageTestCases } from './rating-average-cases';
@@ -167,6 +168,7 @@ const testCases: TestCase[] = [
   ...realtimeBootstrapTestCases,
   ...supabaseHardeningTestCases,
   ...migracaoPostgresTestCases,
+  ...migracaoConferirTestCases,
   ...lineupShareTestCases,
   ...supabaseModulosTestCases,
   ...supabaseFinanceiroTestCases,

@@ -203,6 +203,60 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     },
   },
   {
+    name: 'o Firestore para de ler o que o Postgres ja entrega',
+    run() {
+      const composicao = apenasCodigoTs(
+        fs.readFileSync('src/services/repository/supabase/composicao/index.ts', 'utf8'),
+      );
+
+      // Sem isso o app le os dois bancos inteiros: o Firestore entrega o dado,
+      // a fatia joga fora e poe o Postgres no lugar. Leitura paga, dado
+      // descartado — a mesma carga que motivou a migracao.
+      assert.match(composicao, /ignorarColecoesDoFirestore\(/);
+
+      const mapa = composicao.slice(
+        composicao.indexOf('const COLECOES_POR_MODULO'),
+        composicao.indexOf('export function comModulosNoSupabase'),
+      );
+
+      // Cada modulo migrado precisa dizer o que cobre, senao a leitura duplicada
+      // volta calada para aquele pedaco.
+      for (const [modulo, colecao] of [
+        ['resenhas', 'matchDiaryEntries'],
+        ['partidas', 'matches'],
+        ['partidas', 'attendance'],
+        ['avaliacoes', 'mvpVotes'],
+        ['elenco', 'players'],
+      ] as const) {
+        assert.match(
+          mapa,
+          new RegExp(`${modulo}:[^\\]]*${colecao}`),
+          `${modulo} nao declarou ${colecao}`,
+        );
+      }
+
+      // A regra que nao pode ser quebrada: `users`, `teams` e `teamMembers` vem
+      // do bootstrap e sao o que segura a tela em pe enquanto o Postgres
+      // responde. Ignora-las devolve o "voce nao participa de nenhum time".
+      for (const proibida of ['users', 'teams', 'teamMembers']) {
+        assert.doesNotMatch(
+          mapa,
+          new RegExp(`'${proibida}'`),
+          `${proibida} nunca pode sair do bootstrap do Firestore`,
+        );
+      }
+
+      // O repositorio do Firestore sustenta o app inteiro e nao deve saber que
+      // existe migracao: ele recebe uma lista de nomes, nada mais.
+      const firebase = fs.readFileSync(
+        'src/services/repository/firebase-repository.ts',
+        'utf8',
+      );
+      assert.doesNotMatch(firebase, /supabase/i);
+      assert.match(firebase, /colecaoIgnorada\(/);
+    },
+  },
+  {
     name: 'leitura de colecao pagina, senao para nas primeiras mil linhas',
     run() {
       // O PostgREST corta toda resposta em 1000 linhas e nao avisa: nao ha

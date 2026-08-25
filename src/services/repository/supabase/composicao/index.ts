@@ -9,6 +9,7 @@
  * `EXPO_PUBLIC_SUPABASE_MODULES` não afeta os outros.
  */
 
+import { ignorarColecoesDoFirestore } from '@/services/repository/colecoes-do-firestore';
 import { moduloUsaSupabase, type ModuloMigravel } from '@/services/repository/modulos';
 import { comAvaliacoes } from '@/services/repository/supabase/composicao/avaliacoes';
 import { comElenco } from '@/services/repository/supabase/composicao/elenco';
@@ -37,12 +38,40 @@ const CAMADAS: { modulo: ModuloMigravel; aplicar: (base: AppRepository) => AppRe
   { modulo: 'elenco', aplicar: comElenco },
 ];
 
+/**
+ * Coleções do Firestore que cada módulo passa a entregar sozinho.
+ *
+ * Enquanto isso não existia, o app lia os dois bancos inteiros: o Firestore
+ * entregava partida, presença, nota e voto, e a fatia jogava tudo fora e punha
+ * o Postgres no lugar. A leitura era paga e o dado, descartado — a mesma carga
+ * que motivou a migração, ainda de pé.
+ *
+ * `users`, `teams` e `teamMembers` ficam de fora de propósito: vêm do bootstrap
+ * e são o que segura a tela enquanto o Postgres responde.
+ *
+ * `seasons` também fica: não tem módulo e não foi migrada.
+ */
+const COLECOES_POR_MODULO: Record<ModuloMigravel, readonly string[]> = {
+  financeiro: [],
+  resenhas: ['matchDiaryEntries'],
+  partidas: ['matches', 'attendance', 'lineups', 'matchStats'],
+  avaliacoes: ['mvpVotes', 'playerRatings', 'ratingCriteria'],
+  elenco: ['players'],
+  notificacoes: ['notifications'],
+};
+
 export function comModulosNoSupabase(base: AppRepository): AppRepository {
   const ligados = CAMADAS.filter((camada) => moduloUsaSupabase(camada.modulo));
 
   if (ligados.length === 0) {
     return base;
   }
+
+  // O repositório do Firestore não sabe que existe migração — recebe só a lista
+  // de coleções que pode deixar de ler.
+  ignorarColecoesDoFirestore(
+    ligados.flatMap((camada) => COLECOES_POR_MODULO[camada.modulo] ?? []),
+  );
 
   const composto = ligados.reduce<AppRepository>(
     (atual, camada) => camada.aplicar(atual),
@@ -84,18 +113,27 @@ export function comModulosNoSupabase(base: AppRepository): AppRepository {
         ...handlers,
         onSnapshot: (snapshot) => {
           registrarEmissao(snapshot, handlers.onSnapshot);
-          handlers.onSnapshot(aplicarTodasAsFatias(snapshot));
 
           const pendentes = fatiasPendentes();
 
-          if (pendentes.length > 0) {
-            // A primeira emissão sai sem os módulos do Postgres; assim que
-            // chegam, o app é avisado de novo. Melhor uma aba aparecer um
-            // instante depois do que segurar a tela inteira esperando por ela.
-            void Promise.all(pendentes.map((fatia) => fatia.obter())).then(() => {
-              handlers.onSnapshot(aplicarTodasAsFatias(snapshot));
-            });
+          if (pendentes.length === 0) {
+            handlers.onSnapshot(aplicarTodasAsFatias(snapshot));
+            return;
           }
+
+          // Espera a primeira carga do Postgres antes de pintar.
+          //
+          // Antes dava para emitir na hora porque o Firestore entregava os
+          // mesmos dados e servia de rascunho. Agora ele deixou de ler o que o
+          // Postgres cobre, então emitir aqui mostraria listas vazias — e tela
+          // vazia é indistinguível de "não tem nada", que foi o bug do "você
+          // não participa de nenhum time".
+          //
+          // Não trava: leitura que falha devolve vazio em vez de rejeitar, então
+          // a promessa sempre resolve e a tela sempre pinta.
+          void Promise.all(pendentes.map((fatia) => fatia.obter())).then(() => {
+            handlers.onSnapshot(aplicarTodasAsFatias(snapshot));
+          });
         },
       });
   }

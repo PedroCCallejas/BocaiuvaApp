@@ -46,6 +46,7 @@ import {
   validateDiaryFields,
 } from '@/lib/match-diary';
 import { resolverJogadoresDoJogoAntigo } from '@/lib/finished-match';
+import { colecaoIgnorada } from '@/services/repository/colecoes-do-firestore';
 import { buildLegacyMatchImportPreview } from '@/lib/match-import';
 import {
   findDuplicateMatchStatPlayerId,
@@ -3106,6 +3107,12 @@ async function buildSnapshotForResolvedUser(
   }
 
   try {
+    // Coleção que outra fonte já entrega não e lida aqui: seria pagar a leitura
+    // para descartar o resultado logo em seguida. Ver
+    // `colecoes-do-firestore.ts`.
+    const seIgnorada = <T>(nome: string, ler: () => Promise<T[]>) =>
+      colecaoIgnorada(nome) ? Promise.resolve([] as T[]) : ler();
+
     const [
       ratingCriteria,
       players,
@@ -3119,17 +3126,19 @@ async function buildSnapshotForResolvedUser(
       notifications,
       seasons,
     ] = await Promise.all([
-      loadTeamRatingCriteria(activeTeamId),
-      fetchPlayersByTeamId(activeTeamId),
-      fetchMatchesByTeamId(activeTeamId),
-      fetchLineupsByTeamId(activeTeamId),
-      fetchAttendanceByTeamId(activeTeamId),
-      fetchMatchStatsByTeamId(activeTeamId),
-      fetchMatchDiaryEntriesByTeamId(activeTeamId),
-      fetchMvpVotesByTeamId(activeTeamId),
-      fetchPlayerRatingsByTeamId(activeTeamId),
-      fetchAccessibleNotificationsByTeamId(activeTeamId, user.id),
-      fetchSeasonsByTeamId(activeTeamId),
+      seIgnorada('ratingCriteria', () => loadTeamRatingCriteria(activeTeamId)),
+      seIgnorada('players', () => fetchPlayersByTeamId(activeTeamId)),
+      seIgnorada('matches', () => fetchMatchesByTeamId(activeTeamId)),
+      seIgnorada('lineups', () => fetchLineupsByTeamId(activeTeamId)),
+      seIgnorada('attendance', () => fetchAttendanceByTeamId(activeTeamId)),
+      seIgnorada('matchStats', () => fetchMatchStatsByTeamId(activeTeamId)),
+      seIgnorada('matchDiaryEntries', () => fetchMatchDiaryEntriesByTeamId(activeTeamId)),
+      seIgnorada('mvpVotes', () => fetchMvpVotesByTeamId(activeTeamId)),
+      seIgnorada('playerRatings', () => fetchPlayerRatingsByTeamId(activeTeamId)),
+      seIgnorada('notifications', () =>
+        fetchAccessibleNotificationsByTeamId(activeTeamId, user.id),
+      ),
+      seIgnorada('seasons', () => fetchSeasonsByTeamId(activeTeamId)),
     ]);
 
     // O financeiro so e legivel por quem administra o time (regra do Firestore).
@@ -4636,6 +4645,13 @@ export const firebaseRepository: AppRepository = {
         normalize: (item: TDocument) => TDocument,
         assign: (items: TDocument[]) => void,
       ) => {
+        // Coleção que outra fonte já entrega não ganha listener: o dado
+        // chegaria só para ser descartado pela camada de cima, e cada documento
+        // recebido é uma leitura cobrada.
+        if (colecaoIgnorada(key)) {
+          return;
+        }
+
         awaitingFirstDelivery.add(key);
         activeTeamListeners.set(
           key,

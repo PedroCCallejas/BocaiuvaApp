@@ -203,6 +203,65 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     },
   },
   {
+    name: 'leitura de colecao pagina, senao para nas primeiras mil linhas',
+    run() {
+      // O PostgREST corta toda resposta em 1000 linhas e nao avisa: nao ha
+      // erro, so vem menos dado. Com `attendance` em 1659 linhas, o ranking
+      // passou a somar 60% das presencas — o Alex caiu de 55 para 38 jogos.
+      // Ninguem percebeu no codigo porque a conta continuava fechando entre si.
+      const arquivos = ['partidas', 'avaliacoes', 'financeiro', 'resenhas'];
+
+      for (const nome of arquivos) {
+        const fonte = apenasCodigoTs(
+          fs.readFileSync(`src/services/repository/supabase/${nome}.ts`, 'utf8'),
+        );
+
+        // Toda leitura de colecao inteira (`select('*')` com `eq` de time, sem
+        // `maybeSingle`) precisa passar pelo paginador.
+        const blocos = fonte.split('await Promise.all').join('\n');
+        const temLeituraDeColecao = /\.select\('\*'\)[\s\S]{0,200}?\.eq\('team_id'/.test(blocos);
+
+        if (temLeituraDeColecao) {
+          assert.match(
+            fonte,
+            /todasAsLinhas\(/,
+            `${nome}.ts le colecao inteira sem paginar`,
+          );
+        }
+      }
+
+      const paginacao = apenasCodigoTs(
+        fs.readFileSync('src/services/repository/supabase/paginacao.ts', 'utf8'),
+      );
+
+      // O laco precisa avancar de pagina e parar na primeira incompleta. Sem a
+      // parada, gira para sempre; sem o avanco, le a mesma pagina sempre.
+      assert.match(paginacao, /pagina \* TAMANHO_DA_PAGINA/);
+      assert.match(paginacao, /lote\.length < TAMANHO_DA_PAGINA/);
+
+      // Paginar sem ordem estavel e pior do que nao paginar: o Postgres nao
+      // garante a mesma ordem entre paginas, entao a mesma linha pode vir duas
+      // vezes enquanto outra nunca aparece.
+      const partidas = apenasCodigoTs(
+        fs.readFileSync('src/services/repository/supabase/partidas.ts', 'utf8'),
+      );
+      // Recorte por janela em vez de regex balanceada: a consulta e uma cadeia
+      // de metodos com parenteses aninhados, e casar isso com regex da falso
+      // negativo — foi o que aconteceu na primeira versao deste teste.
+      const paginadas = partidas
+        .split('todasAsLinhas((de, ate) =>')
+        .slice(1)
+        .map((trecho) => trecho.slice(0, 400));
+
+      assert.equal(paginadas.length > 0, true, 'nenhuma consulta paginada encontrada');
+
+      for (const corpo of paginadas) {
+        assert.match(corpo, /\.range\(de, ate\)/, 'consulta paginada precisa usar o intervalo');
+        assert.match(corpo, /\.order\(/, 'consulta paginada precisa de ordenacao estavel');
+      }
+    },
+  },
+  {
     name: 'nenhum metodo do contrato grava no banco errado sem estar na lista',
     run() {
       // Este teste existe porque a mesma falha aconteceu tres vezes: o metodo

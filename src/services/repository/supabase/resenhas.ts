@@ -12,6 +12,7 @@
  */
 
 import { supabase } from '@/config/supabase/client';
+import { todasAsLinhas } from '@/services/repository/supabase/paginacao';
 import { resolveDiaryEmoji, validateDiaryFields } from '@/lib/match-diary';
 import { paraResenha } from '@/lib/migracao/mapear-dominio';
 import {
@@ -60,11 +61,18 @@ function textoOuNulo(valor: unknown): string | null {
 }
 
 export async function buscarResenhas(teamId: string): Promise<MatchDiaryEntry[]> {
-  const { data, error } = await cliente()
-    .from('match_diary_entries')
-    .select('*')
-    .eq('team_id', teamId)
-    .order('created_at', { ascending: false });
+  const supabaseClient = cliente();
+
+  // Paginado: o PostgREST corta em 1000 linhas sem avisar, e resenha acumula.
+  const { data, error } = await todasAsLinhas((de, ate) =>
+    supabaseClient
+      .from('match_diary_entries')
+      .select('*')
+      .eq('team_id', teamId)
+      .order('created_at', { ascending: false })
+      .order('id')
+      .range(de, ate),
+  );
 
   if (error) {
     throw traduzirErroDoPostgres(error, 'Não foi possível carregar as resenhas agora.');

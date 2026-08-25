@@ -17,6 +17,7 @@
  */
 
 import { supabase } from '@/config/supabase/client';
+import { todasAsLinhas } from '@/services/repository/supabase/paginacao';
 import { splitEqualCents } from '@/lib/expenses';
 import {
   paraCategoriaDeDespesa,
@@ -110,11 +111,17 @@ export async function buscarCategoriasDeDespesa(teamId: string): Promise<Expense
 export async function buscarDespesas(teamId: string): Promise<Expense[]> {
   const supabaseClient = cliente();
 
-  const { data: linhas, error } = await supabaseClient
-    .from('expenses')
-    .select('*')
-    .eq('team_id', teamId)
-    .order('date', { ascending: false });
+  // Paginado: despesa e rateio crescem a cada mês, e o PostgREST corta em 1000
+  // linhas sem avisar — foi assim que a presença sumiu do ranking.
+  const { data: linhas, error } = await todasAsLinhas((de, ate) =>
+    supabaseClient
+      .from('expenses')
+      .select('*')
+      .eq('team_id', teamId)
+      .order('date', { ascending: false })
+      .order('id')
+      .range(de, ate),
+  );
 
   if (error) {
     throw traduzirErroDoPostgres(error, 'Não foi possível carregar as despesas agora.');
@@ -128,10 +135,15 @@ export async function buscarDespesas(teamId: string): Promise<Expense[]> {
     return [];
   }
 
-  const { data: cotas, error: erroDasCotas } = await supabaseClient
-    .from('expense_shares')
-    .select('*')
-    .in('expense_id', ids);
+  const { data: cotas, error: erroDasCotas } = await todasAsLinhas((de, ate) =>
+    supabaseClient
+      .from('expense_shares')
+      .select('*')
+      .in('expense_id', ids)
+      .order('expense_id')
+      .order('player_id')
+      .range(de, ate),
+  );
 
   if (erroDasCotas) {
     throw traduzirErroDoPostgres(erroDasCotas, 'Não foi possível carregar o rateio agora.');

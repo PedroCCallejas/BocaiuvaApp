@@ -15,6 +15,7 @@
 
 import { supabase } from '@/config/supabase/client';
 import { instante } from '@/lib/migracao/mapear-dominio';
+import { todasAsLinhas } from '@/services/repository/supabase/paginacao';
 import {
   criarErroDoRepositorio,
   traduzirErroDoPostgres,
@@ -128,10 +129,29 @@ export const AVALIACOES_VAZIAS: FatiaDeAvaliacoes = {
 export async function buscarAvaliacoes(teamId: string): Promise<FatiaDeAvaliacoes> {
   const supabaseClient = cliente();
 
+  // Paginado: votos e notas crescem a cada jogo, e o PostgREST corta em 1000
+  // linhas sem avisar. Foi assim que a presenca sumiu do ranking.
   const [votos, notas, criterios] = await Promise.all([
-    supabaseClient.from('mvp_votes').select('*').eq('team_id', teamId),
-    supabaseClient.from('player_ratings').select('*').eq('team_id', teamId),
-    supabaseClient.from('rating_criteria').select('*').eq('team_id', teamId).order('order'),
+    todasAsLinhas((de, ate) =>
+      supabaseClient.from('mvp_votes').select('*').eq('team_id', teamId).order('id').range(de, ate),
+    ),
+    todasAsLinhas((de, ate) =>
+      supabaseClient
+        .from('player_ratings')
+        .select('*')
+        .eq('team_id', teamId)
+        .order('id')
+        .range(de, ate),
+    ),
+    todasAsLinhas((de, ate) =>
+      supabaseClient
+        .from('rating_criteria')
+        .select('*')
+        .eq('team_id', teamId)
+        .order('order')
+        .order('id')
+        .range(de, ate),
+    ),
   ]);
 
   for (const resposta of [votos, notas, criterios]) {

@@ -22,6 +22,7 @@ import {
   type LinhaDeParticipanteDoCampo,
 } from '@/lib/migracao/mapear-dominio';
 import { centsFromAmount } from '@/lib/money';
+import { todasAsLinhas } from '@/services/repository/supabase/paginacao';
 import {
   criarErroDoRepositorio,
   traduzirErroDoPostgres,
@@ -95,16 +96,50 @@ export const PARTIDAS_VAZIAS: FatiaDePartidas = {
 export async function buscarPartidas(teamId: string): Promise<FatiaDePartidas> {
   const supabaseClient = cliente();
 
+  // Tudo paginado: o PostgREST corta em 1000 linhas sem avisar, e `attendance`
+  // ja passou disso. A ordenacao por `id` nao e estetica — sem ordem estavel as
+  // paginas se embaralham e a mesma linha pode vir duas vezes.
   const [partidas, presencas, escalacoes, estatisticas, custos, participantes] =
     await Promise.all([
-      supabaseClient.from('matches').select('*').eq('team_id', teamId).order('date', {
-        ascending: false,
-      }),
-      supabaseClient.from('attendance').select('*').eq('team_id', teamId),
-      supabaseClient.from('lineups').select('*').eq('team_id', teamId),
-      supabaseClient.from('match_stats').select('*').eq('team_id', teamId),
-      supabaseClient.from('match_field_costs').select('*'),
-      supabaseClient.from('match_field_participants').select('*'),
+      todasAsLinhas((de, ate) =>
+        supabaseClient
+          .from('matches')
+          .select('*')
+          .eq('team_id', teamId)
+          .order('date', { ascending: false })
+          .order('id')
+          .range(de, ate),
+      ),
+      todasAsLinhas((de, ate) =>
+        supabaseClient
+          .from('attendance')
+          .select('*')
+          .eq('team_id', teamId)
+          .order('id')
+          .range(de, ate),
+      ),
+      todasAsLinhas((de, ate) =>
+        supabaseClient.from('lineups').select('*').eq('team_id', teamId).order('id').range(de, ate),
+      ),
+      todasAsLinhas((de, ate) =>
+        supabaseClient
+          .from('match_stats')
+          .select('*')
+          .eq('team_id', teamId)
+          .order('id')
+          .range(de, ate),
+      ),
+      todasAsLinhas((de, ate) =>
+        supabaseClient.from('match_field_costs').select('*').order('match_id').range(de, ate),
+      ),
+      todasAsLinhas((de, ate) =>
+        supabaseClient
+          .from('match_field_participants')
+          .select('*')
+          .order('match_id')
+          .order('player_id')
+          .range(de, ate),
+      ),
     ]);
 
   for (const resposta of [partidas, presencas, escalacoes, estatisticas, custos, participantes]) {

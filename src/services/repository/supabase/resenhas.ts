@@ -74,6 +74,50 @@ export async function buscarResenhas(teamId: string): Promise<MatchDiaryEntry[]>
 }
 
 /**
+ * Resenhas de uma partida.
+ *
+ * A tela da partida pede só as dela em vez de filtrar o snapshot inteiro. A RLS
+ * já limita ao time, então não há filtro de permissão a repetir aqui.
+ */
+export async function buscarResenhasDaPartida(matchId: string): Promise<MatchDiaryEntry[]> {
+  const { data, error } = await cliente()
+    .from('match_diary_entries')
+    .select('*')
+    .eq('match_id', matchId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw traduzirErroDoPostgres(error, 'Não foi possível carregar as resenhas agora.');
+  }
+
+  return (data ?? []).map(paraResenha);
+}
+
+/** As mais recentes do time, para a lista da home. */
+export async function buscarResenhasDoTime(
+  teamId: string,
+  limite?: number,
+): Promise<MatchDiaryEntry[]> {
+  let consulta = cliente()
+    .from('match_diary_entries')
+    .select('*')
+    .eq('team_id', teamId)
+    .order('created_at', { ascending: false });
+
+  if (limite && limite > 0) {
+    consulta = consulta.limit(limite);
+  }
+
+  const { data, error } = await consulta;
+
+  if (error) {
+    throw traduzirErroDoPostgres(error, 'Não foi possível carregar as resenhas agora.');
+  }
+
+  return (data ?? []).map(paraResenha);
+}
+
+/**
  * Quem está escrevendo.
  *
  * Nome e id vêm do banco, não do cliente. O `authorName` é uma cópia

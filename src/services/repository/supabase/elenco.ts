@@ -438,6 +438,137 @@ export async function criarTime(input: {
   return paraTime(data as Record<string, unknown>);
 }
 
+async function atualizarTimeERetornar(
+  teamId: string,
+  mudancas: Record<string, unknown>,
+  mensagemDeErro: string,
+): Promise<Team> {
+  const { data, error } = await cliente()
+    .from('teams')
+    .update({ ...mudancas, updated_at: agora() })
+    .eq('id', teamId)
+    .select()
+    .single();
+
+  if (error) {
+    // `teams_slug_key` e unico: dois times com o mesmo nome batem aqui. No
+    // Firestore nao havia essa restricao, entao a mensagem precisa explicar.
+    if (error.code === '23505') {
+      throw criarErroDoRepositorio(
+        'Já existe um time com esse nome. Escolha outro.',
+        'already-exists',
+      );
+    }
+
+    throw traduzirErroDoPostgres(error, mensagemDeErro);
+  }
+
+  return paraTime(data);
+}
+
+/** Converte o input do contrato para as colunas do Postgres. */
+function mudancasDoTime(input: Record<string, unknown>): Record<string, unknown> {
+  const mapa: Record<string, string> = {
+    name: 'name',
+    slug: 'slug',
+    coachName: 'coach_name',
+    logoUrl: 'logo_url',
+    bannerUrl: 'banner_url',
+    presentationVideoUrl: 'presentation_video_url',
+    isPublic: 'is_public',
+    city: 'city',
+    state: 'state',
+    neighborhood: 'neighborhood',
+    homeFieldName: 'home_field_name',
+    contactName: 'contact_name',
+    contactPhone: 'contact_phone',
+    contactWhatsapp: 'contact_whatsapp',
+    publicDescription: 'public_description',
+    allowFriendlyContact: 'allow_friendly_contact',
+    publicRosterEnabled: 'public_roster_enabled',
+    primaryColor: 'primary_color',
+    secondaryColor: 'secondary_color',
+    accentColor: 'accent_color',
+    description: 'description',
+  };
+
+  const mudancas: Record<string, unknown> = {};
+
+  for (const [campo, coluna] of Object.entries(mapa)) {
+    if (input[campo] !== undefined) {
+      mudancas[coluna] = input[campo];
+    }
+  }
+
+  return mudancas;
+}
+
+export async function atualizarTime(
+  teamId: string,
+  input: Record<string, unknown>,
+): Promise<Team> {
+  return await atualizarTimeERetornar(
+    teamId,
+    mudancasDoTime(input),
+    'Não foi possível salvar o time agora.',
+  );
+}
+
+export async function definirCustoPadraoDoTime(
+  teamId: string,
+  centavos: number | null,
+): Promise<Team> {
+  return await atualizarTimeERetornar(
+    teamId,
+    { default_match_cost_cents: centavos },
+    'Não foi possível salvar o valor padrão agora.',
+  );
+}
+
+/**
+ * Gera um código de convite novo.
+ *
+ * Sorteia e tenta gravar, em vez de consultar antes: `teams_invite_code_unico_idx`
+ * é quem garante a unicidade, e ler antes de escrever abriria a janela entre a
+ * leitura e a gravação. Com 32^6 combinações, a colisão é rara o bastante para
+ * a segunda tentativa quase nunca acontecer.
+ */
+export async function gerarNovoCodigoDeConvite(teamId: string): Promise<Team> {
+  const alfabeto = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+  for (let tentativa = 0; tentativa < 8; tentativa += 1) {
+    let codigo = '';
+
+    for (let i = 0; i < 6; i += 1) {
+      codigo += alfabeto[Math.floor(Math.random() * alfabeto.length)];
+    }
+
+    const { data, error } = await cliente()
+      .from('teams')
+      .update({
+        invite_code: codigo,
+        invite_code_updated_at: agora(),
+        updated_at: agora(),
+      })
+      .eq('id', teamId)
+      .select()
+      .single();
+
+    if (!error) {
+      return paraTime(data);
+    }
+
+    if (error.code !== '23505') {
+      throw traduzirErroDoPostgres(error, 'Não foi possível gerar um novo código agora.');
+    }
+  }
+
+  throw criarErroDoRepositorio(
+    'Não foi possível gerar um novo código agora. Tente de novo.',
+    'unavailable',
+  );
+}
+
 export async function buscarVinculosDoTime(teamId: string): Promise<TeamMember[]> {
   const { data, error } = await cliente()
     .from('team_members')

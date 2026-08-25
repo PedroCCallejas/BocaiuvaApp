@@ -219,8 +219,15 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
       // Metodo que delega para outro nao recarrega duas vezes: quem faz o
       // trabalho ja avisou a tela. `updateFinishedMatchStats` e assim.
       const blocos = repo.split(/\n    async /).slice(1);
+
+      // Leitura avulsa nao tem cache para invalidar. Sao os metodos que a tela
+      // chama para buscar um recorte fora do snapshot — `fetch*` e `list*`.
+      const ehLeitura = (bloco: string) => /^(fetch|list|get)[A-Z]/.test(bloco);
+
       const gravam = blocos.filter(
-        (bloco) => !/return await this\.[a-zA-Z]+\(/.test(bloco.slice(0, 400)),
+        (bloco) =>
+          !ehLeitura(bloco) &&
+          !/return await this\.[a-zA-Z]+\(/.test(bloco.slice(0, 400)),
       );
       const semRecarga = gravam.filter((bloco) => !bloco.includes('.recarregar()'));
 

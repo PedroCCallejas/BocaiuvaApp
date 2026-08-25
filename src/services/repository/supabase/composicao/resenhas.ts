@@ -12,6 +12,8 @@ import {
   apagarResenha,
   atualizarResenha,
   buscarResenhas,
+  buscarResenhasDaPartida,
+  buscarResenhasDoTime,
   criarResenha,
 } from '@/services/repository/supabase/resenhas';
 import { buscarTimeAtivo } from '@/services/repository/supabase/composicao/comum';
@@ -34,6 +36,14 @@ export const fatiaDasResenhas = criarFatia({
 export function comResenhas(base: AppRepository): AppRepository {
   return {
     ...base,
+
+    async fetchMatchDiaryEntriesByMatchId(matchId) {
+      return await buscarResenhasDaPartida(matchId);
+    },
+
+    async listMatchDiaryEntriesForTeam(teamId, _actorUserId, limit) {
+      return await buscarResenhasDoTime(teamId, limit);
+    },
 
     async createMatchDiaryEntry(input) {
       const resenha = await criarResenha(await exigirTimeAtivo(), input);

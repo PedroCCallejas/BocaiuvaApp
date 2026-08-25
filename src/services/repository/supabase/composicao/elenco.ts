@@ -14,17 +14,21 @@ import { exigirTimeAtivo } from '@/services/repository/supabase/composicao/comum
 import {
   apagarJogadorDeVez,
   atualizarJogador,
+  atualizarTime,
   buscarContextoDaSessao,
   buscarJogadores,
   CONTEXTO_VAZIO,
   criarJogador,
   criarTime,
+  definirCustoPadraoDoTime,
   definirTimeAtivo,
   desvincularConta,
   entrarComCodigo,
+  gerarNovoCodigoDeConvite,
   inativarJogador,
   reativarJogador,
 } from '@/services/repository/supabase/elenco';
+import { criarErroDoRepositorio } from '@/services/repository/supabase/erros';
 import { criarFatia } from '@/services/repository/supabase/fatias';
 import type { AppRepository } from '@/services/repository/types';
 
@@ -117,6 +121,36 @@ export function comElenco(base: AppRepository): AppRepository {
         }
       }
 
+      await fatiaDoElenco.recarregar();
+      return time;
+    },
+
+    async updateTeam(teamId, input) {
+      const time = await atualizarTime(teamId, input as unknown as Record<string, unknown>);
+      await fatiaDoElenco.recarregar();
+      return time;
+    },
+
+    async setTeamDefaultMatchCost(teamId, defaultMatchCostCents) {
+      // A permissão é da policy `teams_update` (`can_manage_team`). O que o
+      // banco não sabe é o formato: centavos inteiros e não negativos.
+      if (
+        defaultMatchCostCents != null &&
+        (!Number.isInteger(defaultMatchCostCents) || defaultMatchCostCents < 0)
+      ) {
+        throw criarErroDoRepositorio(
+          'Informe um valor padrão em centavos maior ou igual a zero.',
+          'failed-precondition',
+        );
+      }
+
+      const time = await definirCustoPadraoDoTime(teamId, defaultMatchCostCents);
+      await fatiaDoElenco.recarregar();
+      return time;
+    },
+
+    async regenerateTeamInviteCode(teamId) {
+      const time = await gerarNovoCodigoDeConvite(teamId);
       await fatiaDoElenco.recarregar();
       return time;
     },

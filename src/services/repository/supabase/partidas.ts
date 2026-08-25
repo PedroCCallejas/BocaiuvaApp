@@ -350,6 +350,27 @@ export async function salvarCustoDoCampo(input: {
   return await buscarPartidaPorId(input.matchId);
 }
 
+/**
+ * Tira o valor do campo da partida.
+ *
+ * Leva os participantes junto: cota que não existe mais não tem como ter
+ * pagante, e deixar as linhas para trás faria a próxima leitura remontar um
+ * pagamento órfão.
+ */
+export async function limparCustoDoCampo(matchId: string): Promise<Match> {
+  const { error } = await cliente().rpc('limpar_custo_do_campo', {
+    p_match_id: matchId,
+  });
+
+  if (error) {
+    throw traduzirErroDoPostgres(error, 'Não foi possível remover o valor do campo agora.');
+  }
+
+  return await buscarPartidaPorId(matchId);
+}
+
+export { buscarPartidaPorId };
+
 // ── Presença ───────────────────────────────────────────────────────────────
 
 export async function definirPresenca(input: {

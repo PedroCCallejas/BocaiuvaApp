@@ -9,17 +9,25 @@
  */
 
 import { splitEqualCents } from '@/lib/expenses';
+import {
+  buildMatchFieldCost,
+  buildMatchFieldPayment,
+  getMatchFieldPaymentSummary,
+} from '@/lib/field-cost';
 import { amountFromCents } from '@/lib/money';
 import { exigirTimeAtivo } from '@/services/repository/supabase/composicao/comum';
+import { criarErroDoRepositorio } from '@/services/repository/supabase/erros';
 import { criarFatia } from '@/services/repository/supabase/fatias';
 import {
   apagarPartida,
   atualizarPartida,
+  buscarPartidaPorId,
   buscarPartidas,
   criarPartida,
   definirMvpManual,
   definirPresenca,
   encerrarPartida,
+  limparCustoDoCampo,
   salvarCustoDoCampo,
   salvarEscalacao,
   salvarEstatistica,
@@ -58,6 +66,125 @@ function jogadoresParaConvocar(fatia: { players?: { id: string; status: string; 
 export function comPartidas(base: AppRepository): AppRepository {
   return {
     ...base,
+
+    async updateMatchFieldCost(matchId, input, actorUserId) {
+      const atual = await buscarPartidaPorId(matchId);
+
+      if (atual.deletedAt) {
+        throw criarErroDoRepositorio(
+          'Não é possível alterar o valor de uma partida excluída.',
+          'failed-precondition',
+        );
+      }
+
+      if (!input) {
+        const semCusto = await limparCustoDoCampo(matchId);
+        await fatiaDePartidas.recarregar();
+        return semCusto;
+      }
+
+      // As contas moram em `field-cost.ts` e são as mesmas do Firestore. Refazer
+      // a divisão aqui daria dois resultados possíveis para o mesmo campo.
+      const custo = buildMatchFieldCost({
+        values: input,
+        updatedAt: new Date().toISOString(),
+        updatedByUserId: actorUserId,
+      });
+
+      // Diminuir a divisão não pode deixar mais gente marcada como paga do que
+      // cotas existentes — o rateio ficaria devendo a si mesmo.
+      if (
+        atual.fieldPayment &&
+        getMatchFieldPaymentSummary(custo, atual.fieldPayment).totalPaidCount > custo.splitCount
+      ) {
+        throw criarErroDoRepositorio(
+          'A nova divisão do campo não comporta a quantidade de pagantes já marcada.',
+          'failed-precondition',
+        );
+      }
+
+      const salva = await salvarCustoDoCampo({
+        matchId,
+        totalAmount: custo.totalAmount,
+        splitCount: custo.splitCount,
+        amountPerPlayer: custo.amountPerPlayer,
+        note: custo.note,
+        // O pagamento sobrevive à mudança de valor: quem já pagou continua
+        // pago, e reescrever isso obrigaria o admin a remarcar todo mundo.
+        pixKey: atual.fieldPayment?.pixKey ?? null,
+        responsibleName: atual.fieldPayment?.responsibleName ?? null,
+        paidGuestCount: atual.fieldPayment?.paidGuestCount ?? 0,
+        payerPlayerIds: atual.fieldPayment?.payerPlayerIds ?? [],
+        exemptPlayerIds: atual.fieldPayment?.exemptPlayerIds ?? [],
+        actorUserId,
+      });
+
+      await fatiaDePartidas.recarregar();
+      return salva;
+    },
+
+    async updateMatchFieldPayment(matchId, input, actorUserId) {
+      const atual = await buscarPartidaPorId(matchId);
+
+      if (!atual.fieldCost) {
+        throw criarErroDoRepositorio(
+          'Informe o valor do campo antes de controlar pagamentos.',
+          'failed-precondition',
+        );
+      }
+
+      if (!input.fieldPayment) {
+        // Limpar o controle não apaga o valor do campo: são coisas diferentes.
+        const semPagamento = await salvarCustoDoCampo({
+          matchId,
+          totalAmount: atual.fieldCost.totalAmount,
+          splitCount: atual.fieldCost.splitCount,
+          amountPerPlayer: atual.fieldCost.amountPerPlayer,
+          note: atual.fieldCost.note,
+          pixKey: null,
+          responsibleName: null,
+          paidGuestCount: 0,
+          payerPlayerIds: [],
+          exemptPlayerIds: [],
+          actorUserId,
+        });
+
+        await fatiaDePartidas.recarregar();
+        return semPagamento;
+      }
+
+      const fatia = await fatiaDePartidas.obter();
+      const confirmados = fatia.attendance
+        .filter((item) => item.matchId === matchId && item.status === 'confirmed')
+        .map((item) => item.playerId);
+
+      // Valida antes de gravar: só confirmado pode ser marcado, ninguém é pago
+      // e isento ao mesmo tempo, e o total de pagantes cabe nas cotas.
+      const pagamento = buildMatchFieldPayment({
+        values: input.fieldPayment,
+        fieldCost: atual.fieldCost,
+        confirmedPlayerIds: confirmados,
+        updatedAt: new Date().toISOString(),
+        updatedByUserId: actorUserId,
+      });
+
+      const salvo = await salvarCustoDoCampo({
+        matchId,
+        totalAmount: atual.fieldCost.totalAmount,
+        splitCount: atual.fieldCost.splitCount,
+        amountPerPlayer: atual.fieldCost.amountPerPlayer,
+        note: atual.fieldCost.note,
+        pixKey: pagamento.pixKey,
+        responsibleName: pagamento.responsibleName,
+        paidGuestCount: pagamento.paidGuestCount,
+        payerPlayerIds: pagamento.payerPlayerIds,
+        exemptPlayerIds: pagamento.exemptPlayerIds,
+        actorUserId,
+      });
+
+      await fatiaDePartidas.recarregar();
+      return salvo;
+    },
 
     async createMatch(input, creatorUserId) {
       const snapshot = await base.getSnapshot();

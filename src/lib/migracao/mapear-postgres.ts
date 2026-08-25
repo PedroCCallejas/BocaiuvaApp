@@ -68,7 +68,31 @@ export type NomeDaTabelaFilha = (typeof TABELAS_FILHAS)[number];
 export const TABELAS_DE_MODULO_JA_MIGRADO: Partial<Record<NomeDaTabela, string>> = {
   expenses: 'financeiro',
   expense_categories: 'financeiro',
+
+  match_diary_entries: 'resenhas',
+
+  matches: 'partidas',
+  lineups: 'partidas',
+  attendance: 'partidas',
+  match_stats: 'partidas',
+
+  mvp_votes: 'avaliacoes',
+  player_ratings: 'avaliacoes',
+  rating_criteria: 'avaliacoes',
+
+  // O elenco arrasta `users`, `teams` e `team_members` junto: são o contexto da
+  // sessão, e reimportar qualquer um deles desfaria vínculo criado depois da
+  // virada — a pessoa abriria o app sem time.
+  players: 'elenco',
+  users: 'elenco',
+  teams: 'elenco',
+  team_members: 'elenco',
 };
+
+// As tabelas filhas não precisam entrar aqui: elas só são gravadas dentro do
+// laço da tabela pai, então proteger o pai já as protege. `expense_shares`
+// segue `expenses`; `match_field_costs` e `match_field_participants` seguem
+// `matches`.
 
 /** Chave usada no `upsert`. Tabela filha tem chave composta, não `id`. */
 export const CHAVE_DE_CONFLITO: Record<NomeDaTabelaFilha, string> = {

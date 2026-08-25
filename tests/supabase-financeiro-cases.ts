@@ -203,6 +203,47 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     },
   },
   {
+    name: 'reimportar nao pode apagar o que ja vive no Postgres',
+    run() {
+      // A trava existia desde o financeiro, mas ficou para tras: quatro modulos
+      // migraram depois e ninguem voltou aqui. Rodar o importador teria
+      // sobrescrito partida, presenca, nota e elenco com a versao congelada do
+      // Firestore — apagando tudo que foi gravado desde a virada.
+      //
+      // Por isso o teste nao pergunta "esta na lista?", e sim "alguem decidiu
+      // sobre esta tabela?". Tabela nova obriga uma escolha explicita.
+      const fonte = fs.readFileSync('src/lib/migracao/mapear-postgres.ts', 'utf8');
+
+      const ordem = fonte.slice(
+        fonte.indexOf('export const ORDEM_DAS_TABELAS'),
+        fonte.indexOf('export const TABELAS_FILHAS'),
+      );
+      const tabelas = [...ordem.matchAll(/'([a-z_]+)',/g)].map((achado) => achado[1]);
+
+      const protegidas = fonte.slice(
+        fonte.indexOf('export const TABELAS_DE_MODULO_JA_MIGRADO'),
+        fonte.indexOf('// As tabelas filhas'),
+      );
+
+      /** Ainda no Firestore: reimportar nao apaga nada porque nada grava la. */
+      const semModuloNoPostgres = ['seasons', 'notifications'];
+
+      assert.equal(tabelas.length > 10, true, 'nao leu a ordem das tabelas');
+
+      const desprotegidas = tabelas.filter(
+        (tabela) =>
+          !semModuloNoPostgres.includes(tabela) &&
+          !new RegExp(`\\b${tabela}: '`).test(protegidas),
+      );
+
+      assert.deepEqual(
+        desprotegidas.sort(),
+        [],
+        'tabela sem decisao: ou o modulo dela ja roda no Postgres (proteja) ou nao (documente)',
+      );
+    },
+  },
+  {
     name: 'o Firestore para de ler o que o Postgres ja entrega',
     run() {
       const composicao = apenasCodigoTs(

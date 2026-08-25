@@ -30,8 +30,8 @@
 export const MODULOS_MIGRAVEIS = [
   'financeiro',
   'resenhas',
-  'avaliacoes',
   'partidas',
+  'avaliacoes',
   'elenco',
   'notificacoes',
 ] as const;

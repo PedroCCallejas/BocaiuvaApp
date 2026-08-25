@@ -235,17 +235,41 @@ async function somar(
   tabela: string,
   coluna: string,
 ): Promise<number> {
-  // Sem agregação no PostgREST sem view: soma no cliente. O volume é pequeno.
-  const { data, error } = await supabase.from(tabela).select(coluna);
+  // Sem agregação no PostgREST sem view: soma no cliente, em páginas.
+  //
+  // Ler de uma vez era o mesmo furo que truncou o ranking de presença: o
+  // PostgREST para em 1000 linhas sem avisar. Aqui seria pior — um verificador
+  // que soma metade das linhas e diz "tudo certo" é pior do que não ter
+  // verificador nenhum. `match_stats` já está em 854.
+  const TAMANHO = 1000;
+  let total = 0;
 
-  if (error) {
-    throw new Error(`Falha ao somar ${tabela}.${coluna}: ${error.message}`);
+  for (let pagina = 0; ; pagina += 1) {
+    const de = pagina * TAMANHO;
+
+    const { data, error } = await supabase
+      .from(tabela)
+      .select(coluna)
+      // Ordem estável: sem ela as páginas se embaralham e a mesma linha pode
+      // ser somada duas vezes enquanto outra nunca aparece.
+      .order('created_at')
+      .range(de, de + TAMANHO - 1);
+
+    if (error) {
+      throw new Error(`Falha ao somar ${tabela}.${coluna}: ${error.message}`);
+    }
+
+    const lote = (data ?? []) as unknown[];
+
+    total += lote.reduce<number>(
+      (soma, linha) => soma + inteiro((linha as Record<string, unknown>)[coluna]),
+      0,
+    );
+
+    if (lote.length < TAMANHO) {
+      return total;
+    }
   }
-
-  return ((data ?? []) as unknown[]).reduce<number>(
-    (total, linha) => total + inteiro((linha as Record<string, unknown>)[coluna]),
-    0,
-  );
 }
 
 async function resumoDoPostgres(supabase: SupabaseClient): Promise<ResumoDaMigracao> {

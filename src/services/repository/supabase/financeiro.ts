@@ -19,6 +19,7 @@
 import { supabase } from '@/config/supabase/client';
 import { todasAsLinhas } from '@/services/repository/supabase/paginacao';
 import { splitEqualCents } from '@/lib/expenses';
+import { lotesQueCabemNaUrl } from '@/lib/migracao/mapear-postgres';
 import {
   paraCategoriaDeDespesa,
   paraCotasDaDespesa,
@@ -135,21 +136,30 @@ export async function buscarDespesas(teamId: string): Promise<Expense[]> {
     return [];
   }
 
-  const { data: cotas, error: erroDasCotas } = await todasAsLinhas((de, ate) =>
-    supabaseClient
-      .from('expense_shares')
-      .select('*')
-      .in('expense_id', ids)
-      .order('expense_id')
-      .order('player_id')
-      .range(de, ate),
-  );
+  // Os ids vão na URL, e uma lista grande estoura o limite do servidor — foi
+  // exatamente o `fetch failed` da conferência da migração. Por isso o `.in`
+  // vai em lotes que cabem, e cada lote ainda é paginado por dentro.
+  const cotas: Record<string, unknown>[] = [];
 
-  if (erroDasCotas) {
-    throw traduzirErroDoPostgres(erroDasCotas, 'Não foi possível carregar o rateio agora.');
+  for (const lote of lotesQueCabemNaUrl(ids)) {
+    const { data, error: erroDasCotas } = await todasAsLinhas((de, ate) =>
+      supabaseClient
+        .from('expense_shares')
+        .select('*')
+        .in('expense_id', lote)
+        .order('expense_id')
+        .order('player_id')
+        .range(de, ate),
+    );
+
+    if (erroDasCotas) {
+      throw traduzirErroDoPostgres(erroDasCotas, 'Não foi possível carregar o rateio agora.');
+    }
+
+    cotas.push(...((data ?? []) as Record<string, unknown>[]));
   }
 
-  return (linhas ?? []).map((linha) => paraDespesa(linha, cotas ?? []));
+  return (linhas ?? []).map((linha) => paraDespesa(linha, cotas));
 }
 
 // ── Escrita ────────────────────────────────────────────────────────────────

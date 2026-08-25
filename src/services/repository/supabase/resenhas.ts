@@ -106,17 +106,28 @@ export async function buscarResenhasDoTime(
   teamId: string,
   limite?: number,
 ): Promise<MatchDiaryEntry[]> {
-  let consulta = cliente()
-    .from('match_diary_entries')
-    .select('*')
-    .eq('team_id', teamId)
-    .order('created_at', { ascending: false });
+  const supabaseClient = cliente();
 
-  if (limite && limite > 0) {
-    consulta = consulta.limit(limite);
-  }
-
-  const { data, error } = await consulta;
+  // Com limite pedido, uma consulta basta e o `limit` é o corte desejado.
+  // Sem limite, precisa paginar: o corte de 1000 do PostgREST seria silencioso.
+  const { data, error } =
+    limite && limite > 0
+      ? await supabaseClient
+          .from('match_diary_entries')
+          .select('*')
+          .eq('team_id', teamId)
+          .order('created_at', { ascending: false })
+          .order('id')
+          .limit(limite)
+      : await todasAsLinhas((de, ate) =>
+          supabaseClient
+            .from('match_diary_entries')
+            .select('*')
+            .eq('team_id', teamId)
+            .order('created_at', { ascending: false })
+            .order('id')
+            .range(de, ate),
+        );
 
   if (error) {
     throw traduzirErroDoPostgres(error, 'Não foi possível carregar as resenhas agora.');

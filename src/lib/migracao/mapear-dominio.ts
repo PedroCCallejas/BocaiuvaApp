@@ -15,6 +15,8 @@
 
 import type {
   AttendanceRecord,
+  Player,
+  TeamMember,
   Expense,
   ExpenseCategory,
   ExpenseSplitMode,
@@ -154,6 +156,88 @@ export function paraDespesa(linha: Linha, cotas: LinhaDeCota[] = []): Expense {
       .map((cota) => cota.playerId),
     createdBy: textoOuNulo(linha.created_by),
     deletedAt: instanteOuNulo(linha.deleted_at),
+    createdAt: instante(linha.created_at, agora),
+    updatedAt: instante(linha.updated_at, agora),
+  };
+}
+
+// ── Elenco e vínculo ───────────────────────────────────────────────────────
+
+const POSICOES = [
+  'goalkeeper',
+  'right-back',
+  'center-back',
+  'left-back',
+  'wing-back',
+  'defensive-midfielder',
+  'midfielder',
+  'attacking-midfielder',
+  'winger',
+  'forward',
+  'striker',
+] as const;
+
+export function paraJogador(linha: Linha): Player {
+  const agora = new Date().toISOString();
+
+  return {
+    id: texto(linha.id),
+    teamId: texto(linha.team_id),
+    linkedUserId: textoOuNulo(linha.linked_user_id),
+    linkedEmail: textoOuNulo(linha.linked_email),
+    fullName: texto(linha.full_name, 'Jogador'),
+    nickname: texto(linha.nickname) || texto(linha.full_name, 'Jogador'),
+    photoUrl: textoOuNulo(linha.photo_url),
+    presentationVideoUrl: textoOuNulo(linha.presentation_video_url),
+    introVideoUrl: textoOuNulo(linha.intro_video_url),
+    celebrationVideoUrl: textoOuNulo(linha.celebration_video_url),
+    jerseyNumber: inteiro(linha.jersey_number),
+    primaryPosition: opcao(linha.primary_position, POSICOES, 'midfielder'),
+    secondaryPositions: listaDeTextos(linha.secondary_positions).filter((posicao) =>
+      (POSICOES as readonly string[]).includes(posicao),
+    ) as Player['secondaryPositions'],
+    preferredPosition: textoOuNulo(linha.preferred_position) as Player['preferredPosition'],
+    dominantFoot: opcao(linha.dominant_foot, ['right', 'left', 'both'] as const, 'right'),
+    status: opcao(
+      linha.status,
+      ['active', 'injured', 'suspended', 'inactive'] as const,
+      'active',
+    ),
+    bio: texto(linha.bio),
+    allowSelfEditJerseyNumber: linha.allow_self_edit_jersey_number === true,
+    manualStats: (objetoOuNulo(linha.manual_stats) ?? undefined) as Player['manualStats'],
+    feeExemption: (objetoOuNulo(linha.fee_exemption) ?? null) as Player['feeExemption'],
+    deletedAt: instanteOuNulo(linha.deleted_at),
+    createdAt: instante(linha.created_at, agora),
+    updatedAt: instante(linha.updated_at, agora),
+  };
+}
+
+/**
+ * Vínculo da pessoa com o time.
+ *
+ * No Firestore isto tinha um espelho (`teamMembershipIndex`) só porque a regra
+ * não conseguia consultar coleção. Aqui a tabela é a única fonte, e toda a
+ * maquinaria de reparo daquele espelho deixa de existir.
+ */
+export function paraVinculo(linha: Linha): TeamMember {
+  const agora = new Date().toISOString();
+
+  const papeis = listaDeTextos(linha.roles).filter((papel) =>
+    ['admin', 'player'].includes(papel),
+  ) as TeamMember['roles'];
+
+  return {
+    id: texto(linha.id),
+    teamId: texto(linha.team_id),
+    userId: texto(linha.user_id),
+    playerId: textoOuNulo(linha.player_id),
+    inviteCodeUsed: textoOuNulo(linha.invite_code_used),
+    roles: papeis.length > 0 ? papeis : ['player'],
+    canManageTeam: linha.can_manage_team === true,
+    canManagePlayers: linha.can_manage_players === true,
+    joinedAt: instante(linha.joined_at, agora),
+    status: opcao(linha.status, ['active', 'inactive'] as const, 'active'),
     createdAt: instante(linha.created_at, agora),
     updatedAt: instante(linha.updated_at, agora),
   };

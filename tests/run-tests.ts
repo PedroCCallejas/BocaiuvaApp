@@ -128,6 +128,7 @@ import { matchHighlightsTestCases } from './match-highlights-cases';
 import { mobileLayoutTestCases } from './mobile-layout-cases';
 import { mvpVotePermissionTestCases } from './mvp-vote-permission-cases';
 import { lineupShareTestCases } from './lineup-share-cases';
+import { supabaseElencoTestCases } from './supabase-elenco-cases';
 import { supabaseFinanceiroTestCases } from './supabase-financeiro-cases';
 import { supabaseModulosTestCases } from './supabase-modulos-cases';
 import { supabasePartidasTestCases } from './supabase-partidas-cases';
@@ -172,6 +173,7 @@ const testCases: TestCase[] = [
   ...lineupShareTestCases,
   ...supabaseModulosTestCases,
   ...supabaseFinanceiroTestCases,
+  ...supabaseElencoTestCases,
   ...supabaseResenhasTestCases,
   ...supabasePartidasTestCases,
   ...supabaseRpcsPartidaTestCases,

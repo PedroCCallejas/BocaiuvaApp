@@ -2,11 +2,31 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import { traduzirErroDoPostgres } from '@/services/repository/supabase/erros';
+import {
+  criarFatia,
+  limparFatias,
+  registrarEmissao,
+} from '@/services/repository/supabase/fatias';
+import type { AppSnapshot } from '@/services/repository/types';
 
 type TestCase = {
   name: string;
   run: () => void | Promise<void>;
 };
+
+/**
+ * Snapshot de mentira para os testes de fatia.
+ *
+ * O que importa aqui é se o valor sobrevive à composição, não o formato do
+ * `AppSnapshot` — montar um completo só esconderia o que está sendo testado.
+ */
+function base(campos: Record<string, unknown>): AppSnapshot {
+  return campos as unknown as AppSnapshot;
+}
+
+function lista(snapshot: AppSnapshot): string[] {
+  return (snapshot as unknown as { lista: string[] }).lista;
+}
 
 const RPC = 'supabase/migrations/20260821180000_rpc_salvar_despesa.sql';
 const MODULO = 'src/services/repository/supabase/financeiro.ts';
@@ -226,37 +246,84 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
   },
   {
     name: 'escrita no Postgres avisa a tela sem esperar o Firestore',
-    run() {
-      const fatias = apenasCodigoTs(
-        fs.readFileSync('src/services/repository/supabase/fatias.ts', 'utf8'),
-      );
+    async run() {
+      limparFatias();
+
+      let doBanco = ['antes'];
+      const fatia = criarFatia({
+        nome: 'teste',
+        vazio: [] as string[],
+        ler: async () => doBanco,
+        aplicar: (snapshot, valor) => ({ ...snapshot, lista: valor }),
+      });
+
+      const emitidos: unknown[] = [];
+      registrarEmissao(base({ lista: ['firestore'] }), (s) => emitidos.push(lista(s)));
+
+      await fatia.obter();
+      doBanco = ['depois'];
+      await fatia.recarregar();
 
       // So invalidar o cache deixava a fatia nula, e a proxima emissao do
       // Firestore saia VAZIA — as despesas sumiam da tela depois de marcar
       // alguem como quitado.
-      const recarregar = fatias.slice(fatias.indexOf('async recarregar()'));
-      assert.match(recarregar.slice(0, 300), /cache = await lerComSeguranca\(\)/);
-      assert.match(recarregar.slice(0, 300), /reemitir\(\)/);
-
-      // O tempo real e do Firestore e ele nao sabe que o Postgres mudou; quem
-      // escreveu precisa guardar para onde reemitir.
-      assert.match(fatias, /ultimoSnapshotBase = snapshot;/);
-      assert.match(fatias, /emitirParaOApp = emitir;/);
+      assert.deepEqual(emitidos, [['depois']], 'a escrita precisa reemitir ja com o valor novo');
     },
   },
   {
-    name: 'modulo fora do ar nao derruba o app inteiro',
+    name: 'fatia que ainda nao carregou nao apaga o que veio do Firestore',
     run() {
-      const fatias = fs.readFileSync(
-        'src/services/repository/supabase/fatias.ts',
-        'utf8',
+      limparFatias();
+
+      const fatia = criarFatia({
+        nome: 'elenco-de-teste',
+        vazio: [] as string[],
+        ler: async () => ['do postgres'],
+        aplicar: (snapshot, valor) => ({ ...snapshot, lista: valor }),
+      });
+
+      // O bug: `aplicar` usava `cache ?? vazio`, entao a primeira pintura
+      // zerava `teamMembers` e o app concluia que a pessoa nao tinha time —
+      // mandando o admin do Bocaiuva para a tela de codigo de convite.
+      const antes = fatia.aplicar(base({ lista: ['veio do firestore'] }));
+      assert.deepEqual(
+        (antes as unknown as { lista: string[] }).lista,
+        ['veio do firestore'],
+        'antes de carregar, o snapshot precisa passar intacto',
       );
-      const leitura = fatias.slice(fatias.indexOf('async function lerComSeguranca'));
+    },
+  },
+  {
+    name: 'modulo fora do ar nao derruba o app nem vira cache',
+    async run() {
+      limparFatias();
+
+      let deveFalhar = true;
+      const fatia = criarFatia({
+        nome: 'instavel',
+        vazio: [] as string[],
+        ler: async () => {
+          if (deveFalhar) throw new Error('sem rede');
+          return ['chegou'];
+        },
+        aplicar: (snapshot, valor) => ({ ...snapshot, lista: valor }),
+      });
 
       // E uma aba so. Ficar sem ela e muito melhor do que a tela inicial nao
       // abrir — e vale para qualquer modulo, nao so o financeiro.
-      assert.match(leitura.slice(0, 700), /catch \(erro\)/);
-      assert.match(leitura.slice(0, 700), /return input\.vazio;/);
+      assert.deepEqual(await fatia.obter(), [], 'falha devolve vazio em vez de estourar');
+
+      // Mas a falha NAO pode virar cache: se virasse, o vazio passaria a
+      // sobrescrever o Firestore como se fosse a verdade.
+      assert.equal(fatia.estaVazia(), true, 'falha nao pode ser tratada como carregada');
+      assert.deepEqual(
+        (fatia.aplicar(base({ lista: ['firestore'] })) as unknown as { lista: string[] }).lista,
+        ['firestore'],
+        'depois de falhar, o dado do Firestore continua valendo',
+      );
+
+      deveFalhar = false;
+      assert.deepEqual(await fatia.recarregar(), ['chegou'], 'a fatia se recupera sozinha');
     },
   },
   {

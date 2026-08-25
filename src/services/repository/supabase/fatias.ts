@@ -72,18 +72,33 @@ export function criarFatia<T>(input: {
   aplicar: (snapshot: AppSnapshot, valor: T) => AppSnapshot;
 }): Fatia<T> {
   let cache: T | null = null;
-  let leituraEmVoo: Promise<T> | null = null;
+  let leituraEmVoo: Promise<T | null> | null = null;
+  let ultimaFalha = 0;
 
-  async function lerComSeguranca(): Promise<T> {
+  /** Espera entre tentativas depois de uma falha, para não martelar o servidor. */
+  const PAUSA_APOS_FALHA = 5000;
+
+  /**
+   * Lê e devolve `null` quando falha.
+   *
+   * Devolver o valor vazio faria a falha virar cache — e a partir daí a tela
+   * mostraria listas vazias como se fossem a verdade. Com `null`, o que veio do
+   * Firestore continua valendo e a próxima emissão tenta de novo.
+   */
+  async function lerComSeguranca(): Promise<T | null> {
     try {
-      return await input.ler();
+      const valor = await input.ler();
+      ultimaFalha = 0;
+      return valor;
     } catch (erro) {
+      ultimaFalha = Date.now();
+
       // Módulo fora do ar é uma aba sem dado, não uma tela que não abre.
       if (typeof __DEV__ !== 'undefined' && __DEV__) {
         console.warn(`[supabase] ${input.nome} indisponivel`, erro);
       }
 
-      return input.vazio;
+      return null;
     }
   }
 
@@ -93,25 +108,50 @@ export function criarFatia<T>(input: {
         return cache;
       }
 
+      if (Date.now() - ultimaFalha < PAUSA_APOS_FALHA) {
+        return input.vazio;
+      }
+
       // Emissões em sequência não podem virar várias requisições iguais.
       leituraEmVoo ??= lerComSeguranca().then((valor) => {
-        cache = valor;
+        if (valor !== null) {
+          cache = valor;
+        }
+
         leituraEmVoo = null;
         return valor;
       });
 
-      return await leituraEmVoo;
+      return (await leituraEmVoo) ?? input.vazio;
     },
 
     async recarregar() {
       leituraEmVoo = null;
-      cache = await lerComSeguranca();
+      const valor = await lerComSeguranca();
+
+      // Falha na releitura mantém o que já estava em cache. Zerar aqui faria a
+      // tela esvaziar logo depois de uma escrita que deu certo — exatamente o
+      // momento em que a pessoa está olhando para confirmar que funcionou.
+      if (valor !== null) {
+        cache = valor;
+      }
+
       reemitir();
-      return cache;
+      return cache ?? input.vazio;
     },
 
     aplicar(snapshot) {
-      return input.aplicar(snapshot, cache ?? input.vazio);
+      // Fatia que ainda não carregou NÃO sobrescreve nada.
+      //
+      // Usar o valor vazio aqui apagava dado real na primeira pintura: o
+      // snapshot do Firestore chegava completo, a fatia zerava `teamMembers`, e
+      // o app concluía que a pessoa não participa de nenhum time — mandando o
+      // admin do Bocaiúva para a tela de "entrar com código".
+      //
+      // Enquanto não carrega, o que veio do Firestore continua valendo. Ele
+      // ainda tem tudo, e é melhor mostrar dado de um segundo atrás do que
+      // mostrar vazio e navegar para o lugar errado.
+      return cache === null ? snapshot : input.aplicar(snapshot, cache);
     },
 
     estaVazia() {

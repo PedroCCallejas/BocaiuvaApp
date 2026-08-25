@@ -294,6 +294,34 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     },
   },
   {
+    name: 'conta sem linha no Postgres ganha perfil em vez de contexto vazio',
+    run() {
+      const elenco = apenasCodigoTs(
+        fs.readFileSync('src/services/repository/supabase/elenco.ts', 'utf8'),
+      );
+
+      // No Firestore, `ensureCurrentUserDocumentAfterLogin` criava o documento
+      // no primeiro acesso. Aqui nao existia equivalente: quem se cadastrasse
+      // depois da importacao ficava sem linha, e sem linha o contexto volta
+      // vazio — tela sem time e a RPC de convite recusando com "Crie o perfil
+      // da conta antes de entrar no time".
+      assert.match(elenco, /async function criarPerfilDaSessao/);
+      assert.match(
+        elenco,
+        /usuario\.data \?\? \(await criarPerfilDaSessao\(\)\)/,
+        'buscarContextoDaSessao precisa tentar criar o perfil antes de desistir',
+      );
+
+      // A policy `users_insert_self` so aceita 'player'. Mandar outra coisa
+      // faria a insercao ser recusada justamente no primeiro acesso.
+      assert.match(elenco, /app_role: 'player'/);
+
+      // Duas abas abrindo juntas criam a mesma linha; a segunda tem que reler
+      // em vez de estourar na cara de quem acabou de entrar.
+      assert.match(elenco, /error\.code === '23505'/);
+    },
+  },
+  {
     name: 'modulo fora do ar nao derruba o app nem vira cache',
     async run() {
       limparFatias();

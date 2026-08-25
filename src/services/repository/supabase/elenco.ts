@@ -16,6 +16,7 @@
 
 import { supabase } from '@/config/supabase/client';
 import { paraJogador, paraVinculo } from '@/lib/migracao/mapear-dominio';
+import { authService } from '@/services/auth';
 import {
   criarErroDoRepositorio,
   traduzirErroDoPostgres,
@@ -119,6 +120,64 @@ function paraTime(linha: Record<string, unknown>): Team {
 }
 
 /**
+ * Cria a linha da conta em `public.users` na primeira vez.
+ *
+ * No Firestore isto era `ensureCurrentUserDocumentAfterLogin`, chamada nos três
+ * caminhos de entrada. Aqui não existia ninguém equivalente — e o efeito era
+ * grave: quem se cadastrasse depois da importação ficava sem linha, e sem linha
+ * o contexto volta vazio. A própria RPC de entrar no time já avisava
+ * ("Crie o perfil da conta antes de entrar no time"), mas nada criava.
+ *
+ * Fica aqui, e não em `login`/`register`/`loginWithGoogle`, porque quem já está
+ * com sessão aberta nunca mais passa por esses três. Todo mundo passa por
+ * `buscarContextoDaSessao`.
+ *
+ * O `id` vem da sessão do Firebase e a policy `users_insert_self` confere
+ * contra o uid do token: não dá para criar perfil no nome de outra pessoa.
+ */
+async function criarPerfilDaSessao(): Promise<Record<string, unknown> | null> {
+  const supabaseClient = cliente();
+  const sessao = authService.getCurrentUser() ?? (await authService.restoreSession());
+
+  if (!sessao) {
+    return null;
+  }
+
+  const instante = agora();
+
+  const { data, error } = await supabaseClient
+    .from('users')
+    .insert({
+      id: sessao.authId,
+      // Minúsculo por padrão: a resolução de jogador por e-mail compara
+      // normalizado, e cadastro com maiúscula já deixou gente sem votar.
+      email: sessao.email.trim().toLowerCase(),
+      display_name: sessao.displayName,
+      // A policy exige exatamente 'player': ninguém nasce admin por conta
+      // própria.
+      app_role: 'player',
+      avatar_url: sessao.avatarUrl ?? null,
+      created_at: instante,
+      updated_at: instante,
+    })
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    // Duas abas abrindo ao mesmo tempo criam a mesma linha. A segunda perde a
+    // corrida e só precisa reler.
+    if (error.code === '23505') {
+      const { data: existente } = await supabaseClient.from('users').select('*').maybeSingle();
+      return existente ?? null;
+    }
+
+    throw traduzirErroDoPostgres(error, 'Não foi possível criar o perfil da sua conta.');
+  }
+
+  return data ?? null;
+}
+
+/**
  * Quem é a pessoa, de que times ela participa.
  *
  * Três consultas, sem reparo nenhum. A RLS já devolve só o que a pessoa pode
@@ -144,7 +203,11 @@ export async function buscarContextoDaSessao(): Promise<ContextoDaSessao> {
     throw traduzirErroDoPostgres(vinculos.error, 'Não foi possível carregar seus times agora.');
   }
 
-  if (!usuario.data) {
+  // Primeira vez desta conta no Postgres: cria o perfil e segue. Sem isso a
+  // pessoa entra, ve tela vazia e nem com codigo de convite consegue avancar.
+  const linhaDoUsuario = usuario.data ?? (await criarPerfilDaSessao());
+
+  if (!linhaDoUsuario) {
     return CONTEXTO_VAZIO;
   }
 
@@ -152,7 +215,7 @@ export async function buscarContextoDaSessao(): Promise<ContextoDaSessao> {
   const idsDosTimes = [...new Set(membros.map((membro) => membro.teamId))];
 
   if (idsDosTimes.length === 0) {
-    return { user: paraUsuario(usuario.data), teams: [], teamMembers: membros };
+    return { user: paraUsuario(linhaDoUsuario), teams: [], teamMembers: membros };
   }
 
   const { data: times, error } = await supabaseClient
@@ -165,7 +228,7 @@ export async function buscarContextoDaSessao(): Promise<ContextoDaSessao> {
   }
 
   return {
-    user: paraUsuario(usuario.data),
+    user: paraUsuario(linhaDoUsuario),
     teams: (times ?? []).map(paraTime),
     teamMembers: membros,
   };

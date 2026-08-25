@@ -20,6 +20,7 @@ import {
   votarNoMvp,
   AVALIACOES_VAZIAS,
 } from '@/services/repository/supabase/avaliacoes';
+import { buscarMeuVinculo } from '@/services/repository/supabase/elenco';
 import { criarErroDoRepositorio } from '@/services/repository/supabase/erros';
 import { criarFatia } from '@/services/repository/supabase/fatias';
 import type { AppRepository } from '@/services/repository/types';
@@ -41,22 +42,25 @@ export const fatiaDeAvaliacoes = criarFatia({
 /**
  * Qual jogador é quem está usando o app.
  *
- * Vem do snapshot, que já traz o vínculo resolvido pela camada de elenco. A RLS
- * confere de novo do lado do banco — aqui é só para montar a linha.
+ * A RLS confere de novo do lado do banco — aqui é só para montar a linha.
  */
-async function meuJogador(base: AppRepository): Promise<{ teamId: string; playerId: string }> {
-  const snapshot = await base.getSnapshot();
-  const teamId = snapshot.users[0]?.activeTeamId ?? null;
-  const vinculo = snapshot.teamMembers.find((membro) => membro.teamId === teamId);
+async function meuJogador(): Promise<{ teamId: string; playerId: string }> {
+  // Time e vínculo vêm do banco, não do snapshot.
+  //
+  // Lia de `base.getSnapshot()`, e `base` é a pilha ABAIXO do elenco — o
+  // `activeTeamId` vinha da cópia do Firestore, que congelou na virada. Quem
+  // trocasse de time votaria no time antigo, e o vínculo lido seria o errado.
+  const teamId = await exigirTimeAtivo();
+  const meu = await buscarMeuVinculo(teamId);
 
-  if (!teamId || !vinculo?.playerId) {
+  if (!meu?.playerId) {
     throw criarErroDoRepositorio(
       'Vincule sua conta a um jogador do time para continuar.',
       'permission-denied',
     );
   }
 
-  return { teamId, playerId: vinculo.playerId };
+  return { teamId, playerId: meu.playerId };
 }
 
 export function comAvaliacoes(base: AppRepository): AppRepository {
@@ -64,7 +68,7 @@ export function comAvaliacoes(base: AppRepository): AppRepository {
     ...base,
 
     async submitMvpVote(input) {
-      const { teamId, playerId } = await meuJogador(base);
+      const { teamId, playerId } = await meuJogador();
 
       const voto = await votarNoMvp({
         teamId,
@@ -83,10 +87,16 @@ export function comAvaliacoes(base: AppRepository): AppRepository {
     },
 
     async submitPlayerRating(input) {
-      const { teamId, playerId } = await meuJogador(base);
-      const snapshot = await base.getSnapshot();
+      const { teamId, playerId } = await meuJogador();
 
-      const ativos = snapshot.ratingCriteria.filter(
+      // Os critérios vêm da própria fatia, não do `base`.
+      //
+      // `ratingCriteria` é desta camada, e o Firestore parou de ler essa
+      // coleção — `base.getSnapshot()` devolvia lista vazia. A avaliação era
+      // gravada com `criteriaSnapshot` vazio, ou seja: nota salva sem registro
+      // de como foi composta. Silencioso e irrecuperável depois.
+      const fatia = await fatiaDeAvaliacoes.obter();
+      const ativos = fatia.ratingCriteria.filter(
         (criterio) => criterio.teamId === teamId && criterio.active,
       );
       const criteriaSnapshot = buildRatingCriteriaSnapshot(ativos);
@@ -112,10 +122,12 @@ export function comAvaliacoes(base: AppRepository): AppRepository {
 
     async createRatingCriterion(input) {
       const teamId = await exigirTimeAtivo();
-      const snapshot = await base.getSnapshot();
+      const fatia = await fatiaDeAvaliacoes.obter();
 
-      // Entra no fim da lista, na ordem em que o admin criou.
-      const ordem = snapshot.ratingCriteria.filter(
+      // Entra no fim da lista, na ordem em que o admin criou. Contando pelo
+      // `base` — que perdeu `ratingCriteria` — todo critério novo nascia com
+      // ordem 0 e a tela embaralhava.
+      const ordem = fatia.ratingCriteria.filter(
         (criterio) => criterio.teamId === teamId,
       ).length;
 

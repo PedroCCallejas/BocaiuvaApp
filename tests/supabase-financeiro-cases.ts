@@ -203,6 +203,62 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     },
   },
   {
+    name: 'camada nao le do base um dado que ela mesma ou outra camada entrega',
+    run() {
+      // `base` e a pilha ABAIXO da camada atual. Ler dela um dado que uma fatia
+      // entrega devolve o que o Firestore tem — e o Firestore parou de ler
+      // justamente essas colecoes.
+      //
+      // Custou caro: `createMatch` lia `base.getSnapshot().players` e criou uma
+      // partida sem NINGUEM convocado. O admin marcou 14 pessoas na mao e quem
+      // ele esqueceu nao apareceu nem como pendente. `submitPlayerRating` lia
+      // `ratingCriteria` e gravava a nota com o snapshot de criterios vazio.
+      //
+      // Enquanto o Firestore ainda entregava tudo, os dois funcionavam por
+      // acidente.
+      const donoDaFatia = [
+        'players',
+        'matches',
+        'attendance',
+        'lineups',
+        'matchStats',
+        'mvpVotes',
+        'playerRatings',
+        'ratingCriteria',
+        'matchDiaryEntries',
+        'expenses',
+        'expenseCategories',
+      ];
+
+      const acusados: string[] = [];
+
+      for (const nome of ['financeiro', 'resenhas', 'partidas', 'avaliacoes', 'elenco']) {
+        const caminho = `src/services/repository/supabase/composicao/${nome}.ts`;
+        const fonte = apenasCodigoTs(fs.readFileSync(caminho, 'utf8'));
+
+        // Cada trecho que sai de um `base.getSnapshot()` ate o proximo, para
+        // saber quais campos foram lidos daquela chamada.
+        const trechos = fonte.split('base.getSnapshot()').slice(1);
+
+        for (const trecho of trechos) {
+          const janela = trecho.slice(0, 500);
+
+          for (const campo of donoDaFatia) {
+            if (new RegExp(`snapshot\\.${campo}\\b`).test(janela)) {
+              acusados.push(`${nome}.ts lê snapshot.${campo} do base`);
+            }
+          }
+        }
+      }
+
+      assert.deepEqual(
+        acusados,
+        [],
+        'leia da fatia ou do banco: o base não enxerga o que o Postgres entrega',
+      );
+    },
+  },
+  {
     name: 'sem sessao a leitura falha, em vez de voltar vazia como se fosse verdade',
     run() {
       const cliente = apenasCodigoTs(

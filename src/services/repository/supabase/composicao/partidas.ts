@@ -21,6 +21,7 @@ import {
 } from '@/lib/finished-match';
 import { calculateMatchResult } from '@/lib/match';
 import { fatiaDoElenco } from '@/services/repository/supabase/composicao/elenco';
+import { buscarJogadores } from '@/services/repository/supabase/elenco';
 import { amountFromCents } from '@/lib/money';
 import { exigirTimeAtivo } from '@/services/repository/supabase/composicao/comum';
 import { criarErroDoRepositorio } from '@/services/repository/supabase/erros';
@@ -294,7 +295,18 @@ export function comPartidas(base: AppRepository): AppRepository {
     },
 
     async createMatch(input, creatorUserId) {
-      const snapshot = await base.getSnapshot();
+      // O elenco vem do banco, não do snapshot.
+      //
+      // Antes lia `base.getSnapshot().players`, e `base` é a pilha ABAIXO da
+      // camada de elenco — nunca enxergou o Postgres. Enquanto o Firestore
+      // ainda entregava jogadores, funcionava por acidente. No dia em que ele
+      // parou de ler `players`, a lista virou vazia e a partida nasceu sem
+      // ninguém convocado: o admin teve que marcar 14 pessoas na mão, e quem
+      // ele esqueceu não apareceu nem como pendente.
+      //
+      // Ler direto da tabela não depende de ordem de camada. E é a mesma tabela
+      // que a chave estrangeira de `attendance` exige.
+      const elenco = await buscarJogadores(input.teamId);
 
       const partida = await criarPartida({
         teamId: input.teamId,
@@ -313,9 +325,7 @@ export function comPartidas(base: AppRepository): AppRepository {
         matchType: input.matchType,
         notes: input.notes,
         seasonId: input.seasonId,
-        playerIds: jogadoresParaConvocar({
-          players: snapshot.players.filter((jogador) => jogador.teamId === input.teamId),
-        }),
+        playerIds: jogadoresParaConvocar({ players: elenco }),
       });
 
       await fatiaDePartidas.recarregar();

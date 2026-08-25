@@ -585,6 +585,34 @@ export async function gerarNovoCodigoDeConvite(teamId: string): Promise<Team> {
   );
 }
 
+/**
+ * O vínculo da conta autenticada num time.
+ *
+ * Filtra pelo próprio uid de propósito: a RLS deixa qualquer membro enxergar
+ * todos os vínculos do time, então uma busca sem filtro devolveria o primeiro
+ * da lista — e o app gravaria voto e avaliação no nome de outra pessoa.
+ */
+export async function buscarMeuVinculo(teamId: string): Promise<TeamMember | null> {
+  const sessao = authService.getCurrentUser() ?? (await authService.restoreSession());
+
+  if (!sessao) {
+    throw criarErroDoRepositorio('Sessão expirada.', 'permission-denied');
+  }
+
+  const { data, error } = await cliente()
+    .from('team_members')
+    .select('*')
+    .eq('team_id', teamId)
+    .eq('user_id', sessao.authId)
+    .maybeSingle();
+
+  if (error) {
+    throw traduzirErroDoPostgres(error, 'Não foi possível carregar seu vínculo agora.');
+  }
+
+  return data ? paraVinculo(data) : null;
+}
+
 export async function buscarVinculosDoTime(teamId: string): Promise<TeamMember[]> {
   const { data, error } = await cliente()
     .from('team_members')

@@ -20,7 +20,7 @@ import {
   fatiasPendentes,
   registrarEmissao,
 } from '@/services/repository/supabase/fatias';
-import type { AppRepository } from '@/services/repository/types';
+import type { AppRepository, AppSnapshot } from '@/services/repository/types';
 
 /**
  * A ordem importa: a camada de cima vence.
@@ -49,16 +49,32 @@ export function comModulosNoSupabase(base: AppRepository): AppRepository {
     base,
   );
 
+  /**
+   * Busca o que falta do Postgres e compõe sobre o snapshot do Firestore.
+   *
+   * As duas entradas passam por aqui. `getInitialSnapshot` é o bootstrap do app
+   * e ficou de fora por descuido: sem ele, toda abertura montava a tela só com
+   * o Firestore — dado velho dos módulos migrados, e a leitura da coleção
+   * inteira que a migração existe justamente para evitar.
+   */
+  const comporSobre = async (lerBase: () => Promise<AppSnapshot>) => {
+    const [snapshot] = await Promise.all([
+      lerBase(),
+      Promise.all(fatiasPendentes().map((fatia) => fatia.obter())),
+    ]);
+
+    return aplicarTodasAsFatias(snapshot);
+  };
+
   const comSnapshot: AppRepository = {
     ...composto,
 
-    async getSnapshot() {
-      const [snapshot] = await Promise.all([
-        base.getSnapshot(),
-        Promise.all(fatiasPendentes().map((fatia) => fatia.obter())),
-      ]);
+    async getInitialSnapshot() {
+      return await comporSobre(() => base.getInitialSnapshot());
+    },
 
-      return aplicarTodasAsFatias(snapshot);
+    async getSnapshot() {
+      return await comporSobre(() => base.getSnapshot());
     },
   };
 

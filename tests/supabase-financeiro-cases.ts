@@ -203,6 +203,68 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     },
   },
   {
+    name: 'nenhum metodo do contrato grava no banco errado sem estar na lista',
+    run() {
+      // Este teste existe porque a mesma falha aconteceu tres vezes: o metodo
+      // continua no Firestore, a tela ja le do Postgres, e a acao parece nao
+      // fazer nada. Foi assim com o perfil da conta, com criar time e com o
+      // pagamento do campo — este ultimo era o dinheiro do jogo.
+      const contrato = fs.readFileSync('src/services/repository/types.ts', 'utf8');
+      const metodos = new Set(
+        [...contrato.matchAll(/^ {2}([a-zA-Z]+)[(<]/gm)].map((achado) => achado[1]),
+      );
+
+      const cobertos = new Set(
+        ['financeiro', 'resenhas', 'partidas', 'avaliacoes', 'elenco', 'index']
+          .flatMap((modulo) => [
+            ...fs
+              .readFileSync(`src/services/repository/supabase/composicao/${modulo}.ts`, 'utf8')
+              .matchAll(/^ {4}async ([a-zA-Z]+)\(/gm),
+          ])
+          .map((achado) => achado[1]),
+      );
+
+      // O teste so vale se estiver mesmo lendo os dois lados.
+      assert.equal(metodos.size > 40, true, 'nao leu o contrato');
+      assert.equal(cobertos.size > 20, true, 'nao leu as camadas');
+
+      /**
+       * Fica no Firestore de propósito.
+       *
+       * Mexer nesta lista é uma decisão, não um detalhe: tirar um nome daqui
+       * sem escrever a versão Postgres devolve o bug de gravar no banco errado.
+       */
+      const combinados = new Set([
+        // Autenticacao, nao dado do time.
+        'getMode',
+        'login',
+        'loginWithGoogle',
+        'register',
+        'resetPassword',
+        // O modulo `notificacoes` nao esta ligado: seguem no Firestore,
+        // coerentes com a leitura.
+        'markNotificationAsRead',
+        'markAllNotificationsAsRead',
+        // Projecao publica, so leitura. Fica parada no ultimo estado ate o
+        // modulo publico migrar — nao corrompe nada, so envelhece.
+        'listPublicTeams',
+        'getPublicTeamProfile',
+        // Opcional no contrato, tratado dentro de `comModulosNoSupabase`.
+        'subscribeSnapshot',
+      ]);
+
+      const desgarrados = [...metodos].filter(
+        (metodo) => !cobertos.has(metodo) && !combinados.has(metodo),
+      );
+
+      assert.deepEqual(
+        desgarrados.sort(),
+        [],
+        'metodo do contrato sem versao Postgres e fora da lista de combinados',
+      );
+    },
+  },
+  {
     name: 'toda escrita do financeiro invalida o cache da leitura',
     run() {
       // Cada modulo tem seu arquivo desde que o quarto chegou.
@@ -224,9 +286,18 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
       // chama para buscar um recorte fora do snapshot — `fetch*` e `list*`.
       const ehLeitura = (bloco: string) => /^(fetch|list|get)[A-Z]/.test(bloco);
 
+      // Metodo que so recusa tambem nao grava. Sao os que ficaram de fora da
+      // migracao de proposito (excluir time, importar jogos antigos) e recusam
+      // em vez de gravar no banco errado.
+      const soRecusa = (bloco: string) =>
+        /^\s*[a-zA-Z]+\([^)]*\) \{\s*throw criarErroDoRepositorio\(/.test(
+          bloco.replace(/\n\s*\/\/[^\n]*/g, ''),
+        );
+
       const gravam = blocos.filter(
         (bloco) =>
           !ehLeitura(bloco) &&
+          !soRecusa(bloco) &&
           !/return await this\.[a-zA-Z]+\(/.test(bloco.slice(0, 400)),
       );
       const semRecarga = gravam.filter((bloco) => !bloco.includes('.recarregar()'));

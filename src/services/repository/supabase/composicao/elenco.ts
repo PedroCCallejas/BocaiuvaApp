@@ -125,6 +125,22 @@ export function comElenco(base: AppRepository): AppRepository {
       return time;
     },
 
+    async deleteTeamPermanently() {
+      // Não migrado de propósito.
+      //
+      // Apagar um time é cascata por doze tabelas mais os arquivos do Storage,
+      // é irreversível, e acontece talvez uma vez por ano. Escrever isso às
+      // pressas para fechar o inventário seria trocar um método que grava no
+      // banco errado por um que apaga o que não devia.
+      //
+      // Enquanto isso, recusar é o comportamento certo: hoje a alternativa é
+      // apagar no Firestore e deixar tudo de pé no Postgres.
+      throw criarErroDoRepositorio(
+        'Excluir o time está temporariamente indisponível. Fale com o suporte.',
+        'failed-precondition',
+      );
+    },
+
     async updateTeam(teamId, input) {
       const time = await atualizarTime(teamId, input as unknown as Record<string, unknown>);
       await fatiaDoElenco.recarregar();

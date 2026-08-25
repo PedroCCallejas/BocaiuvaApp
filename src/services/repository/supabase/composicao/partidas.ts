@@ -14,6 +14,13 @@ import {
   buildMatchFieldPayment,
   getMatchFieldPaymentSummary,
 } from '@/lib/field-cost';
+import {
+  jogadoresDeLinhaPadrao,
+  resolverJogadoresDoJogoAntigo,
+  validarCabecalhoDoJogoAntigo,
+} from '@/lib/finished-match';
+import { calculateMatchResult } from '@/lib/match';
+import { fatiaDoElenco } from '@/services/repository/supabase/composicao/elenco';
 import { amountFromCents } from '@/lib/money';
 import { exigirTimeAtivo } from '@/services/repository/supabase/composicao/comum';
 import { criarErroDoRepositorio } from '@/services/repository/supabase/erros';
@@ -66,6 +73,106 @@ function jogadoresParaConvocar(fatia: { players?: { id: string; status: string; 
 export function comPartidas(base: AppRepository): AppRepository {
   return {
     ...base,
+
+    async previewLegacyMatchImport() {
+      // A prévia só serve para a importação, e a importação está fora. Deixar a
+      // prévia funcionando sozinha mostraria um plano que não dá para executar.
+      throw criarErroDoRepositorio(
+        'A importação de jogos antigos está temporariamente indisponível.',
+        'failed-precondition',
+      );
+    },
+
+    async importLegacyMatches() {
+      // Importa dezenas de partidas de uma vez. Sem transação por cima do lote,
+      // uma falha no meio deixaria metade do histórico dentro e metade fora —
+      // e o admin sem saber onde parou.
+      //
+      // Registrar jogo antigo um a um continua funcionando e cobre o caso real.
+      throw criarErroDoRepositorio(
+        'A importação de jogos antigos está temporariamente indisponível. ' +
+          'Use "Registrar jogo antigo" para lançar uma partida por vez.',
+        'failed-precondition',
+      );
+    },
+
+    async registerFinishedMatch(input, actorUserId) {
+      const teamId = await exigirTimeAtivo();
+      const fatia = await fatiaDoElenco.obter();
+      const criarErro = (mensagem: string) =>
+        criarErroDoRepositorio(mensagem, 'failed-precondition');
+
+      const adversario = validarCabecalhoDoJogoAntigo({
+        opponentName: input.opponentName,
+        teamScore: input.teamScore,
+        opponentScore: input.opponentScore,
+        linePlayersCount: input.linePlayersCount,
+        criarErro,
+      });
+
+      // Mesmas regras do Firestore, da lib compartilhada: jogador do time,
+      // sem repetição, sem estatística para ausente, gols cabendo no placar.
+      const jogadores = resolverJogadoresDoJogoAntigo({
+        players: input.players,
+        teamPlayers: fatia.players.filter((jogador) => jogador.teamId === teamId),
+        teamScore: input.teamScore,
+        criarErro,
+      });
+
+      const partida = await criarPartida({
+        teamId,
+        actorUserId,
+        date: input.date,
+        time: input.time ?? '',
+        venue: input.venue ?? '',
+        locationUrl: input.locationUrl ?? null,
+        opponentName: adversario,
+        opponentLogoUrl: input.opponentLogoUrl ?? null,
+        linePlayersCount: input.linePlayersCount ?? jogadoresDeLinhaPadrao(input.matchType),
+        matchType: input.matchType,
+        notes: input.notes ?? null,
+        seasonId: input.seasonId ?? null,
+        playerIds: jogadores.map((item) => item.player.id),
+      });
+
+      // `criar_partida` cria a presença como 'pending'. Num jogo que já
+      // aconteceu isso não faz sentido: quem entrou na lista jogou, quem não
+      // entrou faltou.
+      for (const item of jogadores) {
+        await definirPresenca({
+          teamId,
+          matchId: partida.id,
+          playerId: item.player.id,
+          status: item.played ? 'confirmed' : 'absent',
+          userId: item.player.linkedUserId ?? null,
+        });
+      }
+
+      const encerrada = await encerrarPartida({
+        matchId: partida.id,
+        scoreboard: {
+          team: input.teamScore,
+          opponent: input.opponentScore,
+          result: calculateMatchResult(input.teamScore, input.opponentScore),
+        },
+        stats: jogadores.map((item) => ({
+          playerId: item.player.id,
+          played: item.played,
+          started: item.started,
+          goals: item.goals,
+          assists: item.assists,
+          // O cadastro de jogo antigo não pede cartão nem observação: ninguém
+          // lembra disso meses depois, e inventar zero é mais honesto do que
+          // pedir para chutar.
+          yellowCards: 0,
+          redCards: 0,
+          notes: null,
+        })),
+      });
+
+      await fatiaDePartidas.recarregar();
+      return encerrada;
+    },
 
     async updateMatchFieldCost(matchId, input, actorUserId) {
       const atual = await buscarPartidaPorId(matchId);

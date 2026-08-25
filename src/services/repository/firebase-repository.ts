@@ -45,6 +45,7 @@ import {
   sortMatchDiaryEntries,
   validateDiaryFields,
 } from '@/lib/match-diary';
+import { resolverJogadoresDoJogoAntigo } from '@/lib/finished-match';
 import { buildLegacyMatchImportPreview } from '@/lib/match-import';
 import {
   findDuplicateMatchStatPlayerId,
@@ -3507,76 +3508,21 @@ interface ResolvedFinishedMatchPlayerInput extends RegisterFinishedMatchPlayerIn
   started: boolean;
 }
 
+/**
+ * Delega para `@/lib/finished-match`.
+ *
+ * As mesmas regras valem para o Postgres, e manter duas cópias garantiria que
+ * uma ficasse para trás.
+ */
 function resolveFinishedMatchPlayersInput(input: {
   players: RegisterFinishedMatchPlayerInput[];
   teamPlayers: Player[];
   teamScore: number;
-}) {
-  if (input.players.length === 0) {
-    throw createRepositoryError(
-      'Informe pelo menos um jogador para registrar a partida.',
-      'failed-precondition',
-    );
-  }
-
-  const playersById = new Map(input.teamPlayers.map((player) => [player.id, player]));
-  const usedPlayerIds = new Set<string>();
-  const resolvedPlayers = input.players.map<ResolvedFinishedMatchPlayerInput>((item) => {
-    const player = playersById.get(item.playerId);
-    if (!player) {
-      throw createRepositoryError(
-        'Todos os jogadores precisam pertencer ao time atual.',
-        'failed-precondition',
-      );
-    }
-
-    if (usedPlayerIds.has(item.playerId)) {
-      throw createRepositoryError(
-        'Não repita o mesmo jogador mais de uma vez na partida.',
-        'failed-precondition',
-      );
-    }
-
-    if (item.goals < 0 || item.assists < 0) {
-      throw createRepositoryError(
-        'Gols e assistências não podem ser negativos.',
-        'failed-precondition',
-      );
-    }
-
-    if (!item.played && (item.goals > 0 || item.assists > 0)) {
-      throw createRepositoryError(
-        'Um jogador marcado como ausente não pode receber estatísticas.',
-        'failed-precondition',
-      );
-    }
-
-    usedPlayerIds.add(item.playerId);
-
-    return {
-      ...item,
-      player,
-      started: item.started ?? item.played,
-    };
+}): ResolvedFinishedMatchPlayerInput[] {
+  return resolverJogadoresDoJogoAntigo({
+    ...input,
+    criarErro: (mensagem) => createRepositoryError(mensagem, 'failed-precondition'),
   });
-
-  const playedPlayers = resolvedPlayers.filter((item) => item.played);
-  if (playedPlayers.length === 0) {
-    throw createRepositoryError(
-      'A partida precisa ter pelo menos um jogador participante.',
-      'failed-precondition',
-    );
-  }
-
-  const totalGoals = playedPlayers.reduce((sum, item) => sum + item.goals, 0);
-  if (totalGoals > input.teamScore) {
-    throw createRepositoryError(
-      'A soma de gols dos jogadores não pode ultrapassar o placar do time.',
-      'failed-precondition',
-    );
-  }
-
-  return resolvedPlayers;
 }
 
 async function createFinishedMatchRecord(input: {

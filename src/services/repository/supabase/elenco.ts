@@ -390,6 +390,54 @@ export async function entrarComCodigo(inviteCode: string): Promise<{
   return { vinculo, jaEraMembro: idsAntes.has(vinculo.id) };
 }
 
+// ── Time ───────────────────────────────────────────────────────────────────
+
+/**
+ * Cria o time com o dono já dentro.
+ *
+ * Passa por RPC por um motivo específico: `team_members_insert_admin` exige
+ * `app.can_manage_team(team_id)`, e quem acabou de criar o time ainda não tem
+ * vínculo — não conseguiria criar o próprio vínculo de admin. O time nasceria
+ * sem dono.
+ *
+ * A RPC cria time, ficha do dono e vínculo numa transação só. Os critérios de
+ * avaliação padrão ficam de fora de propósito: são criados pelo app logo depois,
+ * quando o vínculo já existe e a policy deixa.
+ */
+export async function criarTime(input: {
+  name: string;
+  coachName: string;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor?: string | null;
+  description?: string | null;
+  logoUrl?: string | null;
+  bannerUrl?: string | null;
+  presentationVideoUrl?: string | null;
+}): Promise<Team> {
+  const { data, error } = await cliente().rpc('create_team_with_admin', {
+    p_name: input.name,
+    p_coach_name: input.coachName,
+    p_primary_color: input.primaryColor,
+    p_secondary_color: input.secondaryColor,
+    p_accent_color: input.accentColor ?? null,
+    p_description: input.description ?? null,
+    p_logo_url: input.logoUrl ?? null,
+    p_banner_url: input.bannerUrl ?? null,
+    p_presentation_video_url: input.presentationVideoUrl ?? null,
+  });
+
+  if (error) {
+    throw traduzirErroDoPostgres(error, 'Não foi possível criar o time agora.');
+  }
+
+  if (!data) {
+    throw criarErroDoRepositorio('Não foi possível criar o time agora.', 'unknown');
+  }
+
+  return paraTime(data as Record<string, unknown>);
+}
+
 export async function buscarVinculosDoTime(teamId: string): Promise<TeamMember[]> {
   const { data, error } = await cliente()
     .from('team_members')

@@ -29,6 +29,7 @@ function lista(snapshot: AppSnapshot): string[] {
 }
 
 const RPC = 'supabase/migrations/20260821180000_rpc_salvar_despesa.sql';
+const RPC_CRIAR_TIME = 'supabase/migrations/20260825120000_rpc_criar_time.sql';
 const MODULO = 'src/services/repository/supabase/financeiro.ts';
 
 /**
@@ -291,6 +292,58 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
         ['veio do firestore'],
         'antes de carregar, o snapshot precisa passar intacto',
       );
+    },
+  },
+  {
+    name: 'criar time nasce com dono, e a funcao nao vira porta dos fundos',
+    run() {
+      const sql = apenasCodigoSql(fs.readFileSync(RPC_CRIAR_TIME, 'utf8'));
+
+      // Precisa ser `security definer`: `team_members_insert_admin` exige
+      // `can_manage_team`, que ainda e falso na hora de criar o proprio
+      // vinculo. Sem isso o time nasceria sem dono.
+      assert.match(sql, /security definer/);
+
+      // Mas `security definer` sem `search_path` fixo e sequestro de resolucao
+      // de nome esperando acontecer.
+      assert.match(sql, /set search_path to 'public', 'app', 'pg_temp'/);
+
+      // Roda como dono da funcao, entao nao pode ficar aberta para quem nao
+      // esta autenticado.
+      assert.match(sql, /revoke all on function[\s\S]*from public, anon/);
+      assert.match(sql, /grant execute on function[\s\S]*to authenticated/);
+
+      // O limite de 2 times por conta existe no app, mas checagem que so vive
+      // no cliente e sugestao, nao limite.
+      assert.match(sql, />= 2/);
+      assert.match(sql, /limite de 2 times/);
+
+      // Time, ficha do dono e vinculo de admin na mesma transacao.
+      assert.match(sql, /insert into public\.teams/);
+      assert.match(sql, /insert into public\.players/);
+      assert.match(sql, /insert into public\.team_members/);
+      assert.match(sql, /array\['admin', 'player'\]/);
+    },
+  },
+  {
+    name: 'os criterios padrao vivem so no app, nunca duplicados no SQL',
+    run() {
+      const sql = apenasCodigoSql(fs.readFileSync(RPC_CRIAR_TIME, 'utf8'));
+
+      // Copiar os rotulos para dentro da RPC criaria um segundo lugar para a
+      // mesma verdade, e um deles ficaria para tras na primeira mudanca. Quem
+      // cria os criterios e o app, depois, com o vinculo ja de pe.
+      assert.doesNotMatch(sql, /insert into public\.rating_criteria/);
+
+      const composicao = apenasCodigoTs(
+        fs.readFileSync('src/services/repository/supabase/composicao/elenco.ts', 'utf8'),
+      );
+      assert.match(composicao, /createDefaultTeamRatingCriteria\(time\.id/);
+
+      // E se os criterios falharem, o time continua existindo: da para
+      // cria-los depois na tela de configuracao.
+      const criarTime = composicao.slice(composicao.indexOf('async createTeam'));
+      assert.match(criarTime.slice(0, 800), /try \{/);
     },
   },
   {

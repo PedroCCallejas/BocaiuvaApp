@@ -8,6 +8,8 @@
  * Em troca, apaga quatro rotinas de reparo do índice espelhado do Firestore.
  */
 
+import { createDefaultTeamRatingCriteria } from '@/lib/rating-criteria';
+import { criarCriteriosPadrao } from '@/services/repository/supabase/avaliacoes';
 import { exigirTimeAtivo } from '@/services/repository/supabase/composicao/comum';
 import {
   apagarJogadorDeVez,
@@ -16,6 +18,7 @@ import {
   buscarJogadores,
   CONTEXTO_VAZIO,
   criarJogador,
+  criarTime,
   definirTimeAtivo,
   desvincularConta,
   entrarComCodigo,
@@ -95,6 +98,28 @@ function mudancasDoJogador(input: Record<string, unknown>): Record<string, unkno
 export function comElenco(base: AppRepository): AppRepository {
   return {
     ...base,
+
+    async createTeam(input) {
+      const time = await criarTime(input);
+
+      // Os critérios padrão entram aqui, depois da RPC, porque agora o vínculo
+      // de admin já existe e a policy `rating_criteria_write` deixa inserir.
+      //
+      // Se falhar, o time continua de pé: dá para criar os critérios na tela de
+      // configuração. Derrubar a criação inteira por causa disso seria pior.
+      try {
+        await criarCriteriosPadrao(
+          createDefaultTeamRatingCriteria(time.id, new Date().toISOString()),
+        );
+      } catch (erro) {
+        if (typeof __DEV__ !== 'undefined' && __DEV__) {
+          console.warn('[supabase] criterios padrao do time novo falharam', erro);
+        }
+      }
+
+      await fatiaDoElenco.recarregar();
+      return time;
+    },
 
     async createPlayer(input) {
       const jogador = await criarJogador(input.teamId, input as unknown as Record<string, unknown>);

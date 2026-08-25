@@ -332,6 +332,42 @@ export async function criarCriterio(
   return paraCriterio(data);
 }
 
+/**
+ * Grava os critérios padrão de um time recém-criado.
+ *
+ * A lista vem de `createDefaultTeamRatingCriteria`, no app — os rótulos e pesos
+ * moram lá. Repeti-los dentro da RPC de criar time daria dois lugares para a
+ * mesma verdade, e um deles ficaria para trás na primeira mudança.
+ */
+export async function criarCriteriosPadrao(
+  criterios: TeamRatingCriterion[],
+): Promise<void> {
+  if (criterios.length === 0) {
+    return;
+  }
+
+  const { error } = await cliente()
+    .from('rating_criteria')
+    .insert(
+      criterios.map((criterio) => ({
+        id: criterio.id,
+        team_id: criterio.teamId,
+        label: criterio.label,
+        description: criterio.description ?? null,
+        type: criterio.type,
+        weight: criterio.weight && criterio.weight > 0 ? criterio.weight : 1,
+        active: criterio.active,
+        order: criterio.order,
+        created_at: criterio.createdAt,
+        updated_at: criterio.updatedAt,
+      })),
+    );
+
+  if (error) {
+    throw traduzirErroDoPostgres(error, 'Não foi possível criar os critérios do time.');
+  }
+}
+
 export async function atualizarCriterio(
   criterionId: string,
   mudancas: Record<string, unknown>,

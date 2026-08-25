@@ -133,11 +133,27 @@ export const supabaseEnabled = supabaseConfigError === null;
 let tokenRefreshedForUserId: string | null = null;
 
 export async function getFirebaseAccessToken() {
-  const currentUser = auth?.currentUser;
+  if (!auth) {
+    throw new Error('Autenticação indisponível.');
+  }
+
+  // `currentUser` e null nos primeiros instantes depois de carregar a pagina: o
+  // Firebase restaura a sessao de forma assincrona. Ler o Postgres nessa janela
+  // mandava a requisicao como anonima, e a RLS devolvia zero linhas **sem
+  // erro** — a tela mostrava "0 jogos, 0 gols" como se fosse a verdade, e a
+  // fatia guardava esse vazio em cache.
+  await auth.authStateReady();
+
+  const currentUser = auth.currentUser;
 
   if (!currentUser) {
     tokenRefreshedForUserId = null;
-    return null;
+
+    // Falhar e melhor do que ir como anonimo. Sem sessao, a resposta seria uma
+    // lista vazia indistinguivel de "o time nao tem nada" — e o erro silencioso
+    // e sempre pior do que o barulhento: a fatia trata a falha, nao cacheia, e
+    // tenta de novo.
+    throw new Error('Sessão não disponível para acessar o banco.');
   }
 
   // A primeira chamada da sessao precisa buscar claims novos. Isso evita que

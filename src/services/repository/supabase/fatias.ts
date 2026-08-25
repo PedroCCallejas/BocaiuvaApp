@@ -74,9 +74,21 @@ export function criarFatia<T>(input: {
   let cache: T | null = null;
   let leituraEmVoo: Promise<T | null> | null = null;
   let ultimaFalha = 0;
+  let tentativasSeguidas = 0;
+  let retentativaAgendada = false;
 
   /** Espera entre tentativas depois de uma falha, para não martelar o servidor. */
   const PAUSA_APOS_FALHA = 5000;
+
+  /**
+   * Quantas vezes tentar sozinho depois de falhar.
+   *
+   * Sem isso a tela ficava parada em zero até alguém recarregar a página: a
+   * falha marcava a pausa, a emissão seguinte via a pausa e devolvia vazio, e
+   * nada mais acontecia. Uma queda de rede de dois segundos virava "o time não
+   * tem nenhum jogo" até o fim da sessão.
+   */
+  const MAXIMO_DE_RETENTATIVAS = 4;
 
   /**
    * Lê e devolve `null` quando falha.
@@ -89,17 +101,42 @@ export function criarFatia<T>(input: {
     try {
       const valor = await input.ler();
       ultimaFalha = 0;
+      tentativasSeguidas = 0;
       return valor;
     } catch (erro) {
       ultimaFalha = Date.now();
+      tentativasSeguidas += 1;
 
       // Módulo fora do ar é uma aba sem dado, não uma tela que não abre.
       if (typeof __DEV__ !== 'undefined' && __DEV__) {
         console.warn(`[supabase] ${input.nome} indisponivel`, erro);
       }
 
+      agendarRetentativa();
       return null;
     }
+  }
+
+  /**
+   * Tenta de novo sozinho e reemite quando conseguir.
+   *
+   * A tela não tem como pedir: sem nova emissão do Firestore, ninguém chama a
+   * fatia outra vez. Quem falhou precisa voltar por conta própria.
+   */
+  function agendarRetentativa() {
+    if (retentativaAgendada || tentativasSeguidas >= MAXIMO_DE_RETENTATIVAS) {
+      return;
+    }
+
+    retentativaAgendada = true;
+
+    setTimeout(() => {
+      retentativaAgendada = false;
+
+      if (cache === null) {
+        void fatia.recarregar();
+      }
+    }, PAUSA_APOS_FALHA);
   }
 
   const fatia: Fatia<T> = {

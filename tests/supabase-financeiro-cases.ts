@@ -203,6 +203,65 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     },
   },
   {
+    name: 'sem sessao a leitura falha, em vez de voltar vazia como se fosse verdade',
+    run() {
+      const cliente = apenasCodigoTs(
+        fs.readFileSync('src/config/supabase/client.ts', 'utf8'),
+      );
+
+      // `auth.currentUser` e null nos primeiros instantes depois de carregar a
+      // pagina — o Firebase restaura a sessao de forma assincrona. Ler o
+      // Postgres nessa janela ia como anonimo, e a RLS devolvia zero linhas SEM
+      // erro: a tela mostrava "0 jogos, 0 gols" como se fosse a verdade, e a
+      // fatia guardava esse vazio.
+      assert.match(cliente, /await auth\.authStateReady\(\)/);
+
+      // E se mesmo assim nao houver sessao, falhar e melhor do que ir anonimo:
+      // lista vazia por falta de token e indistinguivel de time sem dados.
+      const bloco = cliente.slice(cliente.indexOf('export async function getFirebaseAccessToken'));
+      assert.match(bloco.slice(0, 900), /if \(!currentUser\) \{[\s\S]*?throw new Error/);
+    },
+  },
+  {
+    name: 'fatia que falhou tenta de novo sozinha',
+    async run() {
+      limparFatias();
+
+      let deveFalhar = true;
+      let leituras = 0;
+
+      const fatia = criarFatia({
+        nome: 'instavel',
+        vazio: [] as string[],
+        ler: async () => {
+          leituras += 1;
+          if (deveFalhar) throw new Error('sem sessao');
+          return ['chegou'];
+        },
+        aplicar: (snapshot, valor) => ({ ...snapshot, lista: valor }),
+      });
+
+      await fatia.obter();
+      assert.equal(leituras, 1, 'a primeira leitura precisa acontecer');
+      assert.equal(fatia.estaVazia(), true, 'falha nao vira cache');
+
+      // Sem retentativa, a tela ficava parada em zero ate alguem recarregar a
+      // pagina: nada mais chamava a fatia. Uma queda de rede de dois segundos
+      // virava "o time nao tem nenhum jogo" pelo resto da sessao.
+      const fonte = apenasCodigoTs(
+        fs.readFileSync('src/services/repository/supabase/fatias.ts', 'utf8'),
+      );
+      assert.match(fonte, /function agendarRetentativa/);
+      assert.match(fonte, /setTimeout\(/);
+      assert.match(fonte, /tentativasSeguidas >= MAXIMO_DE_RETENTATIVAS/);
+
+      // E a recuperacao funciona de verdade quando a leitura volta.
+      deveFalhar = false;
+      assert.deepEqual(await fatia.recarregar(), ['chegou']);
+      assert.equal(fatia.estaVazia(), false);
+    },
+  },
+  {
     name: 'toda escrita diz em qual linha mexe',
     run() {
       // `definirTimeAtivo` fazia UPDATE sem filtro, confiando so na RLS para

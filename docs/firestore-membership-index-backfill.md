@@ -1,5 +1,13 @@
 # Firestore Membership Index Backfill
 
+> **STATUS: obsoleto para o caminho principal (25/08/2026).**
+>
+> O índice espelhado existia porque a regra do Firestore não consegue consultar
+> coleção. No Postgres a resposta é `app.current_player_id(team_id)`, e as quatro
+> rotinas de reparo que sustentavam este índice deixaram de existir.
+>
+> Só volta a importar se houver rollback para o Firestore.
+
 ## Por que este backfill existe
 
 As regras privadas novas do AppBoca passam a validar acesso com base em:

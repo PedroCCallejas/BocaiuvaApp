@@ -1,5 +1,14 @@
 # Migração Firestore → Postgres (Supabase)
 
+> **STATUS: CONCLUÍDA em 25/08/2026. Este documento é histórico.**
+>
+> Não é roteiro do que fazer — é registro do que foi feito e por quê. Produção
+> roda `financeiro`, `resenhas`, `partidas`, `avaliacoes` e `elenco` no Postgres.
+>
+> Este aviso existe porque uma análise automatizada leu este arquivo horas depois
+> da virada e concluiu que a migração ainda era uma possibilidade futura. Se você
+> quer o estado atual, leia o `CLAUDE.md` na raiz.
+
 ## Por que
 
 O Firestore cobra por **documento lido**. O histórico do time só cresce, e todo

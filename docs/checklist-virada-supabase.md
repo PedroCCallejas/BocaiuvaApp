@@ -1,9 +1,17 @@
 # Checklist de virada Firestore → Supabase
 
-Data de preparação: 21/08/2026.
+> **STATUS: a virada aconteceu em 25/08/2026. Este documento é histórico.**
+>
+> E aconteceu **diferente do que está escrito abaixo**: em vez de uma virada
+> única com janela de parada, foi módulo a módulo, com produção ligada, cada um
+> validado em uso real antes do seguinte. O plano previa um evento; na prática
+> foi uma sequência.
+>
+> O que o plano não previu e apareceu no uso: corte de 1000 linhas do PostgREST,
+> `UPDATE` sem filtro barrado pelo `safeupdate`, e leitura sem token devolvendo
+> vazio em silêncio. Os três estão documentados no `CLAUDE.md`.
 
-Este roteiro não autoriza deploy. Ele define a ordem segura e os critérios de
-parada para a virada.
+Data de preparação: 21/08/2026.
 
 ## 1. Antes da janela
 

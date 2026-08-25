@@ -1,5 +1,14 @@
 # Firestore Schema
 
+> **STATUS: o Firestore não é mais o banco principal (25/08/2026).**
+>
+> Este documento descreve o schema de onde o dado *veio*. Continua útil para
+> entender a origem e para o caminho de rollback, mas o formato vivo hoje é o do
+> Postgres — veja `supabase/migrations/`.
+>
+> O que ainda usa Firestore de verdade: Auth, notificações, perfis públicos e o
+> bootstrap de `users`/`teams`/`teamMembers`.
+
 ## Etapa atual
 
 Colecoes implementadas nesta etapa atual:

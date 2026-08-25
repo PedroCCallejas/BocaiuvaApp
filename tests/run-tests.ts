@@ -125,6 +125,7 @@ import { expensesRepositoryTestCases } from './expenses-repository-cases';
 import { feeExemptionTestCases } from './fee-exemption-cases';
 import { joinTeamTestCases } from './join-team-cases';
 import { matchHighlightsTestCases } from './match-highlights-cases';
+import { selosDeCartaoTestCases } from './selos-de-cartao-cases';
 import { mobileLayoutTestCases } from './mobile-layout-cases';
 import { mvpVotePermissionTestCases } from './mvp-vote-permission-cases';
 import { lineupShareTestCases } from './lineup-share-cases';
@@ -153,6 +154,7 @@ type TestCase = {
 
 const testCases: TestCase[] = [
   ...accessibilityHardeningTestCases,
+  ...selosDeCartaoTestCases,
   ...statsBreakdownFinanceTestCases,
   ...themeContrastTestCases,
   ...expensesTestCases,

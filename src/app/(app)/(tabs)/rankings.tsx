@@ -60,6 +60,7 @@ const RANKING_METRICS: Array<{
   { id: 'mvpAwards', label: PLAYER_STATS_LABELS.mvpAwards },
   { id: 'mvpVotesReceived', label: PLAYER_STATS_LABELS.mvpVotesReceived },
   { id: 'games', label: PLAYER_STATS_LABELS.games },
+  { id: 'cards', label: PLAYER_STATS_LABELS.cards },
 ];
 
 function FilterChip({

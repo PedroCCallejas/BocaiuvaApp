@@ -7512,12 +7512,23 @@ export const firebaseRepository: AppRepository = {
         existingLineup?.starters.map((starter) => starter.playerId) ?? [],
       );
       const submittedStats = input.playerStats.reduce<
-        Record<string, { goals: number; assists: number; played: boolean }>
+        Record<
+          string,
+          {
+            goals: number;
+            assists: number;
+            played: boolean;
+            yellowCards?: number;
+            redCards?: number;
+          }
+        >
       >((acc, stat) => {
         acc[stat.playerId] = {
           goals: stat.goals,
           assists: stat.assists,
           played: stat.played ?? true,
+          yellowCards: stat.yellowCards,
+          redCards: stat.redCards,
         };
         return acc;
       }, {});
@@ -7623,8 +7634,10 @@ export const firebaseRepository: AppRepository = {
           started: played && starterIds.has(playerId),
           goals: submittedStats[playerId]?.goals ?? 0,
           assists: submittedStats[playerId]?.assists ?? 0,
-          yellowCards: existingMatchStat?.yellowCards ?? 0,
-          redCards: existingMatchStat?.redCards ?? 0,
+          // Omitido preserva o que já estava: o registro de jogo antigo não
+          // pergunta cartão, e zerar apagaria o que o admin lançou antes.
+          yellowCards: submittedStats[playerId]?.yellowCards ?? existingMatchStat?.yellowCards ?? 0,
+          redCards: submittedStats[playerId]?.redCards ?? existingMatchStat?.redCards ?? 0,
           notes: existingMatchStat?.notes ?? '',
           createdAt: existingMatchStat?.createdAt ?? updatedAt,
           updatedAt,
@@ -7790,13 +7803,24 @@ export const firebaseRepository: AppRepository = {
       const existingLineup = await fetchLineupByMatchIdForTeam(activeTeamId, currentMatch.id);
       const starterIds = new Set(existingLineup?.starters.map((s) => s.playerId) ?? []);
       const submittedStats = input.playerStats.reduce<
-        Record<string, { goals: number; assists: number; played: boolean }>
+        Record<
+          string,
+          {
+            goals: number;
+            assists: number;
+            played: boolean;
+            yellowCards?: number;
+            redCards?: number;
+          }
+        >
       >(
         (acc, stat) => {
           acc[stat.playerId] = {
             goals: stat.goals,
             assists: stat.assists,
             played: stat.played ?? true,
+            yellowCards: stat.yellowCards,
+            redCards: stat.redCards,
           };
           return acc;
         },
@@ -7887,8 +7911,10 @@ export const firebaseRepository: AppRepository = {
           started: played && starterIds.has(playerId),
           goals: submittedStats[playerId]?.goals ?? 0,
           assists: submittedStats[playerId]?.assists ?? 0,
-          yellowCards: existingMatchStat?.yellowCards ?? 0,
-          redCards: existingMatchStat?.redCards ?? 0,
+          // Omitido preserva o que já estava: o registro de jogo antigo não
+          // pergunta cartão, e zerar apagaria o que o admin lançou antes.
+          yellowCards: submittedStats[playerId]?.yellowCards ?? existingMatchStat?.yellowCards ?? 0,
+          redCards: submittedStats[playerId]?.redCards ?? existingMatchStat?.redCards ?? 0,
           notes: existingMatchStat?.notes ?? '',
           createdAt: existingMatchStat?.createdAt ?? updatedAt,
           updatedAt,

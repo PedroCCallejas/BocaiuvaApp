@@ -20,11 +20,27 @@ import {
   selectCurrentTeam,
 } from '@/store/selectors';
 
-type PlayerStatDraft = { goals: number; assists: number; played: boolean };
+type PlayerStatDraft = {
+  goals: number;
+  assists: number;
+  played: boolean;
+  yellowCards: number;
+  redCards: number;
+};
+
+/** Campos numéricos que o formulário edita por jogador. */
+type CampoNumerico = 'goals' | 'assists' | 'yellowCards' | 'redCards';
 
 function buildPlayerStatsState(
   playerIds: string[],
-  existingStats: Array<{ playerId: string; goals: number; assists: number; played?: boolean }>,
+  existingStats: Array<{
+    playerId: string;
+    goals: number;
+    assists: number;
+    played?: boolean;
+    yellowCards?: number;
+    redCards?: number;
+  }>,
 ) {
   return playerIds.reduce<Record<string, PlayerStatDraft>>((acc, playerId) => {
     const stat = existingStats.find((item) => item.playerId === playerId);
@@ -32,9 +48,18 @@ function buildPlayerStatsState(
       goals: stat?.goals ?? 0,
       assists: stat?.assists ?? 0,
       played: stat ? stat.played !== false : true,
+      yellowCards: stat?.yellowCards ?? 0,
+      redCards: stat?.redCards ?? 0,
     };
     return acc;
   }, {});
+}
+
+function sumCards(playerStats: Record<string, PlayerStatDraft>, campo: 'yellowCards' | 'redCards') {
+  return Object.values(playerStats).reduce(
+    (sum, item) => sum + (item.played ? Math.max(item[campo], 0) : 0),
+    0,
+  );
 }
 
 function sumGoals(playerStats: Record<string, PlayerStatDraft>) {
@@ -199,26 +224,46 @@ export default function FinishMatchScreen() {
   const hasAssistsWarning = totalAssists > totalPlayerGoals;
 
   const updatePlayerStat = useCallback(
-    (playerId: string, key: 'goals' | 'assists', value: number) => {
-      setPlayerStats((current) => ({
-        ...current,
-        [playerId]: {
-          goals: key === 'goals' ? value : current[playerId]?.goals ?? 0,
-          assists: key === 'assists' ? value : current[playerId]?.assists ?? 0,
-          played: current[playerId]?.played ?? true,
-        },
-      }));
+    (playerId: string, key: CampoNumerico, value: number) => {
+      setPlayerStats((current) => {
+        const atual = current[playerId] ?? {
+          goals: 0,
+          assists: 0,
+          played: true,
+          yellowCards: 0,
+          redCards: 0,
+        };
+
+        return {
+          ...current,
+          [playerId]: { ...atual, [key]: value },
+        };
+      });
     },
     [],
   );
 
   const togglePlayerPlayed = useCallback((playerId: string, played: boolean) => {
     setPlayerStats((current) => {
-      const currentStat = current[playerId] ?? { goals: 0, assists: 0, played: true };
+      const currentStat = current[playerId] ?? {
+        goals: 0,
+        assists: 0,
+        played: true,
+        yellowCards: 0,
+        redCards: 0,
+      };
 
-      if (!played && (currentStat.goals > 0 || currentStat.assists > 0)) {
+      // Cartão entra na conta junto com gol e assistência: quem não jogou não
+      // pode ter levado cartão, e apagar em silêncio esconderia o engano.
+      if (
+        !played &&
+        (currentStat.goals > 0 ||
+          currentStat.assists > 0 ||
+          currentStat.yellowCards > 0 ||
+          currentStat.redCards > 0)
+      ) {
         setSaveError(
-          'Remova explicitamente os gols e assistências antes de marcar que o jogador não participou.',
+          'Remova explicitamente os gols, assistências e cartões antes de marcar que o jogador não participou.',
         );
         return current;
       }
@@ -296,6 +341,8 @@ export default function FinishMatchScreen() {
         goals: playerStats[player.id]?.goals ?? 0,
         assists: playerStats[player.id]?.assists ?? 0,
         played: playerStats[player.id]?.played ?? true,
+        yellowCards: playerStats[player.id]?.yellowCards ?? 0,
+        redCards: playerStats[player.id]?.redCards ?? 0,
       })),
     };
 
@@ -574,20 +621,39 @@ export default function FinishMatchScreen() {
               </View>
             </View>
             {played ? (
-              <View style={styles.counterRow}>
-                <CounterField
-                  label="Gols"
-                  value={playerStats[player.id]?.goals ?? 0}
-                  min={0}
-                  onChange={(value) => updatePlayerStat(player.id, 'goals', value)}
-                />
-                <CounterField
-                  label="Assistências"
-                  value={playerStats[player.id]?.assists ?? 0}
-                  min={0}
-                  onChange={(value) => updatePlayerStat(player.id, 'assists', value)}
-                />
-              </View>
+              <>
+                <View style={styles.counterRow}>
+                  <CounterField
+                    label="Gols"
+                    value={playerStats[player.id]?.goals ?? 0}
+                    min={0}
+                    onChange={(value) => updatePlayerStat(player.id, 'goals', value)}
+                  />
+                  <CounterField
+                    label="Assistências"
+                    value={playerStats[player.id]?.assists ?? 0}
+                    min={0}
+                    onChange={(value) => updatePlayerStat(player.id, 'assists', value)}
+                  />
+                </View>
+                <View style={styles.counterRow}>
+                  <CounterField
+                    label="🟨 Amarelos"
+                    value={playerStats[player.id]?.yellowCards ?? 0}
+                    min={0}
+                    onChange={(value) => updatePlayerStat(player.id, 'yellowCards', value)}
+                  />
+                  <CounterField
+                    // Dois é o limite real: o segundo vermelho não existe, vira
+                    // expulsão e acabou o jogo para ele.
+                    label="🟥 Vermelhos"
+                    value={playerStats[player.id]?.redCards ?? 0}
+                    min={0}
+                    max={1}
+                    onChange={(value) => updatePlayerStat(player.id, 'redCards', value)}
+                  />
+                </View>
+              </>
             ) : (
               <Text style={[styles.playerSub, { color: theme.colors.textMuted }]}>
                 Confirmou presença, mas não entra na contagem de jogos desta partida.

@@ -38,6 +38,7 @@ export type StatsSortMetric =
   | 'mvpVotesReceived'
   | 'games'
   | 'presences'
+  | 'cards'
   | `criterion:${string}`;
 
 export type PlayerStatsMetric =
@@ -51,7 +52,8 @@ export type PlayerStatsMetric =
   | 'avgRating'
   | 'mvpAwards'
   | 'mvpVotesReceived'
-  | 'presences';
+  | 'presences'
+  | 'cards';
 
 export const PLAYER_STATS_LABELS = {
   games: 'Jogos',
@@ -66,6 +68,7 @@ export const PLAYER_STATS_LABELS = {
   mvpAwards: 'MVPs',
   mvpVotesReceived: 'Votos de MVP',
   presences: 'Presenças',
+  cards: 'Cartões',
 } as const;
 
 export type PlayerStatTotals = ManualPlayerStats;
@@ -105,6 +108,10 @@ export interface PlayerAggregateStats {
   goals: number;
   assists: number;
   goalParticipations: number;
+  yellowCards: number;
+  redCards: number;
+  /** Amarelos + vermelhos, para o ranking de quem mais aparece na súmula. */
+  cards: number;
   goalsPerGame: number;
   assistsPerGame: number;
   participationsPerGame: number;
@@ -747,6 +754,15 @@ export function buildPlayerAggregates(
       goalsPerGame: round(goals / Math.max(games, 1), 2),
       assistsPerGame: round(assists / Math.max(games, 1), 2),
       participationsPerGame: round((goals + assists) / Math.max(games, 1), 2),
+      // Cartão vem só do que foi lançado em partida. Diferente de gol e
+      // assistência, não existe ajuste manual de cartão — inventar histórico
+      // de cartão seria acusar alguém de algo que ninguém registrou.
+      yellowCards: playerStats.reduce((soma, item) => soma + (item.yellowCards ?? 0), 0),
+      redCards: playerStats.reduce((soma, item) => soma + (item.redCards ?? 0), 0),
+      cards: playerStats.reduce(
+        (soma, item) => soma + (item.yellowCards ?? 0) + (item.redCards ?? 0),
+        0,
+      ),
       noGoalMatches: playerStats.filter((item) => item.goals === 0).length,
       noAssistMatches: playerStats.filter((item) => item.assists === 0).length,
       blankMatches: playerStats.filter((item) => item.goals + item.assists === 0).length,
@@ -804,6 +820,8 @@ export function getPlayerAggregateMetricValue(
       return item.games;
     case 'presences':
       return item.presences;
+    case 'cards':
+      return item.cards;
     case 'goals':
     default:
       return item.goals;
@@ -867,6 +885,10 @@ export function buildPlayerMetricSubtitle(
       return `${formatPlayerMetricValue('presences', item.presences)} presenças confirmadas`;
     case 'presences':
       return `${formatPlayerMetricValue('games', item.games)} jogo(s)${manualHistorySuffix}`;
+    case 'cards':
+      // Abre por cor: um jogador com 4 amarelos e outro com 1 vermelho podem
+      // ter o mesmo total, e não é a mesma história.
+      return `${item.yellowCards} amarelo(s) - ${item.redCards} vermelho(s)`;
     default:
       return `${formatPlayerMetricValue('games', item.games)} jogo(s)${manualHistorySuffix}`;
   }

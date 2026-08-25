@@ -258,6 +258,15 @@ export interface FinishMatchPlayerStatInput {
   assists: number;
   /** false = confirmado que não jogou; omitido mantém o comportamento atual (jogou). */
   played?: boolean;
+  /**
+   * Cartões da partida.
+   *
+   * Opcionais porque o registro de jogo antigo não pergunta: ninguém lembra
+   * cartão meses depois, e chutar zero seria inventar dado. Omitido preserva o
+   * que já estava gravado.
+   */
+  yellowCards?: number;
+  redCards?: number;
 }
 
 export interface MatchFieldCostInput {

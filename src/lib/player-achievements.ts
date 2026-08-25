@@ -16,7 +16,9 @@ export type PlayerAchievementTone =
   | 'success'
   | 'blue'
   | 'purple'
-  | 'neutral';
+  | 'neutral'
+  | 'yellow'
+  | 'danger';
 
 export interface PlayerAchievement {
   id: string;
@@ -52,10 +54,16 @@ interface PlayerMomentEntry {
   confirmed: boolean;
   hasGoalParticipation: boolean;
   isMvpWinner: boolean;
+  /** Jogou e levou pelo menos um cartão, de qualquer cor. */
+  levouCartao: boolean;
+  /** Jogou e saiu sem cartão. Diferente de não ter jogado. */
+  jogouLimpo: boolean;
+  amarelos: number;
+  vermelhos: number;
 }
 
 interface PlayerAchievementCandidate extends PlayerAchievement {
-  family: 'mvp' | 'goal-participation' | 'presence' | 'rating';
+  family: 'mvp' | 'goal-participation' | 'presence' | 'rating' | 'discipline';
 }
 
 function groupByPlayerId<T extends { playerId: string }>(items: T[]) {
@@ -260,6 +268,106 @@ function getGoalParticipationCandidate(streak: number): PlayerAchievementCandida
   return null;
 }
 
+/**
+ * Selos de cartão.
+ *
+ * A zoeira é o ponto: o time pediu que o cartão rendesse resenha no grupo, não
+ * advertência. Por isso o texto é de vestiário, e o selo de jogo limpo existe
+ * para quem nunca aparece aqui também ter o que mostrar.
+ *
+ * Prioridade abaixo da artilharia e do MVP de propósito. Levar vermelho é
+ * piada, não é o que define o jogador — se alguém está numa sequência de gols e
+ * levou um amarelo, o que aparece é a artilharia.
+ */
+/** Junta num lugar só o que os selos de cartão precisam saber. */
+function resumirDisciplina(moments: PlayerMomentEntry[]) {
+  const jogados = moments.filter((item) => item.levouCartao || item.jogouLimpo);
+
+  return {
+    // A sequência conta só os jogos em que a pessoa jogou: uma falta no meio
+    // não deveria zerar a série de quem vinha levando cartão todo jogo.
+    sequenciaComCartao: countCurrentStreak(jogados, (item) => item.levouCartao),
+    sequenciaLimpa: countCurrentStreak(jogados, (item) => item.jogouLimpo),
+    totalDeAmarelos: moments.reduce((soma, item) => soma + item.amarelos, 0),
+    totalDeVermelhos: moments.reduce((soma, item) => soma + item.vermelhos, 0),
+    jogosComputados: jogados.length,
+  };
+}
+
+function getDisciplineCandidate(input: {
+  sequenciaComCartao: number;
+  sequenciaLimpa: number;
+  totalDeAmarelos: number;
+  totalDeVermelhos: number;
+  jogosComputados: number;
+}): PlayerAchievementCandidate | null {
+  const { sequenciaComCartao, sequenciaLimpa, totalDeAmarelos, totalDeVermelhos } = input;
+
+  if (totalDeVermelhos >= 2) {
+    return {
+      id: 'discipline-terror',
+      family: 'discipline',
+      label: 'Terror da várzea',
+      description: `${totalDeVermelhos} vermelhos na conta. O juiz já entra no campo de olho.`,
+      icon: '\u{1F7E5}',
+      tone: 'danger',
+      priority: 86,
+    };
+  }
+
+  if (totalDeVermelhos === 1) {
+    return {
+      id: 'discipline-expulso',
+      family: 'discipline',
+      label: 'Vai acabar preso',
+      description: 'Tomou vermelho. Da próxima, respira antes da dividida.',
+      icon: '\u{1F7E5}',
+      tone: 'danger',
+      priority: 82,
+    };
+  }
+
+  if (sequenciaComCartao >= 3) {
+    return {
+      id: 'discipline-nervoso',
+      family: 'discipline',
+      label: 'Perna de pau nervoso',
+      description: `Cartão em ${sequenciaComCartao} jogos seguidos. Precisa chegar mais leve.`,
+      icon: '\u{1F7E8}',
+      tone: 'yellow',
+      priority: 74,
+    };
+  }
+
+  if (totalDeAmarelos >= 5) {
+    return {
+      id: 'discipline-conhecido',
+      family: 'discipline',
+      label: 'Juiz já sabe seu nome',
+      description: `${totalDeAmarelos} amarelos no total. Tá nervoso, vai pescar.`,
+      icon: '\u{1F7E8}',
+      tone: 'yellow',
+      priority: 66,
+    };
+  }
+
+  // Só vale como elogio quem tem estrada: dois jogos sem cartão não é
+  // disciplina, é amostra pequena.
+  if (sequenciaLimpa >= 10 && input.jogosComputados >= 10) {
+    return {
+      id: 'discipline-santo',
+      family: 'discipline',
+      label: 'Nunca nem viu',
+      description: `${sequenciaLimpa} jogos seguidos sem cartão nenhum.`,
+      icon: '\u{1F54A}️',
+      tone: 'success',
+      priority: 58,
+    };
+  }
+
+  return null;
+}
+
 function getMvpCandidate(streak: number): PlayerAchievementCandidate | null {
   if (streak >= 5) {
     return {
@@ -383,11 +491,20 @@ function buildPlayerMoments(input: {
     const stat = matchStatByMatchId.get(match.id) ?? null;
     const winnerIds = input.winnerIdsByMatch.get(match.id) ?? new Set<string>();
 
+    const amarelos = stat?.played ? stat.yellowCards ?? 0 : 0;
+    const vermelhos = stat?.played ? stat.redCards ?? 0 : 0;
+
     return {
       matchId: match.id,
       confirmed: attendance?.status === 'confirmed',
       hasGoalParticipation: Boolean(stat?.played && ((stat.goals ?? 0) > 0 || (stat.assists ?? 0) > 0)),
       isMvpWinner: winnerIds.has(input.player.id),
+      levouCartao: amarelos > 0 || vermelhos > 0,
+      // Quem não jogou não entra: ficar de fora não é disciplina, e contar
+      // como jogo limpo daria selo de santo para quem só faltou.
+      jogouLimpo: Boolean(stat?.played) && amarelos === 0 && vermelhos === 0,
+      amarelos,
+      vermelhos,
     };
   });
 }
@@ -425,6 +542,7 @@ export function buildPlayerAchievements(input: BuildPlayerAchievementsInput) {
       countCurrentStreak(moments, (item) => item.hasGoalParticipation),
     ),
     getPresenceCandidate(countCurrentStreak(moments, (item) => item.confirmed)),
+    getDisciplineCandidate(resumirDisciplina(moments)),
     getRatingCandidate(playerRatings, input.ratingCriteria ?? []),
   ].filter((item): item is PlayerAchievementCandidate => Boolean(item));
 
@@ -471,6 +589,7 @@ export function buildTeamPlayerAchievementMap(input: BuildTeamPlayerAchievements
         countCurrentStreak(moments, (item) => item.hasGoalParticipation),
       ),
       getPresenceCandidate(countCurrentStreak(moments, (item) => item.confirmed)),
+    getDisciplineCandidate(resumirDisciplina(moments)),
       getRatingCandidate(
         (ratingsByPlayerId.get(player.id) ?? []).filter((rating) =>
           eligibleMatchIds.has(rating.matchId),

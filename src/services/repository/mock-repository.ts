@@ -3558,13 +3558,18 @@ export const mockRepository: AppRepository = {
     }
 
     const submittedMap = input.playerStats.reduce<
-      Record<string, { goals: number; assists: number; played: boolean }>
+      Record<
+      string,
+      { goals: number; assists: number; played: boolean; yellowCards?: number; redCards?: number }
+    >
     >(
       (acc, stat) => {
         acc[stat.playerId] = {
           goals: stat.goals,
           assists: stat.assists,
           played: stat.played ?? true,
+          yellowCards: stat.yellowCards,
+          redCards: stat.redCards,
         };
         return acc;
       },
@@ -3618,8 +3623,8 @@ export const mockRepository: AppRepository = {
         started: played && starterIds.has(playerId),
         goals: submittedMap[playerId]?.goals ?? 0,
         assists: submittedMap[playerId]?.assists ?? 0,
-        yellowCards: existing?.yellowCards ?? 0,
-        redCards: existing?.redCards ?? 0,
+        yellowCards: submittedMap[playerId]?.yellowCards ?? existing?.yellowCards ?? 0,
+        redCards: submittedMap[playerId]?.redCards ?? existing?.redCards ?? 0,
         notes: existing?.notes ?? '',
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
@@ -3761,13 +3766,18 @@ export const mockRepository: AppRepository = {
     }
 
     const submittedMap = input.playerStats.reduce<
-      Record<string, { goals: number; assists: number; played: boolean }>
+      Record<
+      string,
+      { goals: number; assists: number; played: boolean; yellowCards?: number; redCards?: number }
+    >
     >(
       (acc, stat) => {
         acc[stat.playerId] = {
           goals: stat.goals,
           assists: stat.assists,
           played: stat.played ?? true,
+          yellowCards: stat.yellowCards,
+          redCards: stat.redCards,
         };
         return acc;
       },
@@ -3820,8 +3830,8 @@ export const mockRepository: AppRepository = {
         started: played && starterIds.has(playerId),
         goals: submittedMap[playerId]?.goals ?? 0,
         assists: submittedMap[playerId]?.assists ?? 0,
-        yellowCards: existing?.yellowCards ?? 0,
-        redCards: existing?.redCards ?? 0,
+        yellowCards: submittedMap[playerId]?.yellowCards ?? existing?.yellowCards ?? 0,
+        redCards: submittedMap[playerId]?.redCards ?? existing?.redCards ?? 0,
         notes: existing?.notes ?? '',
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,

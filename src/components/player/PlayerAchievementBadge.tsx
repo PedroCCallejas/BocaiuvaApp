@@ -92,6 +92,22 @@ export function getPlayerAchievementTonePalette(
         textMuted: 'rgba(207,230,255,0.82)',
         glow: '#5FA8FF',
       };
+    case 'yellow':
+      return {
+        background: 'rgba(244,197,66,0.14)',
+        border: 'rgba(244,197,66,0.38)',
+        text: '#F7E3A6',
+        textMuted: 'rgba(247,227,166,0.82)',
+        glow: '#E8B931',
+      };
+    case 'danger':
+      return {
+        background: 'rgba(232,74,74,0.16)',
+        border: 'rgba(232,74,74,0.42)',
+        text: '#FFD2D2',
+        textMuted: 'rgba(255,210,210,0.84)',
+        glow: '#E84A4A',
+      };
     case 'purple':
       return {
         background: 'rgba(185,140,255,0.18)',

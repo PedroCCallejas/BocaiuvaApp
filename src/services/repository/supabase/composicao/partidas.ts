@@ -366,16 +366,13 @@ export function comPartidas(base: AppRepository): AppRepository {
                 ? 'loss'
                 : 'draw',
         },
-        // O formulário de encerramento só coleta gol, assistência e se jogou.
-        // Cartão e observação existem no banco mas não são preenchidos aqui —
-        // inventar zero é o correto: é o que o Firestore já grava hoje.
         stats: input.playerStats.map((stat) => ({
           playerId: stat.playerId,
           played: stat.played ?? true,
           goals: stat.goals ?? 0,
           assists: stat.assists ?? 0,
-          yellowCards: 0,
-          redCards: 0,
+          yellowCards: stat.yellowCards ?? 0,
+          redCards: stat.redCards ?? 0,
         })),
       });
 

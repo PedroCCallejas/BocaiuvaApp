@@ -19,7 +19,9 @@ import {
   resolverJogadoresDoJogoAntigo,
   validarCabecalhoDoJogoAntigo,
 } from '@/lib/finished-match';
+import { formatMatchDateTime } from '@/lib/date';
 import { calculateMatchResult } from '@/lib/match';
+import { avisarTime } from '@/services/notifications/push-subscriptions';
 import { fatiaDoElenco } from '@/services/repository/supabase/composicao/elenco';
 import { buscarJogadores } from '@/services/repository/supabase/elenco';
 import { amountFromCents } from '@/lib/money';
@@ -329,6 +331,18 @@ export function comPartidas(base: AppRepository): AppRepository {
       });
 
       await fatiaDePartidas.recarregar();
+
+      // Aviso no celular é best-effort: criar a partida não pode falhar porque
+      // o push falhou. Mesmo critério das notificações internas.
+      void avisarTime({
+        teamId: input.teamId,
+        title: 'Jogo marcado',
+        body: `${formatMatchDateTime(partida)} contra ${partida.opponentName}. Confirme sua presença.`,
+        url: `/matches/${partida.id}`,
+        tag: `partida-${partida.id}`,
+        excluirUserId: creatorUserId,
+      });
+
       return partida;
     },
 
@@ -363,6 +377,15 @@ export function comPartidas(base: AppRepository): AppRepository {
     },
 
     async finishMatch(input, actorUserId) {
+      // Só avisa na transição para encerrada.
+      //
+      // `updateFinishedMatchStats` delega para cá: sem esta checagem, corrigir
+      // um gol três dias depois mandaria "votação aberta" de novo para o time
+      // inteiro.
+      const estavaAberta =
+        (await fatiaDePartidas.obter()).matches.find((item) => item.id === input.matchId)
+          ?.status !== 'finished';
+
       const partida = await encerrarPartida({
         matchId: input.matchId,
         scoreboard: {
@@ -405,6 +428,20 @@ export function comPartidas(base: AppRepository): AppRepository {
       }
 
       await fatiaDePartidas.recarregar();
+
+      if (estavaAberta) {
+        const placar = `${input.teamScore} x ${input.opponentScore}`;
+
+        void avisarTime({
+          teamId: partida.teamId,
+          title: `Jogo encerrado: ${placar}`,
+          body: `Contra ${partida.opponentName}. A votação de MVP está aberta — escolha o craque.`,
+          url: `/matches/${input.matchId}`,
+          tag: `mvp-${input.matchId}`,
+          excluirUserId: actorUserId,
+        });
+      }
+
       return partida;
     },
 
@@ -471,6 +508,22 @@ export function comPartidas(base: AppRepository): AppRepository {
       });
 
       await fatiaDePartidas.recarregar();
+
+      const partida = (await fatiaDePartidas.obter()).matches.find(
+        (item) => item.id === input.matchId,
+      );
+
+      void avisarTime({
+        teamId,
+        title: 'Escalação publicada',
+        body: partida
+          ? `Time montado para o jogo contra ${partida.opponentName}. Veja se você está.`
+          : 'O time da próxima partida foi montado. Veja se você está.',
+        url: `/matches/${input.matchId}`,
+        // Reescalar não empilha aviso: o segundo substitui o primeiro.
+        tag: `escalacao-${input.matchId}`,
+      });
+
       return escalacao;
     },
   };

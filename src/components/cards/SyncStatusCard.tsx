@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 
+import { BotaoDeAvisos } from '../notifications/BotaoDeAvisos';
 import { AppButton } from '../ui/AppButton';
 
 interface SyncStatusCardProps {
@@ -10,6 +11,8 @@ interface SyncStatusCardProps {
   hint: string;
   loading: boolean;
   onRefresh: () => void;
+  /** Conta atual, para oferecer os avisos no celular. */
+  userId?: string | null;
 }
 
 export function SyncStatusCard({
@@ -17,6 +20,7 @@ export function SyncStatusCard({
   hint,
   loading,
   onRefresh,
+  userId = null,
 }: SyncStatusCardProps) {
   const theme = useAppTheme();
 
@@ -48,6 +52,8 @@ export function SyncStatusCard({
         onPress={onRefresh}
         variant="secondary"
       />
+
+      <BotaoDeAvisos userId={userId} variante="largo" />
     </View>
   );
 }

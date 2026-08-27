@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { fonts } from '@/constants/theme';
@@ -8,6 +9,8 @@ interface SectionHeaderProps {
   subtitle?: string;
   actionLabel?: string;
   onAction?: () => void;
+  /** Entra à esquerda da ação, na mesma linha. */
+  antesDaAcao?: ReactNode;
 }
 
 export function SectionHeader({
@@ -15,6 +18,7 @@ export function SectionHeader({
   subtitle,
   actionLabel,
   onAction,
+  antesDaAcao,
 }: SectionHeaderProps) {
   const theme = useAppTheme();
 
@@ -34,6 +38,7 @@ export function SectionHeader({
           <Text style={[styles.subtitle, { color: theme.colors.textMuted }]}>{subtitle}</Text>
         ) : null}
       </View>
+      {antesDaAcao}
       {actionLabel && onAction ? (
         <Pressable
           accessibilityLabel={actionLabel}

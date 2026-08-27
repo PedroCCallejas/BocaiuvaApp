@@ -9,6 +9,7 @@ import { NotificationCard } from '@/components/cards/NotificationCard';
 import { SyncStatusCard } from '@/components/cards/SyncStatusCard';
 import { TeamHeroCard } from '@/components/cards/TeamHeroCard';
 import { MatchDiaryEntryCard } from '@/components/matches/MatchDiaryEntryCard';
+import { BotaoDeAvisos } from '@/components/notifications/BotaoDeAvisos';
 import { RankingList } from '@/components/stats/RankingList';
 import { PresentationVideoCard } from '@/components/video/PresentationVideoCard';
 import { AppButton } from '@/components/ui/AppButton';
@@ -61,6 +62,7 @@ export default function HomeScreen() {
   const canManageTeam = useAppStore(selectCanManageTeam);
   const canManagePlayers = useAppStore(selectCanManagePlayers);
   const refreshData = useAppStore((state) => state.refreshData);
+  const currentUserId = useAppStore((state) => state.currentUserId);
   const markNotificationAsRead = useAppStore((state) => state.markNotificationAsRead);
   const refreshing = useAppStore(selectIsRefreshingData);
   const syncMessage = useAppStore(selectSyncStatusMessage);
@@ -241,6 +243,7 @@ export default function HomeScreen() {
         loading={refreshing}
         message={syncMessage}
         onRefresh={() => void refreshData()}
+        userId={currentUserId}
       />
 
       <View style={styles.metricsRow}>
@@ -299,6 +302,7 @@ export default function HomeScreen() {
         }
         actionLabel="Ver todas"
         onAction={() => router.push('/notifications' as never)}
+        antesDaAcao={<BotaoDeAvisos userId={currentUserId} />}
       />
       {previewNotifications.length === 0 ? (
         <EmptyState

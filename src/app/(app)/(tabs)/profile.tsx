@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { router } from 'expo-router';
 import { Alert, Platform, StyleSheet, Text, View } from 'react-native';
 
+import { CartaoDeAvisos } from '@/components/notifications/CartaoDeAvisos';
 import { AppButton } from '@/components/ui/AppButton';
 import { Avatar } from '@/components/ui/Avatar';
 import { Pill } from '@/components/ui/Pill';
@@ -26,6 +27,7 @@ export default function ProfileScreen() {
   const team = useAppStore(selectCurrentTeam);
   const currentRoleLabel = useAppStore(selectCurrentRoleLabel);
   const logout = useAppStore((state) => state.logout);
+  const currentUserId = useAppStore((state) => state.currentUserId);
   const [loggingOut, setLoggingOut] = useState(false);
 
   if (!user) {
@@ -119,6 +121,8 @@ export default function ProfileScreen() {
             Peca para um administrador revisar o vinculo correto.
           </Text>
         )}
+        <CartaoDeAvisos userId={currentUserId} />
+
         <AppButton
           label="Sair"
           variant="danger"

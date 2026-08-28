@@ -23,7 +23,10 @@ import { formatMatchDateTime } from '@/lib/date';
 import { calculateMatchResult } from '@/lib/match';
 import {
   buildNotificationId,
+  createLineupPublishedNotification as criarNotificacaoDeEscalacao,
+  createMatchCreatedNotification as criarNotificacaoDePartidaNova,
   createMatchFinishedNotification as criarNotificacaoDeFimDeJogo,
+  createMatchUpdatedNotification as criarNotificacaoDePartidaEditada,
   createMvpVotingOpenedNotification as criarNotificacaoDeVotacao,
   createRatingsOpenedNotification as criarNotificacaoDeNotas,
 } from '@/lib/notifications';
@@ -52,6 +55,7 @@ import {
   PARTIDAS_VAZIAS,
 } from '@/services/repository/supabase/partidas';
 import type { AppRepository } from '@/services/repository/types';
+import type { AppNotification } from '@/types/domain';
 
 export const fatiaDePartidas = criarFatia({
   nome: 'partidas',
@@ -68,6 +72,25 @@ export const fatiaDePartidas = criarFatia({
     matchStats: valor.matchStats,
   }),
 });
+
+/**
+ * Grava um aviso interno sem deixar a ação falhar por causa dele.
+ *
+ * Best-effort desde sempre: publicar a escalação não pode quebrar porque o
+ * aviso não entrou. E a RLS só deixa quem administra o time criar aviso — mesma
+ * regra que o Firestore tinha —, então a ação de um jogador comum simplesmente
+ * não gera aviso, como já não gerava antes.
+ */
+async function avisarNoApp(...notificacoes: AppNotification[]) {
+  try {
+    await salvarNotificacoes(notificacoes);
+    await fatiaDeNotificacoes.recarregar();
+  } catch (erro) {
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.warn('[partidas] aviso interno falhou', erro);
+    }
+  }
+}
 
 /**
  * Quem entra na lista de presença de uma partida nova.
@@ -339,6 +362,15 @@ export function comPartidas(base: AppRepository): AppRepository {
       });
 
       await fatiaDePartidas.recarregar();
+      await avisarNoApp(
+        criarNotificacaoDePartidaNova({
+          id: buildNotificationId('match-created', partida.id),
+          teamId: partida.teamId,
+          match: partida,
+          actorUserId: creatorUserId,
+          updatedAt: new Date().toISOString(),
+        }),
+      );
 
       // Aviso no celular é best-effort: criar a partida não pode falhar porque
       // o push falhou. Mesmo critério das notificações internas.
@@ -369,6 +401,15 @@ export function comPartidas(base: AppRepository): AppRepository {
       });
 
       await fatiaDePartidas.recarregar();
+      await avisarNoApp(
+        criarNotificacaoDePartidaEditada({
+          id: buildNotificationId('match-updated', matchId),
+          teamId: partida.teamId,
+          match: partida,
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+
       return partida;
     },
 
@@ -446,39 +487,31 @@ export function comPartidas(base: AppRepository): AppRepository {
       //
       // Best-effort, como sempre foram: encerrar a partida não pode falhar
       // porque o aviso falhou.
-      try {
-        const instante = new Date().toISOString();
+      const instante = new Date().toISOString();
 
-        await salvarNotificacoes([
-          criarNotificacaoDeFimDeJogo({
-            id: buildNotificationId('match-finished', input.matchId),
-            teamId: partida.teamId,
-            match: partida,
-            actorUserId,
-            updatedAt: instante,
-          }),
-          criarNotificacaoDeVotacao({
-            id: buildNotificationId('mvp-voting-opened', input.matchId),
-            teamId: partida.teamId,
-            match: partida,
-            actorUserId,
-            updatedAt: instante,
-          }),
-          criarNotificacaoDeNotas({
-            id: buildNotificationId('ratings-opened', input.matchId),
-            teamId: partida.teamId,
-            match: partida,
-            actorUserId,
-            updatedAt: instante,
-          }),
-        ]);
-
-        await fatiaDeNotificacoes.recarregar();
-      } catch (erro) {
-        if (typeof __DEV__ !== 'undefined' && __DEV__) {
-          console.warn('[partidas] avisos de fim de jogo falharam', erro);
-        }
-      }
+      await avisarNoApp(
+        criarNotificacaoDeFimDeJogo({
+          id: buildNotificationId('match-finished', input.matchId),
+          teamId: partida.teamId,
+          match: partida,
+          actorUserId,
+          updatedAt: instante,
+        }),
+        criarNotificacaoDeVotacao({
+          id: buildNotificationId('mvp-voting-opened', input.matchId),
+          teamId: partida.teamId,
+          match: partida,
+          actorUserId,
+          updatedAt: instante,
+        }),
+        criarNotificacaoDeNotas({
+          id: buildNotificationId('ratings-opened', input.matchId),
+          teamId: partida.teamId,
+          match: partida,
+          actorUserId,
+          updatedAt: instante,
+        }),
+      );
 
       if (estavaAberta) {
         const placar = `${input.teamScore} x ${input.opponentScore}`;
@@ -563,6 +596,17 @@ export function comPartidas(base: AppRepository): AppRepository {
       const partida = (await fatiaDePartidas.obter()).matches.find(
         (item) => item.id === input.matchId,
       );
+
+      if (partida) {
+        await avisarNoApp(
+          criarNotificacaoDeEscalacao({
+            id: buildNotificationId('lineup-published', input.matchId),
+            teamId,
+            match: partida,
+            updatedAt: new Date().toISOString(),
+          }),
+        );
+      }
 
       void avisarTime({
         teamId,

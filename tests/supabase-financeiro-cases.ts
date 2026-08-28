@@ -350,7 +350,7 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
         partidas.indexOf('async updateFinishedMatchStats'),
       );
 
-      assert.match(encerrar, /salvarNotificacoes\(\[/);
+      assert.match(encerrar, /avisarNoApp\(/);
 
       for (const tipo of ['match-finished', 'mvp-voting-opened', 'ratings-opened']) {
         assert.match(
@@ -360,8 +360,20 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
         );
       }
 
-      // Best-effort: encerrar a partida nao pode falhar porque o aviso falhou.
-      assert.match(encerrar, /try \{[\s\S]*salvarNotificacoes/);
+      // Os outros eventos tambem ficaram orfaos na migracao — todos, nao so o
+      // fim de jogo. O time passou dias sem aviso nenhum.
+      for (const tipo of ['match-created', 'match-updated', 'lineup-published']) {
+        assert.match(
+          partidas,
+          new RegExp(`buildNotificationId\\('${tipo}'`),
+          `falta o aviso ${tipo}`,
+        );
+      }
+
+      // Best-effort: a acao nao pode falhar porque o aviso falhou. O helper
+      // concentra o try/catch para nao depender de cada chamada lembrar.
+      const helper = partidas.slice(partidas.indexOf('async function avisarNoApp'));
+      assert.match(helper.slice(0, 500), /try \{[\s\S]*salvarNotificacoes/);
     },
   },
   {

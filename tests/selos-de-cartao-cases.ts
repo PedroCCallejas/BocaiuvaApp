@@ -138,17 +138,18 @@ export const selosDeCartaoTestCases: TestCase[] = [
     },
   },
   {
-    name: 'falta no meio nao zera a sequencia de cartao',
+    name: 'a sequencia e dos MEUS jogos, nao das rodadas do time',
     run() {
-      // Quem levou cartao, faltou um jogo e voltou levando cartao continua
-      // sendo o mesmo jogador nervoso. Zerar por causa da falta premiaria quem
-      // some.
+      // O caso descrito pelo time: joguei ha um mes, faltei em dois, voltei e
+      // joguei mais dois. Sao tres jogos meus, e levei cartao nos tres — o
+      // aviso tem que aparecer. As duas faltas no meio nao interrompem nada,
+      // porque quem nao entrou em campo nao teve como levar cartao.
       const partidas = criarPartidas(5);
       const selos = selosDe({
         partidas,
         stats: statsCom(partidas, (i) => {
-          if (i === 2) return { jogou: false };
-          return i >= 1 ? { amarelos: 1 } : {};
+          if (i === 1 || i === 2) return { jogou: false };
+          return { amarelos: 1 };
         }),
       });
 
@@ -156,10 +157,10 @@ export const selosDeCartaoTestCases: TestCase[] = [
     },
   },
   {
-    name: 'quem nao joga nao ganha selo de santo',
+    name: 'quem nao joga nao ganha selo de jogo limpo',
     run() {
-      // Doze jogos, todos como ausente. Sem o filtro, isso viraria "nunca nem
-      // viu" — selo de disciplina para quem nunca entrou em campo.
+      // Doze jogos, todos como ausente. Sem o filtro, faltar o campeonato
+      // inteiro viraria selo de disciplina.
       const partidas = criarPartidas(12);
       const selos = selosDe({
         partidas,
@@ -170,15 +171,51 @@ export const selosDeCartaoTestCases: TestCase[] = [
     },
   },
   {
-    name: 'dez jogos limpos rendem o selo de santo',
+    name: 'cinco jogos meus sem cartao rendem o selo, mesmo intercalados',
     run() {
-      const partidas = criarPartidas(12);
+      // O outro caso descrito: cinco jogos espalhados no calendario, sem
+      // cartao em nenhum. Contar rodadas do time em vez dos meus jogos negaria
+      // o selo a quem joga uma semana sim, outra nao.
+      const partidas = criarPartidas(11);
       const selos = selosDe({
         partidas,
-        stats: statsCom(partidas, () => ({})),
+        // Joga um, falta um, do começo ao fim: 6 jogos meus, todos limpos.
+        stats: statsCom(partidas, (i) => (i % 2 === 1 ? { jogou: false } : {})),
       });
 
       assert.equal(temSelo(selos, 'discipline-santo'), true);
+    },
+  },
+  {
+    name: 'quatro jogos limpos ainda nao rendem o selo',
+    run() {
+      // O corte e em cinco: sem um piso, dois jogos sem cartao virariam
+      // "disciplina", que e amostra pequena demais para significar algo.
+      const partidas = criarPartidas(4);
+      const selos = selosDe({ partidas, stats: statsCom(partidas, () => ({})) });
+
+      assert.equal(temSelo(selos, 'discipline-santo'), false);
+    },
+  },
+  {
+    name: 'o texto dos selos deixa claro que e sobre cartao',
+    run() {
+      // "Nunca nem viu" nao dizia do que se tratava. Num app cheio de selo de
+      // gol e presenca, o de cartao precisa se identificar sozinho.
+      const partidas = criarPartidas(6);
+      const limpo = selosDe({ partidas, stats: statsCom(partidas, () => ({})) });
+      const selo = limpo.find((item) => item.id === 'discipline-santo');
+
+      assert.match(`${selo?.label} ${selo?.description}`, /cart(ã|a)o/i);
+
+      const nervoso = selosDe({
+        partidas,
+        stats: statsCom(partidas, (i) => (i >= 3 ? { amarelos: 1 } : {})),
+      }).find((item) => item.id === 'discipline-nervoso');
+
+      // E "seus últimos N jogos", nao "N jogos seguidos": a sequencia e da
+      // pessoa, e o texto nao pode sugerir rodadas consecutivas do time.
+      assert.match(nervoso?.description ?? '', /seus últimos/);
     },
   },
   {

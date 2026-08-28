@@ -281,16 +281,17 @@ function getGoalParticipationCandidate(streak: number): PlayerAchievementCandida
  */
 /** Junta num lugar só o que os selos de cartão precisam saber. */
 function resumirDisciplina(moments: PlayerMomentEntry[]) {
-  const jogados = moments.filter((item) => item.levouCartao || item.jogouLimpo);
+  // Só os jogos que a pessoa jogou. O calendário do time não interessa aqui:
+  // quem jogou há um mês, faltou dois e voltou, tem três jogos seus em
+  // sequência — a falta no meio não conta como interrupção, porque quem não
+  // entrou em campo não teve chance de levar cartão nem de sair limpo.
+  const meusJogos = moments.filter((item) => item.levouCartao || item.jogouLimpo);
 
   return {
-    // A sequência conta só os jogos em que a pessoa jogou: uma falta no meio
-    // não deveria zerar a série de quem vinha levando cartão todo jogo.
-    sequenciaComCartao: countCurrentStreak(jogados, (item) => item.levouCartao),
-    sequenciaLimpa: countCurrentStreak(jogados, (item) => item.jogouLimpo),
+    sequenciaComCartao: countCurrentStreak(meusJogos, (item) => item.levouCartao),
+    sequenciaLimpa: countCurrentStreak(meusJogos, (item) => item.jogouLimpo),
     totalDeAmarelos: moments.reduce((soma, item) => soma + item.amarelos, 0),
     totalDeVermelhos: moments.reduce((soma, item) => soma + item.vermelhos, 0),
-    jogosComputados: jogados.length,
   };
 }
 
@@ -299,7 +300,6 @@ function getDisciplineCandidate(input: {
   sequenciaLimpa: number;
   totalDeAmarelos: number;
   totalDeVermelhos: number;
-  jogosComputados: number;
 }): PlayerAchievementCandidate | null {
   const { sequenciaComCartao, sequenciaLimpa, totalDeAmarelos, totalDeVermelhos } = input;
 
@@ -308,7 +308,7 @@ function getDisciplineCandidate(input: {
       id: 'discipline-terror',
       family: 'discipline',
       label: 'Terror da várzea',
-      description: `${totalDeVermelhos} vermelhos na conta. O juiz já entra no campo de olho.`,
+      description: `${totalDeVermelhos} cartões vermelhos na conta. O juiz já entra em campo de olho.`,
       icon: '\u{1F7E5}',
       tone: 'danger',
       priority: 86,
@@ -320,19 +320,22 @@ function getDisciplineCandidate(input: {
       id: 'discipline-expulso',
       family: 'discipline',
       label: 'Vai acabar preso',
-      description: 'Tomou vermelho. Da próxima, respira antes da dividida.',
+      description: 'Tomou cartão vermelho. Da próxima, respira antes da dividida.',
       icon: '\u{1F7E5}',
       tone: 'danger',
       priority: 82,
     };
   }
 
+  // "nos seus últimos N jogos" em vez de "N jogos seguidos": a sequência é dos
+  // jogos da pessoa, não das rodadas do time. Quem faltou no meio não teve a
+  // série interrompida, e o texto precisa refletir isso.
   if (sequenciaComCartao >= 3) {
     return {
       id: 'discipline-nervoso',
       family: 'discipline',
       label: 'Perna de pau nervoso',
-      description: `Cartão em ${sequenciaComCartao} jogos seguidos. Precisa chegar mais leve.`,
+      description: `Levou cartão nos seus últimos ${sequenciaComCartao} jogos. Precisa chegar mais leve.`,
       icon: '\u{1F7E8}',
       tone: 'yellow',
       priority: 74,
@@ -344,21 +347,21 @@ function getDisciplineCandidate(input: {
       id: 'discipline-conhecido',
       family: 'discipline',
       label: 'Juiz já sabe seu nome',
-      description: `${totalDeAmarelos} amarelos no total. Tá nervoso, vai pescar.`,
+      description: `${totalDeAmarelos} cartões amarelos no total. Tá nervoso, vai pescar.`,
       icon: '\u{1F7E8}',
       tone: 'yellow',
       priority: 66,
     };
   }
 
-  // Só vale como elogio quem tem estrada: dois jogos sem cartão não é
-  // disciplina, é amostra pequena.
-  if (sequenciaLimpa >= 10 && input.jogosComputados >= 10) {
+  // Cinco jogos seus, não cinco rodadas do time: quem joga uma semana sim outra
+  // não leva o mesmo tempo de estrada, só espalhado no calendário.
+  if (sequenciaLimpa >= 5) {
     return {
       id: 'discipline-santo',
       family: 'discipline',
-      label: 'Nunca nem viu',
-      description: `${sequenciaLimpa} jogos seguidos sem cartão nenhum.`,
+      label: 'Nunca viu cartão',
+      description: `${sequenciaLimpa} jogos seus sem levar cartão nenhum.`,
       icon: '\u{1F54A}️',
       tone: 'success',
       priority: 58,

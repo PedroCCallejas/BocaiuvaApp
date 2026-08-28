@@ -80,6 +80,8 @@ export const TABELAS_DE_MODULO_JA_MIGRADO: Partial<Record<NomeDaTabela, string>>
   player_ratings: 'avaliacoes',
   rating_criteria: 'avaliacoes',
 
+  notifications: 'notificacoes',
+
   // O elenco arrasta `users`, `teams` e `team_members` junto: são o contexto da
   // sessão, e reimportar qualquer um deles desfaria vínculo criado depois da
   // virada — a pessoa abriria o app sem time.

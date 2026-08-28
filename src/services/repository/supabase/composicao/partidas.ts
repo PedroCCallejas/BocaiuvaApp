@@ -21,7 +21,15 @@ import {
 } from '@/lib/finished-match';
 import { formatMatchDateTime } from '@/lib/date';
 import { calculateMatchResult } from '@/lib/match';
+import {
+  buildNotificationId,
+  createMatchFinishedNotification as criarNotificacaoDeFimDeJogo,
+  createMvpVotingOpenedNotification as criarNotificacaoDeVotacao,
+  createRatingsOpenedNotification as criarNotificacaoDeNotas,
+} from '@/lib/notifications';
 import { avisarTime } from '@/services/notifications/push-subscriptions';
+import { fatiaDeNotificacoes } from '@/services/repository/supabase/composicao/notificacoes';
+import { salvarNotificacoes } from '@/services/repository/supabase/notificacoes';
 import { fatiaDoElenco } from '@/services/repository/supabase/composicao/elenco';
 import { buscarJogadores } from '@/services/repository/supabase/elenco';
 import { amountFromCents } from '@/lib/money';
@@ -428,6 +436,49 @@ export function comPartidas(base: AppRepository): AppRepository {
       }
 
       await fatiaDePartidas.recarregar();
+
+      // Os avisos internos são criados aqui, onde o evento acontece.
+      //
+      // Ficaram órfãos na migração: o Firestore criava os três ao encerrar, mas
+      // a partida passou a viver no Postgres e o aviso continuou sendo gravado
+      // do outro lado, num banco que não conhece essa partida. Resultado: o
+      // último jogo encerrou e a lista de avisos não mexeu — sem erro nenhum.
+      //
+      // Best-effort, como sempre foram: encerrar a partida não pode falhar
+      // porque o aviso falhou.
+      try {
+        const instante = new Date().toISOString();
+
+        await salvarNotificacoes([
+          criarNotificacaoDeFimDeJogo({
+            id: buildNotificationId('match-finished', input.matchId),
+            teamId: partida.teamId,
+            match: partida,
+            actorUserId,
+            updatedAt: instante,
+          }),
+          criarNotificacaoDeVotacao({
+            id: buildNotificationId('mvp-voting-opened', input.matchId),
+            teamId: partida.teamId,
+            match: partida,
+            actorUserId,
+            updatedAt: instante,
+          }),
+          criarNotificacaoDeNotas({
+            id: buildNotificationId('ratings-opened', input.matchId),
+            teamId: partida.teamId,
+            match: partida,
+            actorUserId,
+            updatedAt: instante,
+          }),
+        ]);
+
+        await fatiaDeNotificacoes.recarregar();
+      } catch (erro) {
+        if (typeof __DEV__ !== 'undefined' && __DEV__) {
+          console.warn('[partidas] avisos de fim de jogo falharam', erro);
+        }
+      }
 
       if (estavaAberta) {
         const placar = `${input.teamScore} x ${input.opponentScore}`;

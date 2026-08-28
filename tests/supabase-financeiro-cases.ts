@@ -28,6 +28,22 @@ function lista(snapshot: AppSnapshot): string[] {
   return (snapshot as unknown as { lista: string[] }).lista;
 }
 
+/**
+ * As camadas de composição, num lugar só.
+ *
+ * Estava repetida em três testes, com listas ligeiramente diferentes — e quando
+ * `notificacoes` chegou, dois deles simplesmente pararam de cobrir o módulo
+ * novo, sem falhar. Lista duplicada é cobertura que some sem avisar.
+ */
+const CAMADAS_DE_COMPOSICAO = [
+  'financeiro',
+  'resenhas',
+  'partidas',
+  'avaliacoes',
+  'elenco',
+  'notificacoes',
+];
+
 const RPC = 'supabase/migrations/20260821180000_rpc_salvar_despesa.sql';
 const RPC_CRIAR_TIME = 'supabase/migrations/20260825045940_rpc_criar_time.sql';
 const MODULO = 'src/services/repository/supabase/financeiro.ts';
@@ -232,7 +248,7 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
 
       const acusados: string[] = [];
 
-      for (const nome of ['financeiro', 'resenhas', 'partidas', 'avaliacoes', 'elenco']) {
+      for (const nome of CAMADAS_DE_COMPOSICAO) {
         const caminho = `src/services/repository/supabase/composicao/${nome}.ts`;
         const fonte = apenasCodigoTs(fs.readFileSync(caminho, 'utf8'));
 
@@ -315,6 +331,37 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
       deveFalhar = false;
       assert.deepEqual(await fatia.recarregar(), ['chegou']);
       assert.equal(fatia.estaVazia(), false);
+    },
+  },
+  {
+    name: 'encerrar a partida cria os tres avisos do time',
+    run() {
+      // Ficaram orfaos na migracao: o Firestore criava os tres ao encerrar, a
+      // partida passou a viver no Postgres, e o aviso continuou sendo gravado
+      // do outro lado — num banco que nao conhece essa partida. O jogo encerrou
+      // e a lista de avisos nao mexeu, sem erro nenhum.
+      //
+      // Ninguem notou por dias porque ausencia de aviso nao parece falha.
+      const partidas = apenasCodigoTs(
+        fs.readFileSync('src/services/repository/supabase/composicao/partidas.ts', 'utf8'),
+      );
+      const encerrar = partidas.slice(
+        partidas.indexOf('async finishMatch'),
+        partidas.indexOf('async updateFinishedMatchStats'),
+      );
+
+      assert.match(encerrar, /salvarNotificacoes\(\[/);
+
+      for (const tipo of ['match-finished', 'mvp-voting-opened', 'ratings-opened']) {
+        assert.match(
+          encerrar,
+          new RegExp(`buildNotificationId\\('${tipo}'`),
+          `falta o aviso ${tipo}`,
+        );
+      }
+
+      // Best-effort: encerrar a partida nao pode falhar porque o aviso falhou.
+      assert.match(encerrar, /try \{[\s\S]*salvarNotificacoes/);
     },
   },
   {
@@ -428,7 +475,7 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
       );
 
       /** Ainda no Firestore: reimportar nao apaga nada porque nada grava la. */
-      const semModuloNoPostgres = ['seasons', 'notifications'];
+      const semModuloNoPostgres = ['seasons'];
 
       assert.equal(tabelas.length > 10, true, 'nao leu a ordem das tabelas');
 
@@ -571,7 +618,7 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
       );
 
       const cobertos = new Set(
-        ['financeiro', 'resenhas', 'partidas', 'avaliacoes', 'elenco', 'index']
+        [...CAMADAS_DE_COMPOSICAO, 'index']
           .flatMap((modulo) => [
             ...fs
               .readFileSync(`src/services/repository/supabase/composicao/${modulo}.ts`, 'utf8')
@@ -597,10 +644,6 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
         'loginWithGoogle',
         'register',
         'resetPassword',
-        // O modulo `notificacoes` nao esta ligado: seguem no Firestore,
-        // coerentes com a leitura.
-        'markNotificationAsRead',
-        'markAllNotificationsAsRead',
         // Projecao publica, so leitura. Fica parada no ultimo estado ate o
         // modulo publico migrar — nao corrompe nada, so envelhece.
         'listPublicTeams',
@@ -624,7 +667,7 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     name: 'toda escrita do financeiro invalida o cache da leitura',
     run() {
       // Cada modulo tem seu arquivo desde que o quarto chegou.
-      const repo = ['financeiro', 'resenhas', 'partidas', 'elenco']
+      const repo = CAMADAS_DE_COMPOSICAO
         .map((modulo) =>
           apenasCodigoTs(
             fs.readFileSync(`src/services/repository/supabase/composicao/${modulo}.ts`, 'utf8'),

@@ -14,6 +14,7 @@ import { moduloUsaSupabase, type ModuloMigravel } from '@/services/repository/mo
 import { comAvaliacoes } from '@/services/repository/supabase/composicao/avaliacoes';
 import { comElenco } from '@/services/repository/supabase/composicao/elenco';
 import { comFinanceiro } from '@/services/repository/supabase/composicao/financeiro';
+import { comNotificacoes } from '@/services/repository/supabase/composicao/notificacoes';
 import { comPartidas } from '@/services/repository/supabase/composicao/partidas';
 import { comResenhas } from '@/services/repository/supabase/composicao/resenhas';
 import {
@@ -36,6 +37,7 @@ const CAMADAS: { modulo: ModuloMigravel; aplicar: (base: AppRepository) => AppRe
   { modulo: 'partidas', aplicar: comPartidas },
   { modulo: 'avaliacoes', aplicar: comAvaliacoes },
   { modulo: 'elenco', aplicar: comElenco },
+  { modulo: 'notificacoes', aplicar: comNotificacoes },
 ];
 
 /**

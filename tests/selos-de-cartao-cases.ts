@@ -97,44 +97,115 @@ function temSelo(selos: { id: string }[], id: string) {
   return selos.some((selo) => selo.id === id);
 }
 
+/** Qual selo de disciplina apareceu, se algum. */
+function seloDeCartao(selos: { id: string }[]) {
+  return selos.find((selo) => selo.id.startsWith('discipline-'))?.id ?? null;
+}
+
 export const selosDeCartaoTestCases: TestCase[] = [
   {
-    name: 'vermelho rende selo, e o segundo muda o texto',
+    name: 'as faixas de cartao amarelo sobem em 3, 5 e 7 jogos',
     run() {
-      const partidas = criarPartidas(4);
+      const faixas = [
+        { jogosComCartao: 3, esperado: 'discipline-cartao-3' },
+        { jogosComCartao: 5, esperado: 'discipline-cartao-5' },
+        { jogosComCartao: 7, esperado: 'discipline-cartao-7' },
+      ];
 
-      const comUm = selosDe({
-        partidas,
-        stats: statsCom(partidas, (i) => (i === 0 ? { vermelhos: 1 } : {})),
-      });
-      assert.equal(temSelo(comUm, 'discipline-expulso'), true);
+      for (const faixa of faixas) {
+        const partidas = criarPartidas(faixa.jogosComCartao + 2);
+        const primeiroComCartao = partidas.length - faixa.jogosComCartao;
 
-      // Dois vermelhos nao e "mais do mesmo": vira outro personagem.
-      const comDois = selosDe({
-        partidas,
-        stats: statsCom(partidas, (i) => (i <= 1 ? { vermelhos: 1 } : {})),
-      });
-      assert.equal(temSelo(comDois, 'discipline-terror'), true);
-      assert.equal(temSelo(comDois, 'discipline-expulso'), false);
+        const selos = selosDe({
+          partidas,
+          stats: statsCom(partidas, (i) => (i >= primeiroComCartao ? { amarelos: 1 } : {})),
+        });
+
+        assert.equal(
+          seloDeCartao(selos),
+          faixa.esperado,
+          `${faixa.jogosComCartao} jogos com cartao`,
+        );
+      }
     },
   },
   {
-    name: 'amarelo em jogos seguidos rende selo; espalhado nao',
+    name: 'as faixas de jogo limpo sobem em 3, 5 e 10 jogos',
     run() {
-      const partidas = criarPartidas(6);
+      const faixas = [
+        { jogosLimpos: 3, esperado: 'discipline-limpo-3' },
+        { jogosLimpos: 5, esperado: 'discipline-limpo-5' },
+        { jogosLimpos: 10, esperado: 'discipline-limpo-10' },
+      ];
 
-      const seguidos = selosDe({
+      for (const faixa of faixas) {
+        const partidas = criarPartidas(faixa.jogosLimpos);
+        const selos = selosDe({ partidas, stats: statsCom(partidas, () => ({})) });
+
+        assert.equal(seloDeCartao(selos), faixa.esperado, `${faixa.jogosLimpos} jogos limpos`);
+      }
+    },
+  },
+  {
+    name: 'vermelho tem faixa propria e vence a de amarelo',
+    run() {
+      const partidas = criarPartidas(4);
+
+      const umVermelho = selosDe({
         partidas,
-        stats: statsCom(partidas, (i) => (i >= 3 ? { amarelos: 1 } : {})),
+        stats: statsCom(partidas, (i) => (i === partidas.length - 1 ? { vermelhos: 1 } : {})),
       });
-      assert.equal(temSelo(seguidos, 'discipline-nervoso'), true);
+      assert.equal(seloDeCartao(umVermelho), 'discipline-vermelho-1');
 
+      const doisSeguidos = selosDe({
+        partidas,
+        stats: statsCom(partidas, (i) => (i >= partidas.length - 2 ? { vermelhos: 1 } : {})),
+      });
+      assert.equal(seloDeCartao(doisSeguidos), 'discipline-vermelho-2');
+
+      // Sete amarelos seguidos e grave, mas expulsao e mais: o vermelho no
+      // ultimo jogo tem que aparecer por cima.
+      const amarelosEUmVermelho = selosDe({
+        partidas: criarPartidas(8),
+        stats: statsCom(criarPartidas(8), (i) =>
+          i === 7 ? { amarelos: 1, vermelhos: 1 } : { amarelos: 1 },
+        ),
+      });
+      assert.equal(seloDeCartao(amarelosEUmVermelho), 'discipline-vermelho-1');
+    },
+  },
+  {
+    name: 'cartao espalhado nao vira sequencia',
+    run() {
       // Tres amarelos em seis jogos, alternados: nao e sequencia, e azar.
-      const alternados = selosDe({
+      const partidas = criarPartidas(6);
+      const selos = selosDe({
         partidas,
         stats: statsCom(partidas, (i) => (i % 2 === 0 ? { amarelos: 1 } : {})),
       });
-      assert.equal(temSelo(alternados, 'discipline-nervoso'), false);
+
+      assert.equal(seloDeCartao(selos), null);
+    },
+  },
+  {
+    name: 'a cor separa amarelo de vermelho',
+    run() {
+      // Sete amarelos e a faixa mais grave da cor amarela — mas continua
+      // amarela. Pintar de vermelho faria parecer expulsao.
+      const partidas = criarPartidas(8);
+      const seteAmarelos = selosDe({
+        partidas,
+        stats: statsCom(partidas, (i) => (i >= 1 ? { amarelos: 1 } : {})),
+      }).find((selo) => selo.id === 'discipline-cartao-7');
+
+      assert.equal(seteAmarelos?.tone, 'yellow');
+
+      const vermelho = selosDe({
+        partidas,
+        stats: statsCom(partidas, (i) => (i === 7 ? { vermelhos: 1 } : {})),
+      }).find((selo) => selo.id === 'discipline-vermelho-1');
+
+      assert.equal(vermelho?.tone, 'danger');
     },
   },
   {
@@ -153,7 +224,7 @@ export const selosDeCartaoTestCases: TestCase[] = [
         }),
       });
 
-      assert.equal(temSelo(selos, 'discipline-nervoso'), true);
+      assert.equal(temSelo(selos, 'discipline-cartao-3'), true);
     },
   },
   {
@@ -167,7 +238,7 @@ export const selosDeCartaoTestCases: TestCase[] = [
         stats: statsCom(partidas, () => ({ jogou: false })),
       });
 
-      assert.equal(temSelo(selos, 'discipline-santo'), false);
+      assert.equal(temSelo(selos, 'discipline-limpo-5'), false);
     },
   },
   {
@@ -183,7 +254,7 @@ export const selosDeCartaoTestCases: TestCase[] = [
         stats: statsCom(partidas, (i) => (i % 2 === 1 ? { jogou: false } : {})),
       });
 
-      assert.equal(temSelo(selos, 'discipline-santo'), true);
+      assert.equal(temSelo(selos, 'discipline-limpo-5'), true);
     },
   },
   {
@@ -194,28 +265,35 @@ export const selosDeCartaoTestCases: TestCase[] = [
       const partidas = criarPartidas(4);
       const selos = selosDe({ partidas, stats: statsCom(partidas, () => ({})) });
 
-      assert.equal(temSelo(selos, 'discipline-santo'), false);
+      assert.equal(temSelo(selos, 'discipline-limpo-5'), false);
     },
   },
   {
-    name: 'o texto dos selos deixa claro que e sobre cartao',
+    name: 'a descricao mostra jogos e cartao por icone',
     run() {
-      // "Nunca nem viu" nao dizia do que se tratava. Num app cheio de selo de
-      // gol e presenca, o de cartao precisa se identificar sozinho.
+      // O rotulo e piada; quem informa e a descricao, em icone: "5 ⚽ sem 🟨".
+      // Sem numero, "Comprou o juiz?" nao diz nada sobre o que aconteceu.
       const partidas = criarPartidas(6);
-      const limpo = selosDe({ partidas, stats: statsCom(partidas, () => ({})) });
-      const selo = limpo.find((item) => item.id === 'discipline-santo');
 
-      assert.match(`${selo?.label} ${selo?.description}`, /cart(ã|a)o/i);
+      const limpo = selosDe({ partidas, stats: statsCom(partidas, () => ({})) }).find(
+        (item) => item.id === 'discipline-limpo-5',
+      );
 
-      const nervoso = selosDe({
+      assert.match(limpo?.description ?? '', /^6 ⚽ sem 🟨$/);
+
+      const comCartao = selosDe({
         partidas,
         stats: statsCom(partidas, (i) => (i >= 3 ? { amarelos: 1 } : {})),
-      }).find((item) => item.id === 'discipline-nervoso');
+      }).find((item) => item.id === 'discipline-cartao-3');
 
-      // E "seus últimos N jogos", nao "N jogos seguidos": a sequencia e da
-      // pessoa, e o texto nao pode sugerir rodadas consecutivas do time.
-      assert.match(nervoso?.description ?? '', /seus últimos/);
+      assert.match(comCartao?.description ?? '', /^3 ⚽ 🟨$/);
+
+      const vermelho = selosDe({
+        partidas,
+        stats: statsCom(partidas, (i) => (i === 5 ? { vermelhos: 1 } : {})),
+      }).find((item) => item.id === 'discipline-vermelho-1');
+
+      assert.match(vermelho?.description ?? '', /^1 ⚽ 🟥$/);
     },
   },
   {
@@ -236,7 +314,7 @@ export const selosDeCartaoTestCases: TestCase[] = [
         matchStats: stats,
       });
 
-      assert.equal(temSelo(selos, 'discipline-nervoso'), true);
+      assert.equal(temSelo(selos, 'discipline-cartao-3'), true);
       assert.equal(
         selos[0]?.id,
         'goal-run-hot',
@@ -245,17 +323,15 @@ export const selosDeCartaoTestCases: TestCase[] = [
     },
   },
   {
-    name: 'sem cartao nenhum, o selo de disciplina nao aparece do nada',
+    name: 'menos de tres jogos meus nao rende selo nenhum',
     run() {
-      // O time inteiro tem cartao zerado hoje: nenhum selo novo pode surgir
-      // sozinho antes de alguem lancar o primeiro.
-      const partidas = criarPartidas(3);
+      // Dois jogos sem cartao nao e disciplina, e amostra pequena. O piso de
+      // tres evita que todo mundo do time ganhe selo na primeira rodada em que
+      // alguem lancar cartao.
+      const partidas = criarPartidas(2);
       const selos = selosDe({ partidas, stats: statsCom(partidas, () => ({})) });
 
-      assert.equal(
-        selos.some((selo) => selo.id.startsWith('discipline-')),
-        false,
-      );
+      assert.equal(seloDeCartao(selos), null);
     },
   },
 ];

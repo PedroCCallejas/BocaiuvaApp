@@ -289,82 +289,120 @@ function resumirDisciplina(moments: PlayerMomentEntry[]) {
 
   return {
     sequenciaComCartao: countCurrentStreak(meusJogos, (item) => item.levouCartao),
+    sequenciaComVermelho: countCurrentStreak(meusJogos, (item) => item.vermelhos > 0),
     sequenciaLimpa: countCurrentStreak(meusJogos, (item) => item.jogouLimpo),
-    totalDeAmarelos: moments.reduce((soma, item) => soma + item.amarelos, 0),
-    totalDeVermelhos: moments.reduce((soma, item) => soma + item.vermelhos, 0),
   };
 }
 
 function getDisciplineCandidate(input: {
   sequenciaComCartao: number;
+  sequenciaComVermelho: number;
   sequenciaLimpa: number;
-  totalDeAmarelos: number;
-  totalDeVermelhos: number;
 }): PlayerAchievementCandidate | null {
-  const { sequenciaComCartao, sequenciaLimpa, totalDeAmarelos, totalDeVermelhos } = input;
+  const { sequenciaComCartao, sequenciaComVermelho, sequenciaLimpa } = input;
 
-  if (totalDeVermelhos >= 2) {
+  const BOLA = '⚽';
+  const AMARELO = '\u{1F7E8}';
+  const VERMELHO = '\u{1F7E5}';
+
+  // Vermelho primeiro: é o mais grave e não pode ser encoberto por uma
+  // sequência de amarelos.
+  if (sequenciaComVermelho >= 2) {
     return {
-      id: 'discipline-terror',
+      id: 'discipline-vermelho-2',
       family: 'discipline',
-      label: 'Terror da várzea',
-      description: `${totalDeVermelhos} cartões vermelhos na conta. O juiz já entra em campo de olho.`,
-      icon: '\u{1F7E5}',
+      label: 'Vai pra brigar ou jogar?',
+      description: `${sequenciaComVermelho} ${BOLA} ${VERMELHO}`,
+      icon: VERMELHO,
       tone: 'danger',
-      priority: 86,
+      priority: 88,
     };
   }
 
-  if (totalDeVermelhos === 1) {
+  if (sequenciaComVermelho >= 1) {
     return {
-      id: 'discipline-expulso',
+      id: 'discipline-vermelho-1',
       family: 'discipline',
-      label: 'Vai acabar preso',
-      description: 'Tomou cartão vermelho. Da próxima, respira antes da dividida.',
-      icon: '\u{1F7E5}',
+      label: 'Vai pagar a cota do mesmo jeito',
+      description: `${sequenciaComVermelho} ${BOLA} ${VERMELHO}`,
+      icon: VERMELHO,
       tone: 'danger',
-      priority: 82,
+      priority: 84,
     };
   }
 
-  // "nos seus últimos N jogos" em vez de "N jogos seguidos": a sequência é dos
-  // jogos da pessoa, não das rodadas do time. Quem faltou no meio não teve a
-  // série interrompida, e o texto precisa refletir isso.
+  if (sequenciaComCartao >= 7) {
+    return {
+      id: 'discipline-cartao-7',
+      family: 'discipline',
+      label: 'Tá pra matar um',
+      description: `${sequenciaComCartao} ${BOLA} ${AMARELO}`,
+      icon: AMARELO,
+      // Amarelo mesmo, não vermelho: a cor diz qual cartão é. Escalar para
+      // vermelho aqui faria sete amarelos parecerem expulsão.
+      tone: 'yellow',
+      priority: 80,
+    };
+  }
+
+  if (sequenciaComCartao >= 5) {
+    return {
+      id: 'discipline-cartao-5',
+      family: 'discipline',
+      label: 'Já já arruma briga',
+      description: `${sequenciaComCartao} ${BOLA} ${AMARELO}`,
+      icon: AMARELO,
+      tone: 'yellow',
+      priority: 76,
+    };
+  }
+
   if (sequenciaComCartao >= 3) {
     return {
-      id: 'discipline-nervoso',
+      id: 'discipline-cartao-3',
       family: 'discipline',
-      label: 'Perna de pau nervoso',
-      description: `Levou cartão nos seus últimos ${sequenciaComCartao} jogos. Precisa chegar mais leve.`,
-      icon: '\u{1F7E8}',
+      label: 'Estressado, vai \u{1F3A3}',
+      description: `${sequenciaComCartao} ${BOLA} ${AMARELO}`,
+      icon: AMARELO,
       tone: 'yellow',
-      priority: 74,
+      priority: 72,
     };
   }
 
-  if (totalDeAmarelos >= 5) {
+  // Jogo limpo: quanto mais longa a série, mais forte a piada.
+  if (sequenciaLimpa >= 10) {
     return {
-      id: 'discipline-conhecido',
+      id: 'discipline-limpo-10',
       family: 'discipline',
-      label: 'Juiz já sabe seu nome',
-      description: `${totalDeAmarelos} cartões amarelos no total. Tá nervoso, vai pescar.`,
-      icon: '\u{1F7E8}',
-      tone: 'yellow',
-      priority: 66,
-    };
-  }
-
-  // Cinco jogos seus, não cinco rodadas do time: quem joga uma semana sim outra
-  // não leva o mesmo tempo de estrada, só espalhado no calendário.
-  if (sequenciaLimpa >= 5) {
-    return {
-      id: 'discipline-santo',
-      family: 'discipline',
-      label: 'Nunca viu cartão',
-      description: `${sequenciaLimpa} jogos seus sem levar cartão nenhum.`,
+      label: 'Comprou o juiz?',
+      description: `${sequenciaLimpa} ${BOLA} sem ${AMARELO}`,
       icon: '\u{1F54A}️',
       tone: 'success',
-      priority: 58,
+      priority: 68,
+    };
+  }
+
+  if (sequenciaLimpa >= 5) {
+    return {
+      id: 'discipline-limpo-5',
+      family: 'discipline',
+      label: 'Nunca dá bote, só acompanha',
+      description: `${sequenciaLimpa} ${BOLA} sem ${AMARELO}`,
+      icon: '\u{1F54A}️',
+      tone: 'success',
+      priority: 62,
+    };
+  }
+
+  if (sequenciaLimpa >= 3) {
+    return {
+      id: 'discipline-limpo-3',
+      family: 'discipline',
+      label: 'Pode chegar mais firme',
+      description: `${sequenciaLimpa} ${BOLA} sem ${AMARELO}`,
+      icon: '\u{1F54A}️',
+      tone: 'success',
+      priority: 56,
     };
   }
 

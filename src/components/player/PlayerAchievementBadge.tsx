@@ -50,7 +50,13 @@ export function PlayerAchievementBadge({
         },
       ]}>
       <Text style={styles.compactIcon}>{achievement.icon}</Text>
-      <Text style={[styles.compactLabel, { color: palette.text }]}>{achievement.label}</Text>
+      <Text
+        // Duas linhas em vez de cortar: o rótulo é a piada, e
+        // "Vai pagar a cota do mesmo je…" não tem graça nenhuma.
+        numberOfLines={2}
+        style={[styles.compactLabel, { color: palette.text }]}>
+        {achievement.label}
+      </Text>
     </View>
   );
 }
@@ -137,6 +143,10 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 7,
+    // Encolhe junto com o container em vez de empurrar a linha para fora da
+    // tela. Os rótulos de cartão são bem mais longos que os de gol e presença.
+    flexShrink: 1,
+    maxWidth: '100%',
   },
   compactIcon: {
     fontSize: 12,
@@ -145,6 +155,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.heading,
     fontSize: 11,
     fontWeight: '800',
+    flexShrink: 1,
   },
   detailCard: {
     borderWidth: 1,

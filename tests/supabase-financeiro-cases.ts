@@ -318,6 +318,50 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     },
   },
   {
+    name: 'apuracao do MVP nao depende de ser admin',
+    run() {
+      // `matches_write` exige `can_manage_team`. O jogador comum grava o voto,
+      // mas nao consegue atualizar o agregado — e UPDATE que nao casa linha
+      // nenhuma NAO da erro. O voto entrava e a contagem ficava parada.
+      //
+      // Mesmo bug que ja tivemos no Firestore, de volta e mais silencioso: la
+      // pelo menos estourava permission-denied.
+      const modulo = apenasCodigoTs(
+        fs.readFileSync('src/services/repository/supabase/avaliacoes.ts', 'utf8'),
+      );
+      const apuracao = modulo.slice(modulo.indexOf('export async function recalcularMvpDaPartida'));
+
+      assert.match(apuracao.slice(0, 700), /rpc\('apurar_mvp_da_partida'/);
+      assert.doesNotMatch(
+        apuracao.slice(0, 700),
+        /from\('matches'\)[\s\S]*?\.update\(/,
+        'update direto em matches e recusado em silencio para quem nao e admin',
+      );
+
+      const sql = apenasCodigoSql(
+        fs.readFileSync('supabase/migrations/20260826140000_rpc_apurar_mvp.sql', 'utf8'),
+      );
+
+      assert.match(sql, /security definer/);
+      assert.match(sql, /set search_path to 'public', 'app', 'pg_temp'/);
+      assert.match(sql, /revoke all on function[\s\S]*from public, anon/);
+
+      // `security definer` desliga a RLS aqui dentro: a checagem passa a ser
+      // responsabilidade da propria funcao.
+      assert.match(sql, /if not app\.is_team_member/);
+
+      // O resultado e recalculado a partir dos votos, nunca recebido por
+      // parametro — senao qualquer membro se declararia campeao. A assinatura
+      // aceita o id da partida e mais nada.
+      const assinatura = sql.slice(
+        sql.indexOf('create or replace function public.apurar_mvp_da_partida'),
+        sql.indexOf('returns void'),
+      );
+
+      assert.match(assinatura, /\(p_match_id text\)/);
+    },
+  },
+  {
     name: 'toda escrita diz em qual linha mexe',
     run() {
       // `definirTimeAtivo` fazia UPDATE sem filtro, confiando so na RLS para

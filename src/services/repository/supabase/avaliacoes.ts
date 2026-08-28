@@ -225,46 +225,25 @@ export async function votarNoMvp(input: {
  * comum e mostrava erro depois do voto ter entrado.
  */
 export async function recalcularMvpDaPartida(matchId: string): Promise<void> {
-  const supabaseClient = cliente();
-
-  const { data, error } = await supabaseClient
-    .from('mvp_votes')
-    .select('target_player_id')
-    .eq('match_id', matchId);
+  // A apuração vai por RPC `security definer`, e não por update direto.
+  //
+  // `matches_write` exige `can_manage_team`. Um jogador comum consegue gravar o
+  // voto, mas o update do agregado não casa linha nenhuma — e UPDATE que não
+  // casa nada **não dá erro**. O voto entrava e a contagem ficava parada, sem
+  // ninguém perceber.
+  //
+  // É o mesmo bug que já tivemos no Firestore ("voto de jogador comum parava no
+  // agregado que só admin podia gravar"), de volta e mais silencioso.
+  //
+  // A função confere `is_team_member` por dentro e só mexe em
+  // `mvp_winner_player_ids` e `mvp_total_votes` — não é uma porta para editar
+  // partida.
+  const { error } = await cliente().rpc('apurar_mvp_da_partida', {
+    p_match_id: matchId,
+  });
 
   if (error) {
     throw traduzirErroDoPostgres(error, 'Não foi possível apurar os votos agora.');
-  }
-
-  const porJogador = new Map<string, number>();
-
-  for (const linha of data ?? []) {
-    const alvo = texto((linha as { target_player_id?: unknown }).target_player_id);
-
-    if (alvo) {
-      porJogador.set(alvo, (porJogador.get(alvo) ?? 0) + 1);
-    }
-  }
-
-  const maior = Math.max(0, ...porJogador.values());
-
-  // Empate mantém todos os empatados: escolher um seria inventar resultado.
-  const campeoes = [...porJogador.entries()]
-    .filter(([, votos]) => votos === maior && maior > 0)
-    .map(([playerId]) => playerId)
-    .sort();
-
-  const { error: erroDaPartida } = await supabaseClient
-    .from('matches')
-    .update({
-      mvp_winner_player_ids: campeoes,
-      mvp_total_votes: (data ?? []).length,
-      updated_at: agora(),
-    })
-    .eq('id', matchId);
-
-  if (erroDaPartida) {
-    throw traduzirErroDoPostgres(erroDaPartida, 'Não foi possível apurar os votos agora.');
   }
 }
 

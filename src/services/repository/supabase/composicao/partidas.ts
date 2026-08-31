@@ -34,7 +34,7 @@ import { avisarTime } from '@/services/notifications/push-subscriptions';
 import { fatiaDeNotificacoes } from '@/services/repository/supabase/composicao/notificacoes';
 import { salvarNotificacoes } from '@/services/repository/supabase/notificacoes';
 import { fatiaDoElenco } from '@/services/repository/supabase/composicao/elenco';
-import { buscarJogadores } from '@/services/repository/supabase/elenco';
+import { buscarJogadores, buscarMeuVinculo } from '@/services/repository/supabase/elenco';
 import { amountFromCents } from '@/lib/money';
 import { exigirTimeAtivo } from '@/services/repository/supabase/composicao/comum';
 import { criarErroDoRepositorio } from '@/services/repository/supabase/erros';
@@ -548,16 +548,39 @@ export function comPartidas(base: AppRepository): AppRepository {
     async updateAttendance(input, actorUserId) {
       const teamId = await exigirTimeAtivo();
 
-      const presenca = await definirPresenca({
-        teamId,
-        matchId: input.matchId,
-        playerId: input.playerId,
-        status: input.status,
-        userId: actorUserId,
-      });
+      try {
+        const presenca = await definirPresenca({
+          teamId,
+          matchId: input.matchId,
+          playerId: input.playerId,
+          status: input.status,
+          userId: actorUserId,
+        });
 
-      await fatiaDePartidas.recarregar();
-      return presenca;
+        await fatiaDePartidas.recarregar();
+        return presenca;
+      } catch (erro) {
+        // "Você não tem permissão" manda a pessoa procurar cargo e permissão,
+        // quando quase sempre o que falta é o vínculo entre a conta e a ficha
+        // de jogador — e aí a RLS recusa porque `is_team_player` é falso.
+        //
+        // Já aconteceu por um erro de digitação no e-mail: a conta terminava em
+        // `.con` e a ficha em `.com`. A mensagem certa faz o admin ir no lugar
+        // certo em vez de mexer em permissão.
+        if ((erro as { code?: string })?.code === 'permission-denied') {
+          const vinculo = await buscarMeuVinculo(teamId).catch(() => null);
+
+          if (!vinculo?.playerId) {
+            throw criarErroDoRepositorio(
+              'Sua conta ainda não está ligada a um jogador do elenco. ' +
+                'Peça para o admin vincular seu e-mail à sua ficha.',
+              'failed-precondition',
+            );
+          }
+        }
+
+        throw erro;
+      }
     },
 
     async adminSetMatchAttendance(matchId, playerId, status) {

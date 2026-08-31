@@ -94,10 +94,16 @@ Deno.serve(async (req) => {
     global: { headers: { Authorization: autorizacao } },
   });
 
+  // `limit(1)` não é enfeite. A policy `team_members_select` deixa membro ver
+  // o time inteiro, então esta consulta volta 19 linhas no Bocaiúva — e
+  // `maybeSingle()` sozinho vira erro de "mais de uma linha", que cairia no
+  // `erroDoVinculo` abaixo como se fosse falha de acesso. Uma linha basta:
+  // quem não é do time não enxerga nenhuma.
   const { data: vinculo, error: erroDoVinculo } = await comoUsuario
     .from('team_members')
     .select('user_id')
     .eq('team_id', pedido.teamId)
+    .limit(1)
     .maybeSingle();
 
   if (erroDoVinculo) {

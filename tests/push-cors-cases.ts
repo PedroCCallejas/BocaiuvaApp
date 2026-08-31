@@ -57,4 +57,18 @@ export const pushCorsTestCases: TestCase[] = [
       assert.match(fonte, /Bearer /);
     },
   },
+  {
+    name: 'checagem de membro nao quebra em time com varios jogadores',
+    run() {
+      const fonte = fs.readFileSync(FUNCAO, 'utf8');
+      const inicio = fonte.indexOf('const { data: vinculo');
+      assert.equal(inicio > 0, true, 'checagem de vinculo nao encontrada');
+      const consulta = fonte.slice(inicio, inicio + 400);
+
+      // A policy deixa membro ver o time inteiro: sem `limit(1)`, o
+      // `maybeSingle()` estoura com "mais de uma linha" em qualquer time com
+      // mais de um jogador — e o erro sairia disfarçado de falta de acesso.
+      assert.match(consulta, /\.limit\(1\)/);
+    },
+  },
 ];

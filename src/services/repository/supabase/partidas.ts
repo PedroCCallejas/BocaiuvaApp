@@ -425,31 +425,57 @@ export async function definirPresenca(input: {
   userId?: string | null;
 }): Promise<AttendanceRecord> {
   const instante = agora();
+  const supabaseClient = cliente();
 
-  const { data, error } = await cliente()
+  // Atualizar e criar são caminhos separados de propósito.
+  //
+  // O `upsert` mandava a linha inteira, e o trigger `guard_attendance_self_edit`
+  // recusa quando um jogador comum mexe em `user_id` ou `created_at` — mesmo
+  // sem querer. A linha nasce em `criar_partida` com `user_id` nulo, então o
+  // upsert sempre tentava trocar esse campo, e a confirmação de presença
+  // morria com "você não tem permissão" para todo mundo que não é admin.
+  //
+  // No update vai só o que a pessoa pode mudar. O `responded_at` fica de fora
+  // porque o próprio trigger cuida dele.
+  const { data: atualizada, error: erroDoUpdate } = await supabaseClient
     .from('attendance')
-    .upsert(
-      {
-        id: idComposto(input.matchId, input.playerId),
-        team_id: input.teamId,
-        match_id: input.matchId,
-        player_id: input.playerId,
-        user_id: input.userId ?? null,
-        status: input.status,
-        responded_at: instante,
-        created_at: instante,
-        updated_at: instante,
-      },
-      { onConflict: 'match_id,player_id' },
-    )
+    .update({ status: input.status, updated_at: instante })
+    .eq('match_id', input.matchId)
+    .eq('player_id', input.playerId)
+    .select()
+    .maybeSingle();
+
+  if (erroDoUpdate) {
+    throw traduzirErroDoPostgres(erroDoUpdate, 'Não foi possível atualizar a presença agora.');
+  }
+
+  if (atualizada) {
+    return paraPresenca(atualizada);
+  }
+
+  // Sem linha ainda: quem convoca é o admin, e aí a inserção completa é
+  // permitida. Acontece em partida antiga e em jogador que entrou depois.
+  const { data: criada, error: erroDoInsert } = await supabaseClient
+    .from('attendance')
+    .insert({
+      id: idComposto(input.matchId, input.playerId),
+      team_id: input.teamId,
+      match_id: input.matchId,
+      player_id: input.playerId,
+      user_id: input.userId ?? null,
+      status: input.status,
+      responded_at: instante,
+      created_at: instante,
+      updated_at: instante,
+    })
     .select()
     .single();
 
-  if (error) {
-    throw traduzirErroDoPostgres(error, 'Não foi possível atualizar a presença agora.');
+  if (erroDoInsert) {
+    throw traduzirErroDoPostgres(erroDoInsert, 'Não foi possível atualizar a presença agora.');
   }
 
-  return paraPresenca(data);
+  return paraPresenca(criada);
 }
 
 // ── Escalação ──────────────────────────────────────────────────────────────

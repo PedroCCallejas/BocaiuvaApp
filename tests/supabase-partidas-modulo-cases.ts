@@ -109,14 +109,38 @@ export const supabasePartidasModuloTestCases: TestCase[] = [
     },
   },
   {
-    name: 'presenca e escalacao usam a chave certa no upsert',
+    name: 'escalacao e estatistica usam a chave certa no upsert',
     run() {
       const modulo = apenasCodigo(fs.readFileSync(MODULO, 'utf8'));
 
       // Chave errada duplicaria em vez de atualizar.
-      assert.match(trecho(modulo, 'definirPresenca'), /onConflict: 'match_id,player_id'/);
       assert.match(trecho(modulo, 'salvarEscalacao'), /onConflict: 'match_id'/);
       assert.match(trecho(modulo, 'salvarEstatistica'), /onConflict: 'match_id,player_id'/);
+    },
+  },
+  {
+    name: 'confirmar presenca nao pode mexer em user_id nem created_at',
+    run() {
+      // O trigger `guard_attendance_self_edit` recusa quando um jogador comum
+      // altera qualquer campo alem do proprio status — incluindo `user_id` e
+      // `created_at`, que iam junto no upsert sem ninguem querer.
+      //
+      // A linha nasce em `criar_partida` com `user_id` nulo, entao o upsert
+      // SEMPRE tentava trocar esse campo. Resultado: ninguem que nao fosse
+      // admin conseguia confirmar presenca, com a mensagem enganosa de
+      // "voce nao tem permissao".
+      const modulo = apenasCodigo(fs.readFileSync(MODULO, 'utf8'));
+      const presenca = trecho(modulo, 'definirPresenca', 2200);
+
+      // O caminho de atualizacao vem antes e leva so o status.
+      const update = presenca.slice(0, presenca.indexOf('.insert('));
+
+      assert.match(update, /\.update\(\{ status: input\.status/);
+      assert.doesNotMatch(update, /user_id/);
+      assert.doesNotMatch(update, /created_at/);
+
+      // `responded_at` fica de fora: quem preenche e o proprio trigger.
+      assert.doesNotMatch(update, /responded_at/);
     },
   },
   {

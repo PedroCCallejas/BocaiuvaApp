@@ -134,6 +134,7 @@ import { supabaseFinanceiroTestCases } from './supabase-financeiro-cases';
 import { supabaseModulosTestCases } from './supabase-modulos-cases';
 import { supabasePartidasTestCases } from './supabase-partidas-cases';
 import { supabasePartidasModuloTestCases } from './supabase-partidas-modulo-cases';
+import { pushCorsTestCases } from './push-cors-cases';
 import { supabaseRpcsPartidaTestCases } from './supabase-rpcs-partida-cases';
 import { supabaseResenhasTestCases } from './supabase-resenhas-cases';
 import { migracaoConferirTestCases } from './migracao-conferir-cases';
@@ -180,6 +181,7 @@ const testCases: TestCase[] = [
   ...supabasePartidasTestCases,
   ...supabaseRpcsPartidaTestCases,
   ...supabasePartidasModuloTestCases,
+  ...pushCorsTestCases,
   {
     name: 'sitemap oficial contem somente as dez URLs publicas canonicas',
     run() {

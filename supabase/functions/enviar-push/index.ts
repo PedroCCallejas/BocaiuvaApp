@@ -30,10 +30,16 @@ interface PedidoDeEnvio {
   excluirUserId?: string;
 }
 
+// `x-client-info` e `apikey` não são enredo: o supabase-js manda os dois em
+// todo `functions.invoke`. Se o preflight não listar exatamente os cabeçalhos
+// que o pedido carrega, o navegador responde 200 no OPTIONS e simplesmente
+// **não envia o POST** — sem erro de servidor, sem log, sem nada. Foi o que
+// aconteceu aqui: `function_edge_logs` só tinha OPTIONS 200, nenhum POST.
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Max-Age': '86400',
 };
 
 function resposta(corpo: unknown, status = 200) {

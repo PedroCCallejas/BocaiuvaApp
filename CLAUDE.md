@@ -1,154 +1,92 @@
-# Instruções do projeto — Professô FC
+# Professô FC — guia do Claude
 
 Responda sempre em **português do Brasil**.
 
-Este projeto deve ser evoluído com segurança, simplicidade e mudanças pequenas.
+**Governança é a Constitution:** [`.specify/memory/constitution.md`](.specify/memory/constitution.md).
+Ela define princípios, fluxo de trabalho, portões de qualidade e o formato da
+resposta final — e prevalece sobre este arquivo. O que está aqui é o mapa
+operacional: onde as coisas ficam e o que morde.
 
-## Onde os dados vivem (leia antes de tudo)
+## Onde os dados vivem
 
-**O banco é o Postgres (Supabase). A migração já aconteceu — não é plano.**
+**Supabase Postgres é a única fonte de dados do produto.** Firebase é só Auth.
 
-Em produção, estes módulos leem e gravam no Postgres: `financeiro`, `resenhas`,
-`partidas`, `avaliacoes`, `elenco`. Ligados por `EXPO_PUBLIC_SUPABASE_MODULES`.
+- `src/services/repository/index.ts` monta o repositório Supabase sempre.
+  `EXPO_PUBLIC_DATA_SOURCE=mock` é a única chave que desvia disso, e só em
+  desenvolvimento local.
+- `src/services/repository/supabase/composicao/` aplica 6 camadas sobre `base.ts`: financeiro, resenhas,
+  partidas, avaliações, elenco, notificações. **A ordem importa e `elenco` fica
+  por último** — é ela que define o contexto da sessão.
+- O login é Firebase e continua sendo. O Supabase valida esse JWT como provedor
+  de terceiros, e isso depende do custom claim `role: authenticated`. Sem o
+  claim, todo mundo chega como `anon` e as policies recusam tudo.
 
-O que **continua** no Firebase:
+**Firestore é legado.** `firebase-repository.ts` e `legacy-firestore-client.ts`
+existem para as ferramentas de migração; o app ativo não os importa. Não crie
+leitura nem escrita nova no Firestore.
 
-- **Auth** — o login é Firebase e vai continuar sendo. O Supabase valida esse
-  JWT como provedor de terceiros.
-- **Notificações** — o módulo `notificacoes` nunca foi ligado.
-- **Perfis públicos de time** — só leitura, congelados no estado da virada.
-- **`users`, `teams` e `teamMembers` no bootstrap** — é o que segura a tela
-  em pé enquanto o Postgres responde. Não tire isso do Firestore.
+**O app é web-only hoje.** `app.config.ts` declara `plugins: ['expo-router']`,
+não há `/ios` nem `/android`, e não há build EAS. Anúncios são **AdSense web**
+(`src/config/ads.ts`), não AdMob. Avisos são **Web Push** (`public/sw.js` + Edge
+Function `enviar-push`), não `expo-notifications`.
 
-`firebase-repository.ts` ainda tem os métodos dos módulos migrados, mas eles
-**não rodam em produção**: a camada de composição os intercepta. Hoje são
-caminho de rollback.
+## Mapa
 
-Detalhe: `docs/plano-migracao-postgres.md` é histórico, não roteiro.
+| Procurando | Vá em |
+|---|---|
+| Arquitetura, privacidade de mídia, Storage, procedimento de release | [`README.md`](README.md) |
+| Schema vivo do banco | `supabase/migrations/` (26 arquivos, ordem cronológica) |
+| Permissões | RLS e helpers `app.*` nas migrations — não no cliente |
+| Regras de domínio | `src/lib/` (limites, cálculo, elegibilidade) |
+| Telas e rotas | `src/app/` (Expo Router; `.native.tsx` vence no mobile) |
+| Estado da UI | `src/store/` (Zustand, sobre o snapshot único) |
+| Lógica privilegiada | `supabase/functions/` (5 Edge Functions) |
+| Histórico da migração | `docs/` — os marcados como STATUS histórico são registro, não roteiro |
 
-## Stack
+## Armadilhas que já morderam
 
-- **Expo / React Native** com Expo Router (rotas em `src/app/`)
-- **Supabase / Postgres** — banco principal; cliente em `src/config/supabase/client.ts`
-- **Firebase** — Auth (fica), Firestore (saindo; regras em `firestore.rules`)
-- **Vercel** — deploy web via `npx expo export -p web` → `dist/`
-- **TypeScript** — tsconfig.json na raiz
-- **AdMob** — react-native-google-mobile-ads
-- **Expo Notifications** — expo-notifications
-
-## Perfil do usuário
-
-O usuário prefere:
-
-- explicações práticas e diretas
-- prompts prontos para copiar e colar
-- mudanças pequenas e seguras
-- preservação da estrutura atual
-- validação antes de concluir
-- evitar refatorações grandes sem necessidade
-
-## Antes de alterar código
-
-Sempre:
-
-1. Entenda o problema.
-2. Identifique a causa provável.
-3. Liste os arquivos relacionados.
-4. Explique o risco da alteração.
-5. Proponha a menor correção segura.
-6. Só implemente quando o pedido for claramente de implementação.
-
-## Regras obrigatórias
-
-**Nunca fazer sem pedido explícito:**
-
-- alterar `firestore.rules`
-- alterar autenticação (Firebase Auth, Supabase Auth, Google Auth)
-- mexer em `.env`, tokens, secrets, credenciais ou `google-services.json`
-- atualizar Expo SDK, Firebase SDK, Supabase ou outras dependências grandes
-- rodar deploy para Vercel
-- rodar `eas build`
-- rodar `expo start`
-- mudar regras de negócio
-- refatorar o projeto inteiro
-- apagar arquivos importantes
-
-**Sempre priorizar:**
-
-- correção mínima
-- baixo risco
-- TypeScript seguro
-- código legível
-- Git limpo
-- validação com comandos existentes
-- explicação clara no final
-
-## Comandos de validação disponíveis
-
-```bash
-npm run typecheck    # tsc --noEmit — sempre preferido antes de qualquer commit
-npm run test         # suite de testes interna
-npm run build:web    # expo export --platform web — usar antes de deploy Vercel
-```
-
-> Não existe `npm run lint` neste projeto. Não inventar o comando.
-
-## Regras de uso do Expo
-
-- Não rodar `expo start` sem autorização explícita do usuário.
-- Para validar build web: usar `npm run build:web`.
-- Rotas ficam em `src/app/` seguindo Expo Router.
-- Componentes nativos com variantes `.native.tsx` têm precedência no mobile.
-
-## Regras do Postgres / Supabase
-
-- A permissão mora na **RLS**, não no cliente. Não repita a checagem no app: um
-  segundo lugar para decidir é um segundo lugar para divergir.
-- Escrita em várias tabelas passa por **RPC**, para ser transacional.
-- RPC com `security definer` só quando a policy não tem como funcionar (ex: criar
-  time, onde o dono ainda não é membro). Sempre com `search_path` fixo, e sempre
-  `revoke` de `public, anon`.
-- Migration é aplicada com o nome carimbado pela hora da aplicação. Se aplicar
-  pela API, **renomeie o arquivo local para bater com o remoto** — divergência de
-  ficha já custou tempo aqui.
-
-### Armadilhas que já morderam (todas da mesma classe)
-
-Ausência de dado é indistinguível de ausência de acesso. Sempre que algo aparecer
+Ausência de dado é indistinguível de ausência de acesso. Quando algo aparecer
 "vazio" ou "zerado", suspeite de leitura, não de dado apagado.
 
 - **PostgREST corta em 1000 linhas, sem erro.** Toda leitura de coleção que
-  cresce com o tempo usa `todasAsLinhas` (`supabase/paginacao.ts`), com `order`
-  estável. Sem isso o ranking somou 60% das presenças e ninguém percebeu.
-- **UPDATE/DELETE sem `.eq()` é recusado.** O Supabase carrega `safeupdate` na
-  conexão do PostgREST, e ela barra antes da RLS. Toda escrita diz em qual linha
-  mexe.
+  cresce usa `todasAsLinhas` (`src/services/repository/supabase/paginacao.ts`), com `order` estável. Sem
+  isso o ranking somou 60% das presenças e ninguém percebeu.
+- **UPDATE/DELETE sem `.eq()` é recusado.** O `safeupdate` do PostgREST barra
+  antes da RLS. Toda escrita diz em qual linha mexe.
 - **Sem token, a RLS devolve zero linhas em silêncio.** `getFirebaseAccessToken`
-  espera `authStateReady()` e falha se não houver sessão — vazio por falta de
-  token é indistinguível de time sem dados.
-- **Não rode `npm run migrar:importar`.** Sobrescreve o Postgres com o Firestore
-  congelado. Há trava por tabela, mas o comando parece inofensivo.
+  espera `authStateReady()` e falha se não houver sessão.
 
-## Regras Firebase / Firestore
+## Validação
 
-- Nunca sugerir `allow read, write: if true`.
-- Nunca relaxar `firestore.rules` sem explicar o risco e ter pedido explícito.
-- Os documentos usam campos como `teamId`, `playerId` e `membership` para controle de acesso.
-- Erros `permission-denied` geralmente indicam falha na leitura de `teamId` ou membership.
+```bash
+npm run typecheck    # tsc --noEmit
+npm run test         # 600 testes; runner próprio em tests/run-tests.ts
+npm run build:web    # expo export --platform web — antes de deploy
+```
 
-## Regras de deploy Vercel
+Não existe `npm run lint` neste projeto. Não invente o comando.
 
-- Build: `npx expo export -p web` → gera pasta `dist/`.
-- `vercel.json` já configurado com `cleanUrls`, `trailingSlash: false` e rewrite SPA.
-- Nunca fazer deploy sem pedido explícito e sem validar build antes.
+**21 arquivos de teste leem o próprio código-fonte com `readFileSync`** para
+congelar invariantes ("tal variável não pode reaparecer"). Se um teste desses
+falhar, o alvo é a invariante, não o teste.
 
-## Resposta final obrigatória
+O CI (`.github/workflows/ci.yml`) roda typecheck, test, build:web e
+`npm audit --omit=dev --audit-level=high` em PR e push na main.
 
-Sempre finalizar com:
+Os testes SQL em `supabase/tests/` não têm runner npm e não rodam no CI.
 
-1. O que foi feito
-2. Arquivos alterados
-3. Comandos rodados
-4. Resultado dos comandos
-5. Riscos ou observações
-6. Próximos passos sugeridos
+## Operações perigosas
+
+Nenhuma destas sem pedido explícito, a cada vez (Constitution V):
+
+| Operação | Por quê |
+|---|---|
+| `npm run migrar:postgres` | Grava com `service_role` ignorando RLS, sobrescrevendo o Postgres vivo com o Firestore congelado. Há trava por módulo migrado — **`--forcar=<tabela>` a desarma** |
+| `npm run auth:claim` | Escreve custom claims em usuários reais do Firebase |
+| `npm run backfill:membership-index`, `npm run repair:players-linked-email` | Escrevem em massa no Firestore, hoje legado |
+| Edge `excluir-conta`, `excluir-time` | Exclusão real com privilégio |
+| Aplicar migration, publicar Edge Function | Sem caminho de volta. Procedimento no README |
+| Deploy Vercel, `eas build`, `expo start` | Fora do fluxo normal |
+| `firestore.rules`, `.env`, `secrets/`, `google-services.json` | Segredos e superfície de acesso (Constitution IV) |
+
+Quase todo script de escrita tem par `:dry`. Rode o `:dry` primeiro, sempre.

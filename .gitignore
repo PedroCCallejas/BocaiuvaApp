@@ -59,20 +59,22 @@ GoogleService-Info.plist
 dist-web/
 dist/
 
-# Claude Code - configurações locais/pessoais
-.claude/
+# Claude Code — o harness do projeto é versionado (.claude/agents,
+# .claude/skills). Fora do git: configuração da máquina, cache e histórico.
 .claude/settings.local.json
-
-
-# Claude Code - arquivos temporários ou memória local, caso existam no projeto
+.claude/settings.local.*.json
 .claude/memory/
 .claude/logs/
 .claude/cache/
 .claude/tmp/
+.claude/history/
+.claude/projects/
 
-AGENTS.md
+# Espelhos do harness para outros agentes (Codex e afins). Inventariados na
+# auditoria de harness; decisão de manter ou remover ainda pendente.
 .agents
 .codex
+
 # Dump cru do Firestore: dado pessoal do time, nao versionar
 dados-firestore/
 

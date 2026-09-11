@@ -20,15 +20,19 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3.6.7';
 
+type EventoDePush = 'match-created' | 'match-finished' | 'lineup-published';
+
 interface PedidoDeEnvio {
   teamId: string;
-  title: string;
-  body: string;
-  url?: string;
-  tag?: string;
-  /** Quem disparou — não recebe o próprio aviso. */
-  excluirUserId?: string;
+  matchId: string;
+  event: EventoDePush;
 }
+
+const EVENTOS_PERMITIDOS = new Set<EventoDePush>([
+  'match-created',
+  'match-finished',
+  'lineup-published',
+]);
 
 // `x-client-info` e `apikey` não são enredo: o supabase-js manda os dois em
 // todo `functions.invoke`. Se o preflight não listar exatamente os cabeçalhos
@@ -82,8 +86,8 @@ Deno.serve(async (req) => {
     return resposta({ erro: 'Corpo inválido.' }, 400);
   }
 
-  if (!pedido.teamId || !pedido.title || !pedido.body) {
-    return resposta({ erro: 'teamId, title e body são obrigatórios.' }, 400);
+  if (!pedido.teamId || !pedido.matchId || !EVENTOS_PERMITIDOS.has(pedido.event)) {
+    return resposta({ erro: 'teamId, matchId e event válido são obrigatórios.' }, 400);
   }
 
   const url = Deno.env.get('SUPABASE_URL')!;
@@ -99,10 +103,21 @@ Deno.serve(async (req) => {
   // `maybeSingle()` sozinho vira erro de "mais de uma linha", que cairia no
   // `erroDoVinculo` abaixo como se fosse falha de acesso. Uma linha basta:
   // quem não é do time não enxerga nenhuma.
+  const { data: usuario, error: erroDoUsuario } = await comoUsuario
+    .from('users')
+    .select('id')
+    .maybeSingle();
+
+  if (erroDoUsuario || !usuario) {
+    return resposta({ erro: 'Não foi possível validar sua conta.' }, 403);
+  }
+
   const { data: vinculo, error: erroDoVinculo } = await comoUsuario
     .from('team_members')
-    .select('user_id')
+    .select('user_id, can_manage_team, roles, status')
     .eq('team_id', pedido.teamId)
+    .eq('user_id', usuario.id)
+    .eq('status', 'active')
     .limit(1)
     .maybeSingle();
 
@@ -110,13 +125,75 @@ Deno.serve(async (req) => {
     return resposta({ erro: 'Não foi possível validar seu acesso.' }, 500);
   }
 
-  if (!vinculo) {
-    // A RLS de `team_members` já devolveria vazio para quem não é do time.
-    return resposta({ erro: 'Você não participa deste time.' }, 403);
+  if (!vinculo || (!vinculo.can_manage_team && !vinculo.roles?.includes('admin'))) {
+    return resposta({ erro: 'Apenas gestores do time podem enviar avisos.' }, 403);
   }
 
   // A partir daqui, service role: precisa ler inscrição de outras pessoas.
   const comoServico = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+
+  const { data: partida, error: erroDaPartida } = await comoServico
+    .from('matches')
+    .select('id, team_id, date, time, opponent_name, status, scoreboard')
+    .eq('id', pedido.matchId)
+    .eq('team_id', pedido.teamId)
+    .maybeSingle();
+
+  if (erroDaPartida || !partida) {
+    return resposta({ erro: 'Partida não encontrada neste time.' }, 404);
+  }
+
+  const { data: dentroDaCota, error: erroDaCota } = await comoServico.rpc(
+    'consume_team_push_quota',
+    {
+      p_team_id: pedido.teamId,
+      p_user_id: usuario.id,
+      p_limit: 10,
+      p_window_seconds: 300,
+    },
+  );
+
+  if (erroDaCota) {
+    return resposta({ erro: 'Não foi possível validar o limite de avisos.' }, 500);
+  }
+
+  if (!dentroDaCota) {
+    return resposta({ erro: 'Muitos avisos em pouco tempo. Aguarde alguns minutos.' }, 429);
+  }
+
+  const dataDaPartida = new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+  }).format(new Date(`${partida.date}T12:00:00Z`));
+  const placar = partida.scoreboard as { team?: number; opponent?: number } | null;
+  const conteudo = (() => {
+    switch (pedido.event) {
+      case 'match-created':
+        return {
+          title: 'Jogo marcado',
+          body: `${dataDaPartida} às ${partida.time}, contra ${partida.opponent_name}. Confirme sua presença.`,
+          tag: `partida-${partida.id}`,
+        };
+      case 'match-finished':
+        if (partida.status !== 'finished' || !placar) {
+          return null;
+        }
+        return {
+          title: `Jogo encerrado: ${placar.team ?? 0} x ${placar.opponent ?? 0}`,
+          body: `Contra ${partida.opponent_name}. A votação de MVP está aberta.`,
+          tag: `mvp-${partida.id}`,
+        };
+      case 'lineup-published':
+        return {
+          title: 'Escalação publicada',
+          body: `Time montado para o jogo contra ${partida.opponent_name}. Veja se você está.`,
+          tag: `escalacao-${partida.id}`,
+        };
+    }
+  })();
+
+  if (!conteudo) {
+    return resposta({ erro: 'O estado da partida não permite este aviso.' }, 409);
+  }
 
   const { data: membros } = await comoServico
     .from('team_members')
@@ -126,7 +203,7 @@ Deno.serve(async (req) => {
 
   const destinatarios = (membros ?? [])
     .map((m) => m.user_id as string)
-    .filter((id) => id && id !== pedido.excluirUserId);
+    .filter((id) => id && id !== usuario.id);
 
   if (destinatarios.length === 0) {
     return resposta({ enviados: 0, removidos: 0 });
@@ -144,10 +221,10 @@ Deno.serve(async (req) => {
   webpush.setVapidDetails(contatoVapid, chavePublica, chavePrivada);
 
   const payload = JSON.stringify({
-    title: pedido.title,
-    body: pedido.body,
-    url: pedido.url ?? '/',
-    tag: pedido.tag,
+    title: conteudo.title.slice(0, 100),
+    body: conteudo.body.slice(0, 240),
+    url: `/matches/${encodeURIComponent(partida.id)}`,
+    tag: conteudo.tag,
   });
 
   const mortos: string[] = [];

@@ -20,10 +20,10 @@ import {
 } from 'firebase/firestore';
 
 import {
-  db,
   firebaseConfigError,
   firebaseEnabled,
 } from '@/config/firebase/client';
+import { db } from '@/config/firebase/legacy-firestore-client';
 import { checkPlayerDeletion } from '@/lib/player-deletion';
 import {
   calculateMatchResult,

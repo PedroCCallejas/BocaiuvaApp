@@ -8,8 +8,8 @@
  * `finishMatch` grava partida e estatística numa operação só, e separá-las
  * significaria escrever em dois bancos sem transação possível entre eles.
  *
- * O que continua no Firestore: **notificações**. São efeito colateral e já eram
- * best-effort — encerrar a partida não pode falhar porque o aviso falhou.
+ * Notificações continuam sendo efeito colateral best-effort: encerrar a
+ * partida não pode falhar porque um aviso falhou.
  */
 
 import { supabase } from '@/config/supabase/client';
@@ -49,7 +49,7 @@ function agora() {
   return new Date().toISOString();
 }
 
-/** Id no mesmo formato do Firestore, para os dois bancos conviverem. */
+/** Mantém o formato histórico dos identificadores existentes. */
 export function novoId() {
   const alfabeto = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let id = '';

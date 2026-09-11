@@ -17,7 +17,7 @@ alter table public.notifications enable row level security;
 alter table public.expense_categories enable row level security;
 alter table public.expenses enable row level security;
 
--- Conta
+-- ── Conta ──────────────────────────────────────────────────────────────────
 create policy users_select_self on public.users
   for select to authenticated
   using (id = app.current_uid());
@@ -27,7 +27,8 @@ create policy users_write_self on public.users
   using (id = app.current_uid())
   with check (id = app.current_uid());
 
--- Time. Time publico e vitrine: qualquer um pode ver, inclusive quem nao entrou.
+-- ── Time ───────────────────────────────────────────────────────────────────
+-- Time publico e vitrine: qualquer um pode ver, inclusive quem nao entrou.
 create policy teams_select on public.teams
   for select to authenticated
   using (is_public or app.is_team_member(id));
@@ -45,7 +46,7 @@ create policy teams_delete on public.teams
   for delete to authenticated
   using (admin_user_id = app.current_uid());
 
--- Vinculo
+-- ── Vinculo ────────────────────────────────────────────────────────────────
 create policy team_members_select on public.team_members
   for select to authenticated
   using (user_id = app.current_uid() or app.is_team_member(team_id));
@@ -74,7 +75,7 @@ create policy team_members_delete_admin on public.team_members
   for delete to authenticated
   using (app.can_manage_team(team_id));
 
--- Elenco
+-- ── Elenco ─────────────────────────────────────────────────────────────────
 create policy players_select on public.players
   for select to authenticated
   using (
@@ -98,7 +99,7 @@ create policy players_update_self on public.players
   using (app.is_team_player(team_id, id))
   with check (app.is_team_player(team_id, id));
 
--- Dados do time: leitura para membro, escrita para quem gere
+-- ── Dados do time: leitura para membro, escrita para quem gere ─────────────
 create policy seasons_select on public.seasons
   for select to authenticated using (app.is_team_member(team_id));
 create policy seasons_write on public.seasons
@@ -135,8 +136,9 @@ create policy match_diary_write on public.match_diary_entries
   for all to authenticated
   using (app.can_manage_team(team_id)) with check (app.can_manage_team(team_id));
 
--- Acoes do jogador. Aqui estava a dor. Agora e uma linha: ou voce gere o time,
--- ou voce e aquele jogador.
+-- ── Acoes do jogador ───────────────────────────────────────────────────────
+-- Aqui estava a dor. Agora e uma linha: ou voce gere o time, ou voce e aquele
+-- jogador.
 create policy attendance_select on public.attendance
   for select to authenticated using (app.is_team_member(team_id));
 
@@ -202,7 +204,7 @@ create policy player_ratings_insert_self on public.player_ratings
 create policy player_ratings_delete_manager on public.player_ratings
   for delete to authenticated using (app.can_manage_team(team_id));
 
--- Avisos
+-- ── Avisos ─────────────────────────────────────────────────────────────────
 create policy notifications_select on public.notifications
   for select to authenticated
   using (
@@ -227,7 +229,7 @@ create policy notifications_mark_read on public.notifications
     and (target_user_id is null or target_user_id = app.current_uid())
   );
 
--- Financeiro: so quem administra
+-- ── Financeiro: so quem administra ────────────────────────────────────────
 create policy expense_categories_all on public.expense_categories
   for all to authenticated
   using (app.can_manage_team(team_id)) with check (app.can_manage_team(team_id));
@@ -235,3 +237,4 @@ create policy expense_categories_all on public.expense_categories
 create policy expenses_all on public.expenses
   for all to authenticated
   using (app.can_manage_team(team_id)) with check (app.can_manage_team(team_id));
+;

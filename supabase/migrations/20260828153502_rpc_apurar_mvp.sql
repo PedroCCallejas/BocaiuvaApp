@@ -1,18 +1,3 @@
--- Apuração do MVP: quem vota é jogador, quem grava o placar do MVP é o admin.
---
--- Esse descompasso é o bug. `matches_write` exige `can_manage_team`, então o
--- jogador comum grava o voto e não consegue atualizar `mvp_winner_player_ids` e
--- `mvp_total_votes`. Pior: `UPDATE` que não casa linha nenhuma **não dá erro** —
--- o voto entrava, a contagem ficava parada, e ninguém percebia.
---
--- É o mesmo problema que já tivemos no Firestore, onde a escrita do agregado
--- pós-voto era recusada para quem não era admin. Lá pelo menos dava erro.
---
--- `security definer` com escopo mínimo: a função recalcula a partir dos votos
--- que já estão gravados e toca apenas nas duas colunas de MVP. Não recebe o
--- resultado por parâmetro de propósito — se recebesse, viraria uma porta para
--- qualquer membro declarar a si mesmo campeão.
-
 create or replace function public.apurar_mvp_da_partida(p_match_id text)
 returns void
 language plpgsql
@@ -33,7 +18,6 @@ begin
     raise exception 'Partida nao encontrada.' using errcode = '22023';
   end if;
 
-  -- A RLS não protege mais aqui dentro: a checagem é responsabilidade nossa.
   if not app.is_team_member(v_team_id) then
     raise exception 'Voce nao participa deste time.' using errcode = '42501';
   end if;
@@ -52,7 +36,6 @@ begin
   if coalesce(v_maior, 0) = 0 then
     v_campeoes := array[]::text[];
   else
-    -- Empate mantém todos os empatados: escolher um seria inventar resultado.
     select coalesce(array_agg(target_player_id order by target_player_id), array[]::text[])
       into v_campeoes
     from (
@@ -73,4 +56,4 @@ end;
 $$;
 
 revoke all on function public.apurar_mvp_da_partida(text) from public, anon;
-grant execute on function public.apurar_mvp_da_partida(text) to authenticated;
+grant execute on function public.apurar_mvp_da_partida(text) to authenticated;;

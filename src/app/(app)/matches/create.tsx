@@ -14,7 +14,6 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatDateBR, isValidTime, parseDateBRToISO } from '@/lib/date';
 import { buildPublicLocationLabel } from '@/lib/public-team';
 import { isValidExternalUrl } from '@/lib/url';
-import { showMatchCreateInterstitialIfEligible } from '@/services/ads/admob-service';
 import { useAppStore } from '@/store/app-store';
 import { selectCanManageTeam, selectCurrentTeam } from '@/store/selectors';
 import type { MatchType, PublicTeamSummary } from '@/types/domain';
@@ -157,7 +156,6 @@ export default function CreateMatchScreen() {
         teamId: currentTeam.id,
         seasonId: currentTeam.activeSeasonId ?? null,
       });
-      await showMatchCreateInterstitialIfEligible();
       router.replace(`/matches/${matchId}`);
     } catch (error) {
       Alert.alert(

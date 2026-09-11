@@ -76,10 +76,8 @@ begin
   return v_match;
 end;
 $$;
-
 comment on function public.criar_partida is
   'Cria a partida e a lista de presenca inicial numa transacao.';
-
 -- ── Encerrar partida ──────────────────────────────────────────────────────
 --
 -- Grava placar e status, apaga as estatisticas que nao valem mais e insere as
@@ -144,10 +142,8 @@ begin
   return v_match;
 end;
 $$;
-
 comment on function public.encerrar_partida is
   'Encerra a partida e substitui as estatisticas numa transacao.';
-
 -- ── Custo do campo ────────────────────────────────────────────────────────
 --
 -- Valor e participantes vivem em duas tabelas desde a normalizacao. Gravar
@@ -217,10 +213,8 @@ begin
   return v_custo;
 end;
 $$;
-
 comment on function public.salvar_custo_do_campo is
   'Grava valor do campo e quem paga/e isento numa transacao.';
-
 grant execute on function public.criar_partida(jsonb, jsonb) to authenticated;
 grant execute on function public.encerrar_partida(text, jsonb, jsonb, timestamptz) to authenticated;
 grant execute on function public.salvar_custo_do_campo(text, jsonb, jsonb) to authenticated;

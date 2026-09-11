@@ -146,6 +146,7 @@ import { fieldCostExemptTestCases } from './field-cost-exempt-cases';
 import { searchTestCases } from './search-cases';
 import { statsBreakdownFinanceTestCases } from './stats-breakdown-finance-cases';
 import { supabaseHardeningTestCases } from './supabase-hardening-cases';
+import { webSupabaseTestCases } from './web-supabase-cases';
 import { themeContrastTestCases } from './theme-contrast-cases';
 
 type TestCase = {
@@ -171,6 +172,7 @@ const testCases: TestCase[] = [
   ...mvpVotePermissionTestCases,
   ...realtimeBootstrapTestCases,
   ...supabaseHardeningTestCases,
+  ...webSupabaseTestCases,
   ...migracaoPostgresTestCases,
   ...migracaoConferirTestCases,
   ...lineupShareTestCases,

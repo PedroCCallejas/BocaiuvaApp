@@ -9,14 +9,17 @@
  */
 
 import { createDefaultTeamRatingCriteria } from '@/lib/rating-criteria';
+import { canonicalizeStorageUrl } from '@/lib/storage-reference';
 import { criarCriteriosPadrao } from '@/services/repository/supabase/avaliacoes';
 import { exigirTimeAtivo } from '@/services/repository/supabase/composicao/comum';
 import {
   apagarJogadorDeVez,
+  apagarTimeDeVez,
   atualizarJogador,
   atualizarTime,
   buscarContextoDaSessao,
   buscarJogadores,
+  buscarTemporadas,
   CONTEXTO_VAZIO,
   criarJogador,
   criarTime,
@@ -31,6 +34,10 @@ import {
 import { criarErroDoRepositorio } from '@/services/repository/supabase/erros';
 import { criarFatia } from '@/services/repository/supabase/fatias';
 import type { AppRepository } from '@/services/repository/types';
+import {
+  TEAM_STORAGE_CLEANUP_WARNING_CODE,
+  TEAM_STORAGE_CLEANUP_WARNING_MESSAGE,
+} from '@/lib/team-deletion';
 
 /**
  * Contexto e elenco na mesma fatia.
@@ -40,14 +47,18 @@ import type { AppRepository } from '@/services/repository/types';
  */
 export const fatiaDoElenco = criarFatia({
   nome: 'elenco',
-  vazio: { ...CONTEXTO_VAZIO, players: [] },
+  vazio: { ...CONTEXTO_VAZIO, players: [], seasons: [] },
   async ler() {
     const contexto = await buscarContextoDaSessao();
     const ativo = contexto.user?.activeTeamId ?? null;
 
     return {
       ...contexto,
-      players: ativo ? await buscarJogadores(ativo) : [],
+      ...(ativo
+        ? await Promise.all([buscarJogadores(ativo), buscarTemporadas(ativo)]).then(
+            ([players, seasons]) => ({ players, seasons }),
+          )
+        : { players: [], seasons: [] }),
     };
   },
   aplicar: (snapshot, valor) => ({
@@ -56,6 +67,7 @@ export const fatiaDoElenco = criarFatia({
     teams: valor.teams.length > 0 ? valor.teams : snapshot.teams,
     teamMembers: valor.teamMembers,
     players: valor.players,
+    seasons: valor.seasons,
   }),
 });
 
@@ -96,6 +108,19 @@ function mudancasDoJogador(input: Record<string, unknown>): Record<string, unkno
     mudancas.linked_email = email ? email.toLowerCase() : null;
   }
 
+  for (const coluna of [
+    'photo_url',
+    'presentation_video_url',
+    'intro_video_url',
+    'celebration_video_url',
+  ]) {
+    if (mudancas[coluna] !== undefined) {
+      mudancas[coluna] = canonicalizeStorageUrl(
+        typeof mudancas[coluna] === 'string' ? mudancas[coluna] : null,
+      );
+    }
+  }
+
   return mudancas;
 }
 
@@ -125,20 +150,18 @@ export function comElenco(base: AppRepository): AppRepository {
       return time;
     },
 
-    async deleteTeamPermanently() {
-      // Não migrado de propósito.
-      //
-      // Apagar um time é cascata por doze tabelas mais os arquivos do Storage,
-      // é irreversível, e acontece talvez uma vez por ano. Escrever isso às
-      // pressas para fechar o inventário seria trocar um método que grava no
-      // banco errado por um que apaga o que não devia.
-      //
-      // Enquanto isso, recusar é o comportamento certo: hoje a alternativa é
-      // apagar no Firestore e deixar tudo de pé no Postgres.
-      throw criarErroDoRepositorio(
-        'Excluir o time está temporariamente indisponível. Fale com o suporte.',
-        'failed-precondition',
-      );
+    async deleteTeamPermanently(teamId) {
+      const result = await apagarTimeDeVez(teamId);
+
+      if (result.storageCleanupWarning) {
+        const warning = new Error(TEAM_STORAGE_CLEANUP_WARNING_MESSAGE) as Error & {
+          code: string;
+        };
+        warning.code = TEAM_STORAGE_CLEANUP_WARNING_CODE;
+        throw warning;
+      }
+
+      await fatiaDoElenco.recarregar();
     },
 
     async updateTeam(teamId, input) {
@@ -223,20 +246,33 @@ export function comElenco(base: AppRepository): AppRepository {
     async joinTeamWithInviteCode(inviteCode) {
       const { vinculo, jaEraMembro } = await entrarComCodigo(inviteCode);
 
-      // Entrar num time já o deixa ativo: é o que a pessoa quer ver a seguir.
-      if (!jaEraMembro) {
-        await definirTimeAtivo(vinculo.teamId);
+      // Vale tambem para quem esta reativando um vinculo antigo. Condicionar
+      // esta troca a um membro novo deixava o retorno preso no time anterior.
+      await definirTimeAtivo(vinculo.teamId);
+
+      const contexto = await fatiaDoElenco.recarregar();
+      const team = contexto.teams.find((item) => item.id === vinculo.teamId);
+
+      if (!team) {
+        throw criarErroDoRepositorio(
+          'O vínculo foi atualizado, mas não foi possível abrir o time agora.',
+          'unavailable',
+        );
       }
 
-      await fatiaDoElenco.recarregar();
-
       return {
+        team,
         alreadyMember: jaEraMembro,
         playerLink: {
           status: vinculo.playerId ? ('linked' as const) : ('unresolved' as const),
           playerId: vinculo.playerId ?? null,
+          source: vinculo.playerId ? ('membership-player-id' as const) : null,
+          message: vinculo.playerId
+            ? 'Você entrou no time e seu perfil de jogador está pronto.'
+            : 'Você entrou no time, mas ainda não existe jogador vinculado à sua conta. Peça ao admin para conferir o e-mail da sua ficha.',
+          suggestions: [],
         },
-      } as Awaited<ReturnType<AppRepository['joinTeamWithInviteCode']>>;
+      };
     },
   };
 }

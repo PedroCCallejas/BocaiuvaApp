@@ -144,3 +144,4 @@ create table public.rating_criteria (
 );
 
 create index rating_criteria_team_id_idx on public.rating_criteria (team_id);
+;

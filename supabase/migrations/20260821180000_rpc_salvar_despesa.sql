@@ -81,9 +81,7 @@ begin
   return v_expense;
 end;
 $$;
-
 comment on function public.salvar_despesa is
   'Grava despesa e rateio numa transacao. Respeita a RLS de quem chamou.';
-
 -- `authenticated` pode chamar; a RLS decide se a escrita passa.
 grant execute on function public.salvar_despesa(jsonb, jsonb) to authenticated;

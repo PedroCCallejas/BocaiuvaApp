@@ -78,6 +78,29 @@ begin
   if membership_count <> 1 then
     raise exception 'RPC nao e idempotente: % memberships', membership_count;
   end if;
+
+  update public.team_members
+  set status = 'inactive'
+  where team_id = 'test-team' and user_id = 'test-player';
+
+  update public.users
+  set active_team_id = null
+  where id = 'test-player';
+
+  select *
+    into membership
+  from public.join_team_with_invite_code('ABC123');
+
+  if membership.status <> 'active' or membership.player_id <> 'test-player-record' then
+    raise exception 'RPC nao reativou o vinculo antigo: %', membership;
+  end if;
+
+  if not exists (
+    select 1 from public.users
+    where id = 'test-player' and active_team_id = 'test-team'
+  ) then
+    raise exception 'RPC nao ativou o time da conta que retornou';
+  end if;
 end
 $$;
 

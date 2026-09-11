@@ -72,7 +72,11 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const destino = (event.notification.data && event.notification.data.url) || '/';
+  const recebido = event.notification.data && event.notification.data.url;
+  const destino =
+    typeof recebido === 'string' && recebido.startsWith('/') && !recebido.startsWith('//')
+      ? recebido
+      : '/';
 
   event.waitUntil(
     self.clients

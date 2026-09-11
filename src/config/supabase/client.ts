@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { User as FirebaseUser } from 'firebase/auth';
 
 import { auth } from '@/config/firebase/client';
 
@@ -121,7 +122,7 @@ export const supabaseMissingConfigKeys = [
 
 export const supabaseConfigError =
   supabaseMissingConfigKeys.length > 0
-    ? 'O upload de imagens ainda nao foi configurado. Preencha EXPO_PUBLIC_SUPABASE_URL e EXPO_PUBLIC_SUPABASE_ANON_KEY. Por compatibilidade, EXPO_PUBLIC_SUPABASE_KEY tambem e aceito.'
+    ? 'O Supabase ainda não foi configurado. Preencha EXPO_PUBLIC_SUPABASE_URL e EXPO_PUBLIC_SUPABASE_ANON_KEY. Por compatibilidade, EXPO_PUBLIC_SUPABASE_KEY também é aceito.'
     : normalizedSupabaseUrlResult.error;
 
 export const supabaseEnabled = supabaseConfigError === null;
@@ -131,6 +132,48 @@ export const supabaseEnabled = supabaseConfigError === null;
  * terceiros e usa `sub`/`role` nas policies do Postgres e do Storage.
  */
 let tokenRefreshedForUserId: string | null = null;
+let claimPreparationUserId: string | null = null;
+let claimPreparationPromise: Promise<void> | null = null;
+
+async function prepareFirebaseClaim(user: FirebaseUser, idToken: string) {
+  if (!normalizedSupabaseUrlResult.normalizedUrl || !supabaseAnonKey) {
+    throw new Error('A conexão com o banco não está configurada.');
+  }
+
+  if (claimPreparationPromise && claimPreparationUserId === user.uid) {
+    await claimPreparationPromise;
+    return;
+  }
+
+  claimPreparationUserId = user.uid;
+  claimPreparationPromise = (async () => {
+    const response = await fetch(
+      `${normalizedSupabaseUrlResult.normalizedUrl}/functions/v1/preparar-conta`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          apikey: supabaseAnonKey,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+    const body = (await response.json().catch(() => ({}))) as { erro?: string };
+
+    if (!response.ok) {
+      throw new Error(
+        body.erro ?? 'Não foi possível preparar sua conta para acessar os times.',
+      );
+    }
+  })();
+
+  try {
+    await claimPreparationPromise;
+  } finally {
+    claimPreparationPromise = null;
+    claimPreparationUserId = null;
+  }
+}
 
 export async function getFirebaseAccessToken() {
   if (!auth) {
@@ -159,14 +202,44 @@ export async function getFirebaseAccessToken() {
   // A primeira chamada da sessao precisa buscar claims novos. Isso evita que
   // um usuario ja logado continue como `anon` depois do backfill do claim.
   const forceRefresh = tokenRefreshedForUserId !== currentUser.uid;
-  const token = await currentUser.getIdToken(forceRefresh);
+  let tokenResult = await currentUser.getIdTokenResult(forceRefresh);
+
+  if (tokenResult.claims.role !== 'authenticated') {
+    await prepareFirebaseClaim(currentUser, tokenResult.token);
+    tokenResult = await currentUser.getIdTokenResult(true);
+
+    if (tokenResult.claims.role !== 'authenticated') {
+      throw new Error('Sua conta foi reconhecida, mas ainda não recebeu acesso aos times.');
+    }
+  }
+
   tokenRefreshedForUserId = currentUser.uid;
-  return token;
+  return tokenResult.token;
 }
 
-export const supabase: SupabaseClient | null = supabaseEnabled
+const canCreateBrowserClient = typeof window !== 'undefined';
+
+/**
+ * Cliente autenticado pelo JWT do Firebase Auth.
+ *
+ * Ele só nasce no navegador. Criá-lo durante o export estático fazia o módulo
+ * Realtime pedir um token antes de existir sessão e poluía o build com um erro
+ * que não representava falha de produção.
+ */
+export const supabase: SupabaseClient | null = supabaseEnabled && canCreateBrowserClient
   ? createClient(normalizedSupabaseUrlResult.normalizedUrl, supabaseAnonKey, {
       accessToken: getFirebaseAccessToken,
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+    })
+  : null;
+
+/** Cliente anônimo para a galeria pública e mídia publicada pelo time. */
+export const supabasePublic: SupabaseClient | null = supabaseEnabled && canCreateBrowserClient
+  ? createClient(normalizedSupabaseUrlResult.normalizedUrl, supabaseAnonKey, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,

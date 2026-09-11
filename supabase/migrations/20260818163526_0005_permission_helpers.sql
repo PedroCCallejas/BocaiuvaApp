@@ -122,3 +122,4 @@ $$;
 
 comment on function app.current_player_id is
   'Jogador correspondente a conta autenticada no time. Aceita vinculo gravado ou cadastro reservado por uid/e-mail.';
+;

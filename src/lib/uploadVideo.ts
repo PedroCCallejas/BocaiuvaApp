@@ -5,6 +5,10 @@ import {
   supabaseConfigError,
   supabaseEnabled,
 } from '@/config/supabase/client';
+import {
+  createStorageReference,
+  isPrivateMediaBucket,
+} from '@/lib/storage-reference';
 
 export interface SelectedVideoAsset {
   uri: string;
@@ -100,8 +104,11 @@ async function uploadToSupabaseStorage(input: {
     throw error;
   }
 
-  const { data } = supabase.storage.from(input.bucket).getPublicUrl(input.objectPath);
-  return data.publicUrl;
+  if (isPrivateMediaBucket(input.bucket)) {
+    return createStorageReference(input.bucket, input.objectPath);
+  }
+
+  return supabase.storage.from(input.bucket).getPublicUrl(input.objectPath).data.publicUrl;
 }
 
 export async function pickVideo() {

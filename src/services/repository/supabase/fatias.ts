@@ -1,21 +1,9 @@
 /**
- * Pedaços do snapshot que vêm do Postgres.
+ * Fatias do snapshot único da aplicação, todas lidas do Postgres.
  *
- * O app monta a tela a partir de um `AppSnapshot` único. Enquanto a migração
- * acontece, parte dele vem do Firestore (em tempo real) e parte do Postgres.
- * Este arquivo costura os dois.
- *
- * Extraído quando o segundo módulo chegou. No primeiro seria adivinhação: só
- * com dois dá para ver o que é padrão e o que era particularidade do
- * financeiro.
- *
- * Duas regras que valem para qualquer módulo:
- *
- * 1. **Escrita avisa a tela.** O tempo real é do Firestore e ele não sabe que
- *    o Postgres mudou. Quem gravou precisa reemitir — sem isso a tela mostra o
- *    valor antigo e a pessoa acha que o botão não funcionou.
- * 2. **Falha não derruba o app.** Um módulo fora do ar devolve vazio e o resto
- *    da tela continua vindo do Firestore.
+ * A primeira carga propaga falhas para não confundir indisponibilidade com
+ * “nenhum dado”. Depois que existe cache, uma releitura malsucedida preserva o
+ * último estado válido e agenda uma nova tentativa.
  */
 
 import type { AppSnapshot } from '@/services/repository/types';
@@ -25,19 +13,19 @@ export interface Fatia<T> {
   obter: () => Promise<T>;
   /** Relê do banco e avisa a tela. Chamada depois de toda escrita. */
   recarregar: () => Promise<T>;
-  /** Aplica o que estiver em cache sobre o snapshot do Firestore. */
+  /** Aplica o que estiver em cache sobre o snapshot base. */
   aplicar: (snapshot: AppSnapshot) => AppSnapshot;
   /** Se ainda não buscou nada. */
   estaVazia: () => boolean;
 }
 
-/** Último snapshot do Firestore e para onde reemitir. */
+/** Último snapshot base e para onde reemitir. */
 let ultimoSnapshotBase: AppSnapshot | null = null;
 let emitirParaOApp: ((snapshot: AppSnapshot) => void) | null = null;
 
 const fatiasRegistradas: Fatia<unknown>[] = [];
 
-/** Chamado pelo wrapper de `subscribeSnapshot` a cada emissão do Firestore. */
+/** Registra o último snapshot emitido para atualizações após uma escrita. */
 export function registrarEmissao(
   snapshot: AppSnapshot,
   emitir: (snapshot: AppSnapshot) => void,
@@ -46,7 +34,7 @@ export function registrarEmissao(
   emitirParaOApp = emitir;
 }
 
-/** Compõe todas as fatias sobre um snapshot do Firestore. */
+/** Compõe todas as fatias sobre o snapshot base. */
 export function aplicarTodasAsFatias(base: AppSnapshot): AppSnapshot {
   return fatiasRegistradas.reduce((atual, fatia) => fatia.aplicar(atual), base);
 }
@@ -63,6 +51,11 @@ export function fatiasPendentes() {
   return fatiasRegistradas.filter((fatia) => fatia.estaVazia());
 }
 
+/** Relê todas as partes do snapshot quando a pessoa pede atualização manual. */
+export async function recarregarTodasAsFatias() {
+  await Promise.all(fatiasRegistradas.map((fatia) => fatia.recarregar()));
+}
+
 export function criarFatia<T>(input: {
   /** Aparece no log quando a leitura falha. */
   nome: string;
@@ -74,6 +67,7 @@ export function criarFatia<T>(input: {
   let cache: T | null = null;
   let leituraEmVoo: Promise<T | null> | null = null;
   let ultimaFalha = 0;
+  let ultimoErro: unknown = null;
   let tentativasSeguidas = 0;
   let retentativaAgendada = false;
 
@@ -97,14 +91,16 @@ export function criarFatia<T>(input: {
    * mostraria listas vazias como se fossem a verdade. Com `null`, o que veio do
    * Firestore continua valendo e a próxima emissão tenta de novo.
    */
-  async function lerComSeguranca(): Promise<T | null> {
+  async function lerComSeguranca(propagarSemCache = false): Promise<T | null> {
     try {
       const valor = await input.ler();
       ultimaFalha = 0;
+      ultimoErro = null;
       tentativasSeguidas = 0;
       return valor;
     } catch (erro) {
       ultimaFalha = Date.now();
+      ultimoErro = erro;
       tentativasSeguidas += 1;
 
       // Módulo fora do ar é uma aba sem dado, não uma tela que não abre.
@@ -113,6 +109,11 @@ export function criarFatia<T>(input: {
       }
 
       agendarRetentativa();
+
+      if (propagarSemCache && cache === null) {
+        throw erro;
+      }
+
       return null;
     }
   }
@@ -146,20 +147,29 @@ export function criarFatia<T>(input: {
       }
 
       if (Date.now() - ultimaFalha < PAUSA_APOS_FALHA) {
-        return input.vazio;
+        if (cache === null) {
+          throw ultimoErro instanceof Error
+            ? ultimoErro
+            : new Error(`Não foi possível carregar ${input.nome}.`);
+        }
+
+        return cache;
       }
 
       // Emissões em sequência não podem virar várias requisições iguais.
-      leituraEmVoo ??= lerComSeguranca().then((valor) => {
-        if (valor !== null) {
-          cache = valor;
-        }
+      leituraEmVoo ??= lerComSeguranca(true)
+        .then((valor) => {
+          if (valor !== null) {
+            cache = valor;
+          }
 
-        leituraEmVoo = null;
-        return valor;
-      });
+          return valor;
+        })
+        .finally(() => {
+          leituraEmVoo = null;
+        });
 
-      return (await leituraEmVoo) ?? input.vazio;
+      return (await leituraEmVoo) ?? cache ?? input.vazio;
     },
 
     async recarregar() {
@@ -178,16 +188,8 @@ export function criarFatia<T>(input: {
     },
 
     aplicar(snapshot) {
-      // Fatia que ainda não carregou NÃO sobrescreve nada.
-      //
-      // Usar o valor vazio aqui apagava dado real na primeira pintura: o
-      // snapshot do Firestore chegava completo, a fatia zerava `teamMembers`, e
-      // o app concluía que a pessoa não participa de nenhum time — mandando o
-      // admin do Bocaiúva para a tela de "entrar com código".
-      //
-      // Enquanto não carrega, o que veio do Firestore continua valendo. Ele
-      // ainda tem tudo, e é melhor mostrar dado de um segundo atrás do que
-      // mostrar vazio e navegar para o lugar errado.
+      // A carga inicial aguarda todas as fatias; este fallback evita apagar um
+      // snapshot já válido durante uma retentativa posterior.
       return cache === null ? snapshot : input.aplicar(snapshot, cache);
     },
 

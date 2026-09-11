@@ -29,3 +29,4 @@ as $$
 $$;
 
 comment on function app.current_uid is 'uid do Firebase que assinou o JWT desta requisicao.';
+;

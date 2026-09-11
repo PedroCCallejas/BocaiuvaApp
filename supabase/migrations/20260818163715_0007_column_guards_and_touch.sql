@@ -82,7 +82,7 @@ create trigger notifications_guard_read
   before update on public.notifications
   for each row execute function app.guard_notification_read();
 
--- updated_at automatico.
+-- ── updated_at automatico ─────────────────────────────────────────────────
 -- O app manda `updatedAt`, mas confiar no relogio do celular ja rendeu ordem
 -- errada de historico.
 
@@ -115,3 +115,4 @@ begin
   end loop;
 end;
 $$;
+;

@@ -6,7 +6,6 @@
 alter table public.expense_shares enable row level security;
 alter table public.match_field_costs enable row level security;
 alter table public.match_field_participants enable row level security;
-
 -- Cota de despesa acompanha a despesa: financeiro e so de quem administra.
 create policy expense_shares_all on public.expense_shares
   for all to authenticated
@@ -22,7 +21,6 @@ create policy expense_shares_all on public.expense_shares
       where e.id = expense_shares.expense_id and app.can_manage_team(e.team_id)
     )
   );
-
 -- Custo do campo era campo da partida, que todo membro le. Manter assim: o time
 -- precisa ver quanto ficou e quem pagou.
 create policy match_field_costs_select on public.match_field_costs
@@ -33,7 +31,6 @@ create policy match_field_costs_select on public.match_field_costs
       where m.id = match_field_costs.match_id and app.is_team_member(m.team_id)
     )
   );
-
 create policy match_field_costs_write on public.match_field_costs
   for all to authenticated
   using (
@@ -48,7 +45,6 @@ create policy match_field_costs_write on public.match_field_costs
       where m.id = match_field_costs.match_id and app.can_manage_team(m.team_id)
     )
   );
-
 create policy match_field_participants_select on public.match_field_participants
   for select to authenticated
   using (
@@ -57,7 +53,6 @@ create policy match_field_participants_select on public.match_field_participants
       where m.id = match_field_participants.match_id and app.is_team_member(m.team_id)
     )
   );
-
 create policy match_field_participants_write on public.match_field_participants
   for all to authenticated
   using (
@@ -72,7 +67,6 @@ create policy match_field_participants_write on public.match_field_participants
       where m.id = match_field_participants.match_id and app.can_manage_team(m.team_id)
     )
   );
-
 -- updated_at automatico, igual as demais.
 do $$
 declare

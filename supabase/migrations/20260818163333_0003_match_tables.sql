@@ -179,3 +179,4 @@ create table public.notifications (
 
 create index notifications_team_target_idx on public.notifications (team_id, target_user_id);
 create index notifications_created_at_idx on public.notifications (team_id, created_at desc);
+;

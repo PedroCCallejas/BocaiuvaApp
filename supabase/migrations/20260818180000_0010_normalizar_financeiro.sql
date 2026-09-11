@@ -20,19 +20,15 @@ create table public.expense_shares (
   -- Impede cota duplicada da mesma pessoa na mesma despesa.
   primary key (expense_id, player_id)
 );
-
 create index expense_shares_player_id_idx on public.expense_shares (player_id);
 -- A pergunta do painel de pendencias: quem ainda deve.
 create index expense_shares_em_aberto_idx on public.expense_shares (player_id)
   where settled_at is null;
-
 alter table public.expenses drop column participant_player_ids;
 alter table public.expenses drop column settled_player_ids;
 alter table public.expenses drop column manual_shares_cents;
-
 comment on table public.expense_shares is
   'Cota de cada participante numa despesa. Substitui as listas paralelas do Firestore.';
-
 -- Custo do campo sai de dentro do documento da partida.
 --
 -- Era jsonb com `payerPlayerIds` e `exemptPlayerIds` dentro. Nada impedia a
@@ -54,7 +50,6 @@ create table public.match_field_costs (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table public.match_field_participants (
   match_id text not null references public.matches (id) on delete cascade,
   player_id text not null references public.players (id) on delete cascade,
@@ -67,12 +62,9 @@ create table public.match_field_participants (
   -- pagante e isento ao mesmo tempo deixa de ser possivel por construcao.
   primary key (match_id, player_id)
 );
-
 create index match_field_participants_player_idx
   on public.match_field_participants (player_id);
-
 alter table public.matches drop column field_cost;
 alter table public.matches drop column field_payment;
-
 comment on table public.match_field_participants is
   'Quem pagou e quem esta isento do rateio do campo. A chave impede os dois papeis para a mesma pessoa.';

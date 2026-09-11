@@ -38,27 +38,38 @@ async function listStoragePathsRecursively(
     return [];
   }
 
-  const { data, error } = await supabase.storage.from(bucket).list(prefix, {
-    limit: STORAGE_LIST_PAGE_SIZE,
-    offset: 0,
-    sortBy: { column: 'name', order: 'asc' },
-  });
-
-  if (error) {
-    throw error;
-  }
-
   const paths: string[] = [];
+  let offset = 0;
 
-  for (const item of (data ?? []) as StorageListItem[]) {
-    const childPath = prefix ? `${prefix}/${item.name}` : item.name;
+  while (true) {
+    const { data, error } = await supabase.storage.from(bucket).list(prefix, {
+      limit: STORAGE_LIST_PAGE_SIZE,
+      offset,
+      sortBy: { column: 'name', order: 'asc' },
+    });
 
-    if (isStorageFolder(item)) {
-      paths.push(...(await listStoragePathsRecursively(bucket, childPath)));
-      continue;
+    if (error) {
+      throw error;
     }
 
-    paths.push(childPath);
+    const page = (data ?? []) as StorageListItem[];
+
+    for (const item of page) {
+      const childPath = prefix ? `${prefix}/${item.name}` : item.name;
+
+      if (isStorageFolder(item)) {
+        paths.push(...(await listStoragePathsRecursively(bucket, childPath)));
+        continue;
+      }
+
+      paths.push(childPath);
+    }
+
+    if (page.length < STORAGE_LIST_PAGE_SIZE) {
+      break;
+    }
+
+    offset += page.length;
   }
 
   return paths;

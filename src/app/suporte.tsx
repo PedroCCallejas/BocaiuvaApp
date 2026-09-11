@@ -27,6 +27,16 @@ const FAQS = [
     description:
       'Se você recebeu convite recentemente ou trocou de conta, faça login com o e-mail correto e atualize o acesso. Se necessário, fale com o administrador do time.',
   },
+  {
+    title: 'Como excluo minha conta e meus dados?',
+    description:
+      'Entre na área Conta e acesso e escolha “Excluir minha conta”. Se você for proprietário de um time, exclua ou transfira esse time primeiro. Se o processo não concluir, procure o suporte.',
+  },
+  {
+    title: 'Como baixo uma cópia dos meus dados?',
+    description:
+      'Na área Conta e acesso, escolha “Baixar meus dados”. O navegador salvará um arquivo JSON com o cadastro, vínculos e registros associados à sua conta.',
+  },
 ];
 
 export default function SupportScreen() {

@@ -18,10 +18,14 @@ import { supabase } from '@/config/supabase/client';
 import { paraJogador, paraVinculo } from '@/lib/migracao/mapear-dominio';
 import { authService } from '@/services/auth';
 import {
+  resolveSignedStorageUrl,
+  signStorageReferences,
+} from '@/lib/storage-reference';
+import {
   criarErroDoRepositorio,
   traduzirErroDoPostgres,
 } from '@/services/repository/supabase/erros';
-import type { Player, Team, TeamMember, User } from '@/types/domain';
+import type { Player, Season, Team, TeamMember, User } from '@/types/domain';
 
 function cliente() {
   if (!supabase) {
@@ -267,7 +271,8 @@ export async function definirTimeAtivo(teamId: string): Promise<User> {
 // ── Elenco ─────────────────────────────────────────────────────────────────
 
 export async function buscarJogadores(teamId: string): Promise<Player[]> {
-  const { data, error } = await cliente()
+  const supabaseClient = cliente();
+  const { data, error } = await supabaseClient
     .from('players')
     .select('*')
     .eq('team_id', teamId)
@@ -277,7 +282,58 @@ export async function buscarJogadores(teamId: string): Promise<Player[]> {
     throw traduzirErroDoPostgres(error, 'Não foi possível carregar o elenco agora.');
   }
 
-  return (data ?? []).map(paraJogador);
+  const linhas = (data ?? []) as Record<string, unknown>[];
+  const assinadas = await signStorageReferences(
+    supabaseClient,
+    linhas.flatMap((linha) => [
+      textoOuNulo(linha.photo_url),
+      textoOuNulo(linha.presentation_video_url),
+      textoOuNulo(linha.intro_video_url),
+      textoOuNulo(linha.celebration_video_url),
+    ]),
+  );
+
+  return linhas.map((linha) =>
+    paraJogador({
+      ...linha,
+      photo_url: resolveSignedStorageUrl(textoOuNulo(linha.photo_url), assinadas),
+      presentation_video_url: resolveSignedStorageUrl(
+        textoOuNulo(linha.presentation_video_url),
+        assinadas,
+      ),
+      intro_video_url: resolveSignedStorageUrl(textoOuNulo(linha.intro_video_url), assinadas),
+      celebration_video_url: resolveSignedStorageUrl(
+        textoOuNulo(linha.celebration_video_url),
+        assinadas,
+      ),
+    }),
+  );
+}
+
+export async function buscarTemporadas(teamId: string): Promise<Season[]> {
+  const { data, error } = await cliente()
+    .from('seasons')
+    .select('*')
+    .eq('team_id', teamId)
+    .order('start_date', { ascending: false });
+
+  if (error) {
+    throw traduzirErroDoPostgres(error, 'Não foi possível carregar as temporadas agora.');
+  }
+
+  const instante = agora();
+
+  return (data ?? []).map((linha) => ({
+    id: String(linha.id ?? ''),
+    teamId: String(linha.team_id ?? ''),
+    name: String(linha.name ?? 'Temporada'),
+    year: Number(linha.year ?? 0),
+    startDate: String(linha.start_date ?? ''),
+    endDate: String(linha.end_date ?? ''),
+    status: (linha.status as Season['status']) ?? 'planned',
+    createdAt: String(linha.created_at ?? instante),
+    updatedAt: String(linha.updated_at ?? instante),
+  }));
 }
 
 export async function criarJogador(
@@ -339,7 +395,7 @@ export async function inativarJogador(playerId: string): Promise<Player> {
 }
 
 export async function reativarJogador(playerId: string): Promise<Player> {
-  return await atualizarJogador(playerId, { status: 'active' });
+  return await atualizarJogador(playerId, { status: 'active', deleted_at: null });
 }
 
 /** Desfaz o vínculo com a conta, sem apagar a ficha. */
@@ -363,6 +419,23 @@ export async function apagarJogadorDeVez(playerId: string): Promise<void> {
       'Não foi possível apagar o cadastro. Jogador com histórico só pode ser inativado.',
     );
   }
+}
+
+export async function apagarTimeDeVez(teamId: string): Promise<{
+  storageCleanupWarning: boolean;
+}> {
+  const { data, error } = await cliente().functions.invoke('excluir-time', {
+    body: { teamId },
+  });
+
+  if (error) {
+    throw criarErroDoRepositorio(
+      typeof data?.erro === 'string' ? data.erro : 'Não foi possível excluir o time agora.',
+      'failed-precondition',
+    );
+  }
+
+  return { storageCleanupWarning: data?.storageCleanupWarning === true };
 }
 
 // ── Vínculo ────────────────────────────────────────────────────────────────

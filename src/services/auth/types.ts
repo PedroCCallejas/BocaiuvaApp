@@ -21,5 +21,6 @@ export interface AuthService {
   loginWithGoogle(input: GoogleLoginInput): Promise<AuthSessionUser>;
   register(input: RegisterInput): Promise<AuthSessionUser>;
   resetPassword(email: string): Promise<void>;
+  deleteAccount(): Promise<void>;
   logout(): Promise<void>;
 }

@@ -115,14 +115,8 @@ export async function desativarPush(): Promise<void> {
 
 export interface AvisoParaOTime {
   teamId: string;
-  title: string;
-  body: string;
-  /** Para onde levar ao tocar. Caminho interno, ex: `/matches/abc`. */
-  url?: string;
-  /** Agrupa avisos do mesmo assunto numa notificação só. */
-  tag?: string;
-  /** Quem disparou não recebe o próprio aviso. */
-  excluirUserId?: string;
+  matchId: string;
+  event: 'match-created' | 'match-finished' | 'lineup-published';
 }
 
 /**

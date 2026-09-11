@@ -1,22 +1,22 @@
 import {
   createUserWithEmailAndPassword,
+  deleteUser,
   GoogleAuthProvider,
   onAuthStateChanged,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
-  signInWithCredential,
   signInWithPopup,
   signOut,
   updateProfile,
   type User as FirebaseUser,
 } from 'firebase/auth';
-import { Platform } from 'react-native';
 
 import {
   auth,
   firebaseConfigError,
   firebaseEnabled,
 } from '@/config/firebase/client';
+import { supabase, supabaseConfigSummary } from '@/config/supabase/client';
 import { normalizeEmail } from '@/lib/player-linking';
 import type {
   GoogleLoginInput,
@@ -111,29 +111,13 @@ class FirebaseAuthService implements AuthService {
     }
   }
 
-  async loginWithGoogle(input: GoogleLoginInput) {
+  async loginWithGoogle(_input: GoogleLoginInput) {
     const authInstance = requireFirebaseAuth();
 
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      if (Platform.OS !== 'web' && !input.idToken) {
-        throw createAuthError(
-          'Não foi possível concluir a entrada com Google. Tente novamente.',
-          'auth/invalid-credential',
-        );
-      }
-
-      const session =
-        Platform.OS === 'web'
-          ? await signInWithPopup(authInstance, provider)
-          : await signInWithCredential(
-              authInstance,
-              GoogleAuthProvider.credential(
-                input.idToken ?? undefined,
-                input.accessToken ?? undefined,
-              ),
-            );
+      const session = await signInWithPopup(authInstance, provider);
       this.currentUser = toSessionUser(session.user);
 
       if (!this.currentUser) {
@@ -186,6 +170,73 @@ class FirebaseAuthService implements AuthService {
       throw toFriendlyAuthError(
         error,
         'Não foi possível enviar o link de recuperação.',
+      );
+    }
+  }
+
+  async deleteAccount() {
+    const authInstance = requireFirebaseAuth();
+    const user = authInstance.currentUser;
+
+    if (!user || !supabase) {
+      throw createAuthError('Sua sessão expirou. Entre novamente para excluir a conta.');
+    }
+
+    const { data: preflight, error: preflightError } = await supabase.functions.invoke(
+      'excluir-conta',
+      { body: { mode: 'preflight' } },
+    );
+
+    if (preflightError) {
+      const message =
+        typeof preflight?.erro === 'string'
+          ? preflight.erro
+          : 'Não foi possível preparar a exclusão da conta.';
+      throw createAuthError(message);
+    }
+
+    const token = await user.getIdToken(true);
+
+    try {
+      await deleteUser(user);
+    } catch (error) {
+      throw toFriendlyAuthError(
+        error,
+        'Por segurança, saia e entre novamente antes de excluir a conta.',
+      );
+    }
+
+    this.currentUser = null;
+    const supabaseUrl = supabaseConfigSummary.normalizedUrl;
+    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY?.trim()
+      || process.env.EXPO_PUBLIC_SUPABASE_KEY?.trim()
+      || '';
+
+    if (!supabaseUrl || !anonKey) {
+      throw createAuthError(
+        'A conta de acesso foi excluída, mas a limpeza dos dados precisa ser concluída pelo suporte.',
+      );
+    }
+
+    const finalize = async () =>
+      await fetch(`${supabaseUrl}/functions/v1/excluir-conta`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: anonKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ mode: 'finalize' }),
+      });
+    let response = await finalize();
+
+    if (!response.ok) {
+      response = await finalize();
+    }
+
+    if (!response.ok) {
+      throw createAuthError(
+        'A conta de acesso foi excluída. Contate o suporte para confirmar a limpeza dos dados.',
       );
     }
   }

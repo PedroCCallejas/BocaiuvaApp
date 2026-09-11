@@ -1,7 +1,8 @@
 # Supabase Storage — política segura
 
-Os buckets continuam públicos para leitura por URL, mas upload, substituição e
-remoção exigem usuário autenticado pelo JWT Firebase.
+Os buckets institucionais do time continuam públicos. Fotos e vídeos pessoais
+de jogadores são privados e usam URLs assinadas com validade curta. Upload,
+substituição e remoção exigem usuário autenticado pelo JWT Firebase.
 
 ## Buckets e caminhos aceitos
 
@@ -17,11 +18,14 @@ remoção exigem usuário autenticado pelo JWT Firebase.
 
 - Logo, banner e vídeo do time: somente quem administra o time.
 - Foto e vídeo de jogador: quem administra o elenco ou o próprio jogador.
-- Leitura pública: feita pela URL pública do objeto.
+- Mídia institucional do time: leitura pela URL pública do objeto.
+- Mídia pessoal: membros autenticados podem ler; visitantes só recebem URL
+  temporária quando time e elenco estão publicados.
 - `anon INSERT`, `anon UPDATE` e `anon DELETE`: proibidos.
 
-As policies e o helper de validação estão na migration
-`20260821071359_seguranca_pre_migracao.sql`.
+As policies e os helpers de validação estão nas migrations
+`20260821071359_seguranca_pre_migracao.sql` e
+`20260903051620_web_supabase_sem_firestore.sql`.
 
 O helper valida bucket, quantidade de segmentos, nome/extensão do arquivo,
 `teamId`, `playerId` e membership. Como o upload usa `upsert`, existem policies

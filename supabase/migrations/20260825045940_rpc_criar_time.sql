@@ -1,19 +1,3 @@
--- Criar time: a operação que não cabe nas policies.
---
--- É um ovo e galinha. `team_members_insert_admin` exige
--- `app.can_manage_team(team_id)`, mas quem acabou de criar o time ainda não tem
--- vínculo nenhum — então não consegue criar o próprio vínculo de admin. Sem uma
--- função, o time nasceria sem dono.
---
--- Por isso `security definer`, e por isso o escopo é o menor possível: só o
--- bloco que precisa furar a policy. Os critérios de avaliação padrão continuam
--- sendo criados pelo app, depois, com o vínculo já de pé — os rótulos vivem em
--- `src/lib/rating-criteria.ts` e repeti-los aqui criaria um segundo lugar para
--- divergir.
---
--- `search_path` fixo porque `security definer` sem isso é um convite a
--- sequestro de resolução de nome.
-
 create or replace function public.create_team_with_admin(
   p_name text,
   p_coach_name text,
@@ -55,18 +39,10 @@ begin
     raise exception 'Crie o perfil da conta antes de criar um time.' using errcode = '23503';
   end if;
 
-  -- Mesmo limite do app (MAX_OWNED_TEAMS_PER_ACCOUNT). Fica aqui tambem porque
-  -- checagem que so existe no cliente nao e limite, e sim sugestao.
   if (select count(*) from public.teams t where t.admin_user_id = v_uid) >= 2 then
     raise exception 'Voce ja atingiu o limite de 2 times por conta.' using errcode = '23514';
   end if;
 
-  -- Slug e unico no Postgres e nao era no Firestore. Dois times com o mesmo
-  -- nome sao normais no futebol de varzea, entao desempata com sufixo em vez
-  -- de recusar o cadastro.
-  -- `translate` em vez da extensao `unaccent`: cobre o acento que aparece em
-  -- nome de time brasileiro e nao adiciona dependencia de extensao so para
-  -- isso. Espelha o `slugifyTeamName` do app.
   v_slug_base := regexp_replace(
     regexp_replace(
       translate(
@@ -90,8 +66,6 @@ begin
     v_slug := v_slug_base || '-' || v_tentativa::text;
   end loop;
 
-  -- Codigo de convite: alfabeto sem 0/O/1/I, os que a pessoa erra ao digitar
-  -- do print no grupo do WhatsApp.
   v_tentativa := 0;
 
   loop
@@ -135,8 +109,6 @@ begin
   from public.users u
   where u.id = v_uid;
 
-  -- Quem cria o time tambem joga. Sem esta ficha, o admin apareceria fora do
-  -- proprio elenco e nao poderia ser escalado.
   insert into public.players (
     id, team_id, linked_user_id, linked_email, full_name, nickname,
     jersey_number, primary_position, dominant_foot, status,
@@ -160,7 +132,6 @@ begin
     now(), now()
   );
 
-  -- Entra ja no time recem-criado: e o que a pessoa quer ver a seguir.
   update public.users
      set active_team_id = v_team_id,
          updated_at = now()
@@ -176,4 +147,4 @@ revoke all on function public.create_team_with_admin(
 
 grant execute on function public.create_team_with_admin(
   text, text, text, text, text, text, text, text, text
-) to authenticated;
+) to authenticated;;

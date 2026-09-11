@@ -5,12 +5,14 @@ import { Alert, Platform, StyleSheet, Text, View } from 'react-native';
 import { CartaoDeAvisos } from '@/components/notifications/CartaoDeAvisos';
 import { AppButton } from '@/components/ui/AppButton';
 import { Avatar } from '@/components/ui/Avatar';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { Pill } from '@/components/ui/Pill';
 import { Screen } from '@/components/ui/Screen';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { APP_NAME } from '@/constants/branding';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { downloadMyData } from '@/services/account/export-data';
 import { useAppStore } from '@/store/app-store';
 import {
   selectCurrentPlayer,
@@ -27,8 +29,12 @@ export default function ProfileScreen() {
   const team = useAppStore(selectCurrentTeam);
   const currentRoleLabel = useAppStore(selectCurrentRoleLabel);
   const logout = useAppStore((state) => state.logout);
+  const deleteAccount = useAppStore((state) => state.deleteAccount);
   const currentUserId = useAppStore((state) => state.currentUserId);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   if (!user) {
     return null;
@@ -47,6 +53,38 @@ export default function ProfileScreen() {
       );
     } finally {
       setLoggingOut(false);
+    }
+  }
+
+  async function handleDeleteAccount() {
+    setDeletingAccount(true);
+
+    try {
+      await deleteAccount();
+      setDeleteModalVisible(false);
+      router.replace('/login');
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível excluir a conta',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    } finally {
+      setDeletingAccount(false);
+    }
+  }
+
+  async function handleExportData() {
+    setExportingData(true);
+
+    try {
+      await downloadMyData();
+    } catch (error) {
+      Alert.alert(
+        'Não foi possível baixar seus dados',
+        error instanceof Error ? error.message : 'Tente novamente.',
+      );
+    } finally {
+      setExportingData(false);
     }
   }
 
@@ -129,7 +167,33 @@ export default function ProfileScreen() {
           onPress={() => void handleLogout()}
           loading={loggingOut}
         />
+        <AppButton
+          label="Baixar meus dados"
+          variant="secondary"
+          onPress={() => void handleExportData()}
+          loading={exportingData}
+        />
+        <Text style={[styles.note, { color: theme.colors.textMuted }]}>
+          Ao excluir sua conta, seus vínculos e dados pessoais serão removidos. O histórico de
+          partidas será preservado sem identificar você. Proprietários precisam excluir ou
+          transferir seus times antes.
+        </Text>
+        <AppButton
+          label="Excluir minha conta"
+          variant="danger"
+          onPress={() => setDeleteModalVisible(true)}
+        />
       </View>
+      <ConfirmModal
+        visible={deleteModalVisible}
+        title="Excluir sua conta definitivamente?"
+        description="Essa ação remove seu acesso, vínculos, inscrições de aviso e dados pessoais. Ela não pode ser desfeita."
+        confirmLabel="Excluir definitivamente"
+        destructive
+        loading={deletingAccount}
+        onCancel={() => setDeleteModalVisible(false)}
+        onConfirm={() => void handleDeleteAccount()}
+      />
     </Screen>
   );
 }

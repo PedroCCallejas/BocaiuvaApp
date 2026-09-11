@@ -171,6 +171,15 @@ export const supabaseElencoTestCases: TestCase[] = [
     },
   },
   {
+    name: 'reativar jogador limpa a marca de exclusao antiga',
+    run() {
+      const modulo = apenasCodigo(fs.readFileSync(MODULO, 'utf8'));
+      const reativar = modulo.slice(modulo.indexOf('export async function reativarJogador'));
+
+      assert.match(reativar.slice(0, 320), /status: 'active', deleted_at: null/);
+    },
+  },
+  {
     name: 'entrar no time distingue novo membro de quem ja estava',
     run() {
       const modulo = apenasCodigo(fs.readFileSync(MODULO, 'utf8'));

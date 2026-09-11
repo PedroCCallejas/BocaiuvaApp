@@ -201,21 +201,15 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     },
   },
   {
-    name: 'o modulo desligado devolve o repositorio base sem camada nenhuma',
+    name: 'somente o modo mock deixa de usar o Supabase',
     run() {
       const index = fs.readFileSync('src/services/repository/index.ts', 'utf8');
-      const composicao = fs.readFileSync(
-        'src/services/repository/supabase/composicao/index.ts',
-        'utf8',
-      );
 
-      // Mock existe para desenvolver sem banco. Empilhar Supabase em cima
-      // misturaria dado de mentira com dado real.
-      assert.match(index, /shouldUseFirebase\s*\n?\s*\? comModulosNoSupabase/);
-      assert.match(index, /: baseRepository/);
-
-      // Nenhum modulo ligado devolve o objeto original, nao uma copia inerte.
-      assert.match(composicao, /if \(ligados\.length === 0\) \{\s*\n\s*return base;/);
+      // Mock existe para desenvolver sem banco. Qualquer ambiente real usa a
+      // composição completa do Supabase, sem flags de migração parcial.
+      assert.match(index, /shouldUseMock\s*\n?\s*\? mockRepository/);
+      assert.match(index, /: criarRepositorioSupabase\(supabaseBaseRepository\)/);
+      assert.doesNotMatch(index, /EXPO_PUBLIC_SUPABASE_MODULES/);
     },
   },
   {
@@ -313,7 +307,7 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
         aplicar: (snapshot, valor) => ({ ...snapshot, lista: valor }),
       });
 
-      await fatia.obter();
+      await assert.rejects(fatia.obter(), /sem sessao/);
       assert.equal(leituras, 1, 'a primeira leitura precisa acontecer');
       assert.equal(fatia.estaVazia(), true, 'falha nao vira cache');
 
@@ -398,7 +392,7 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
       );
 
       const sql = apenasCodigoSql(
-        fs.readFileSync('supabase/migrations/20260826140000_rpc_apurar_mvp.sql', 'utf8'),
+        fs.readFileSync('supabase/migrations/20260828153502_rpc_apurar_mvp.sql', 'utf8'),
       );
 
       assert.match(sql, /security definer/);
@@ -486,8 +480,8 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
         fonte.indexOf('// As tabelas filhas'),
       );
 
-      /** Ainda no Firestore: reimportar nao apaga nada porque nada grava la. */
-      const semModuloNoPostgres = ['seasons'];
+      /** Toda tabela ativa já pertence ao Postgres. */
+      const semModuloNoPostgres: string[] = [];
 
       assert.equal(tabelas.length > 10, true, 'nao leu a ordem das tabelas');
 
@@ -505,57 +499,30 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     },
   },
   {
-    name: 'o Firestore para de ler o que o Postgres ja entrega',
+    name: 'o repositorio ativo usa somente o Supabase para dados',
     run() {
+      const entrada = apenasCodigoTs(
+        fs.readFileSync('src/services/repository/index.ts', 'utf8'),
+      );
       const composicao = apenasCodigoTs(
         fs.readFileSync('src/services/repository/supabase/composicao/index.ts', 'utf8'),
       );
 
-      // Sem isso o app le os dois bancos inteiros: o Firestore entrega o dado,
-      // a fatia joga fora e poe o Postgres no lugar. Leitura paga, dado
-      // descartado — a mesma carga que motivou a migracao.
-      assert.match(composicao, /ignorarColecoesDoFirestore\(/);
+      assert.match(entrada, /criarRepositorioSupabase\(supabaseBaseRepository\)/);
+      assert.doesNotMatch(entrada, /firebase-repository/);
+      assert.doesNotMatch(composicao, /ignorarColecoesDoFirestore/);
+      assert.doesNotMatch(composicao, /EXPO_PUBLIC_SUPABASE_MODULES/);
 
-      const mapa = composicao.slice(
-        composicao.indexOf('const COLECOES_POR_MODULO'),
-        composicao.indexOf('export function comModulosNoSupabase'),
-      );
-
-      // Cada modulo migrado precisa dizer o que cobre, senao a leitura duplicada
-      // volta calada para aquele pedaco.
-      for (const [modulo, colecao] of [
-        ['resenhas', 'matchDiaryEntries'],
-        ['partidas', 'matches'],
-        ['partidas', 'attendance'],
-        ['avaliacoes', 'mvpVotes'],
-        ['elenco', 'players'],
-      ] as const) {
-        assert.match(
-          mapa,
-          new RegExp(`${modulo}:[^\\]]*${colecao}`),
-          `${modulo} nao declarou ${colecao}`,
-        );
+      for (const modulo of [
+        'comFinanceiro',
+        'comResenhas',
+        'comPartidas',
+        'comAvaliacoes',
+        'comElenco',
+        'comNotificacoes',
+      ]) {
+        assert.match(composicao, new RegExp(`aplicar: ${modulo}`));
       }
-
-      // A regra que nao pode ser quebrada: `users`, `teams` e `teamMembers` vem
-      // do bootstrap e sao o que segura a tela em pe enquanto o Postgres
-      // responde. Ignora-las devolve o "voce nao participa de nenhum time".
-      for (const proibida of ['users', 'teams', 'teamMembers']) {
-        assert.doesNotMatch(
-          mapa,
-          new RegExp(`'${proibida}'`),
-          `${proibida} nunca pode sair do bootstrap do Firestore`,
-        );
-      }
-
-      // O repositorio do Firestore sustenta o app inteiro e nao deve saber que
-      // existe migracao: ele recebe uma lista de nomes, nada mais.
-      const firebase = fs.readFileSync(
-        'src/services/repository/firebase-repository.ts',
-        'utf8',
-      );
-      assert.doesNotMatch(firebase, /supabase/i);
-      assert.match(firebase, /colecaoIgnorada\(/);
     },
   },
   {
@@ -643,12 +610,7 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
       assert.equal(metodos.size > 40, true, 'nao leu o contrato');
       assert.equal(cobertos.size > 20, true, 'nao leu as camadas');
 
-      /**
-       * Fica no Firestore de propósito.
-       *
-       * Mexer nesta lista é uma decisão, não um detalhe: tirar um nome daqui
-       * sem escrever a versão Postgres devolve o bug de gravar no banco errado.
-       */
+      /** Infraestrutura compartilhada fora das camadas de domínio. */
       const combinados = new Set([
         // Autenticacao, nao dado do time.
         'getMode',
@@ -656,11 +618,10 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
         'loginWithGoogle',
         'register',
         'resetPassword',
-        // Projecao publica, so leitura. Fica parada no ultimo estado ate o
-        // modulo publico migrar — nao corrompe nada, so envelhece.
+        // Projeção pública, somente leitura.
         'listPublicTeams',
         'getPublicTeamProfile',
-        // Opcional no contrato, tratado dentro de `comModulosNoSupabase`.
+        // Opcional no contrato, tratado na composição final.
         'subscribeSnapshot',
       ]);
 
@@ -722,16 +683,24 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     },
   },
   {
-    name: 'o tempo real do Firestore continua entregando a fatia financeira',
+    name: 'Supabase Realtime atualiza a tela e preserva fallback manual',
     run() {
-      const repo = apenasCodigoTs(
+      const store = apenasCodigoTs(fs.readFileSync('src/store/app-store.ts', 'utf8'));
+      const composicao = apenasCodigoTs(
         fs.readFileSync('src/services/repository/supabase/composicao/index.ts', 'utf8'),
       );
+      const migration = fs.readFileSync(
+        'supabase/migrations/20260903054500_realtime_web.sql',
+        'utf8',
+      );
 
-      // Sem isso o app mostraria o financeiro vazio a cada atualizacao vinda
-      // do outro banco.
-      assert.match(repo, /comSnapshot\.subscribeSnapshot = async/);
-      assert.match(repo, /handlers\.onSnapshot\(aplicarTodasAsFatias\(snapshot\)\)/);
+      assert.match(composicao, /comSnapshot\.subscribeSnapshot = async/);
+      assert.match(composicao, /event: 'INSERT'/);
+      assert.match(composicao, /event: 'UPDATE'/);
+      assert.doesNotMatch(composicao, /event: 'DELETE'/);
+      assert.match(migration, /alter publication supabase_realtime add table/);
+      assert.match(store, /if \(get\(\)\.hasLiveSync && !options\?\.showRefreshing\)/);
+      assert.match(store, /await refreshSnapshot\(set, get, sessionUser, options\)/);
     },
   },
   {
@@ -864,7 +833,7 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
     },
   },
   {
-    name: 'modulo fora do ar nao derruba o app nem vira cache',
+    name: 'falha inicial aparece para a tela e nao vira cache',
     async run() {
       limparFatias();
 
@@ -879,17 +848,17 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
         aplicar: (snapshot, valor) => ({ ...snapshot, lista: valor }),
       });
 
-      // E uma aba so. Ficar sem ela e muito melhor do que a tela inicial nao
-      // abrir — e vale para qualquer modulo, nao so o financeiro.
-      assert.deepEqual(await fatia.obter(), [], 'falha devolve vazio em vez de estourar');
+      // Sem Firestore como segunda fonte, devolver vazio esconderia a falha de
+      // rede como se o time realmente não tivesse dados.
+      await assert.rejects(fatia.obter(), /sem rede/);
 
       // Mas a falha NAO pode virar cache: se virasse, o vazio passaria a
-      // sobrescrever o Firestore como se fosse a verdade.
+      // sobrescrever um snapshot já válido como se fosse a verdade.
       assert.equal(fatia.estaVazia(), true, 'falha nao pode ser tratada como carregada');
       assert.deepEqual(
-        (fatia.aplicar(base({ lista: ['firestore'] })) as unknown as { lista: string[] }).lista,
-        ['firestore'],
-        'depois de falhar, o dado do Firestore continua valendo',
+        (fatia.aplicar(base({ lista: ['anterior'] })) as unknown as { lista: string[] }).lista,
+        ['anterior'],
+        'depois de falhar, o último snapshot continua valendo',
       );
 
       deveFalhar = false;

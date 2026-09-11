@@ -1,5 +1,4 @@
 ﻿import { create } from 'zustand';
-import Constants from 'expo-constants';
 
 import { authService } from '@/services/auth';
 import type { AuthSessionUser } from '@/services/auth';
@@ -44,6 +43,7 @@ import type {
   UpdateTeamInput,
   UpdateAttendanceInput,
   UpdatePlayerInput,
+  RepositoryMode,
 } from '@/services/repository/types';
 import type { JoinTeamPlayerLinkResolution } from '@/lib/player-linking';
 import type {
@@ -71,7 +71,7 @@ type SyncStatus = 'idle' | 'connecting' | 'refreshing';
 
 export interface AppState {
   ready: boolean;
-  backendMode: 'mock' | 'firebase';
+  backendMode: RepositoryMode;
   currentUserId: string | null;
   snapshot: AppSnapshot;
   syncStatus: SyncStatus;
@@ -82,6 +82,7 @@ export interface AppState {
   loginWithGoogle: (input: GoogleLoginInput) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  deleteAccount: () => Promise<void>;
   logout: () => Promise<void>;
   refreshData: () => Promise<void>;
   refreshAccess: () => Promise<void>;
@@ -361,6 +362,7 @@ async function ensureRealtimeSubscription(
           return;
         }
 
+        resetRealtimeSubscription();
         set({
           hasLiveSync: false,
           syncStatus: 'idle',
@@ -417,11 +419,9 @@ function ensureAuthSubscription(set: StoreSet, get: StoreGet) {
 /**
  * Recarrega o contexto depois de uma escrita.
  *
- * Quando a assinatura em tempo real está ativa, o listener já entrega a
- * mudança — inclusive antes de o servidor confirmar, por causa da compensação
- * de latência do Firestore. Reler o snapshot inteiro aqui custava alguns
- * milhares de leituras por clique e era o que estourava a cota diária do
- * projeto, derrubando gravações com "resource-exhausted".
+ * Quando uma assinatura em tempo real está ativa, o listener já entrega a
+ * mudança. Sem assinatura — o modo atual do Supabase — a releitura mantém a
+ * tela consistente depois de cada gravação.
  *
  * Sem tempo real (ou com ele caído) o comportamento antigo continua: sem a
  * releitura a tela ficaria desatualizada.
@@ -461,13 +461,6 @@ async function refreshCurrentSession(
 
 async function syncPushTokenForUser(userId: string | null) {
   if (!userId || lastPushTokenSyncUserId === userId) {
-    return;
-  }
-
-  if (Constants.appOwnership === 'expo') {
-    if (__DEV__) {
-      console.log('[PUSH] Expo Go detectado antes do sync');
-    }
     return;
   }
 
@@ -555,6 +548,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   async resetPassword(email) {
     await repository.resetPassword(email);
+  },
+
+  async deleteAccount() {
+    await authService.deleteAccount();
+    resetRealtimeSubscription();
+    resetSnapshot(set);
+    lastPushTokenSyncUserId = null;
+    set({ hasLiveSync: false, syncStatus: 'idle' });
   },
 
   async logout() {
@@ -1126,4 +1127,3 @@ export const useAppStore = create<AppState>((set, get) => ({
     return record;
   },
 }));
-

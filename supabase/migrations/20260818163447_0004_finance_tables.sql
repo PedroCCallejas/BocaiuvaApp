@@ -44,3 +44,4 @@ create index expenses_team_date_idx on public.expenses (team_id, date desc)
 create index expenses_match_id_idx on public.expenses (match_id)
   where match_id is not null;
 create index expenses_category_id_idx on public.expenses (category_id);
+;

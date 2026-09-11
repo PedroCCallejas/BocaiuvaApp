@@ -13,33 +13,27 @@ alter default privileges in schema public
   revoke select on tables from anon;
 alter default privileges in schema app
   revoke execute on functions from authenticated, anon;
-
 revoke usage on schema app from anon;
 revoke execute on all functions in schema app from anon;
 revoke select on all tables in schema public from anon;
-
 -- As tabelas atuais continuam acessiveis ao papel autenticado. RLS decide as
 -- linhas; o revoke acima vale para objetos criados daqui para frente.
 grant select, insert, update, delete on all tables in schema public to authenticated;
-
 -- ---------------------------------------------------------------------------
 -- Conta: sem DELETE pelo cliente e sem escalada por app_role.
 -- ---------------------------------------------------------------------------
 
 drop policy if exists users_write_self on public.users;
-
 create policy users_insert_self on public.users
   for insert to authenticated
   with check (
     id = app.current_uid()
     and app_role = 'player'
   );
-
 create policy users_update_self on public.users
   for update to authenticated
   using (id = app.current_uid())
   with check (id = app.current_uid());
-
 create or replace function app.guard_user_self_edit()
 returns trigger
 language plpgsql
@@ -58,12 +52,10 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists users_guard_self_edit on public.users;
 create trigger users_guard_self_edit
   before update on public.users
   for each row execute function app.guard_user_self_edit();
-
 -- ---------------------------------------------------------------------------
 -- Time: gestor nao pode se transformar em proprietario pelo UPDATE comum.
 -- ---------------------------------------------------------------------------
@@ -83,18 +75,15 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists teams_guard_owner on public.teams;
 create trigger teams_guard_owner
   before update on public.teams
   for each row execute function app.guard_team_owner();
-
 -- ---------------------------------------------------------------------------
 -- Convite: a entrada acontece por uma unica RPC transacional.
 -- ---------------------------------------------------------------------------
 
 drop policy if exists team_members_insert_self on public.team_members;
-
 create or replace function public.join_team_with_invite_code(p_invite_code text)
 returns public.team_members
 language plpgsql
@@ -181,17 +170,14 @@ begin
   return v_membership;
 end;
 $$;
-
 revoke all on function public.join_team_with_invite_code(text) from public, anon;
 grant execute on function public.join_team_with_invite_code(text) to authenticated;
-
 -- ---------------------------------------------------------------------------
 -- Presenca: jogador altera somente a propria resposta, nunca identidade/FK.
 -- ---------------------------------------------------------------------------
 
 drop policy if exists attendance_write_manager on public.attendance;
 drop policy if exists attendance_write_self on public.attendance;
-
 create policy attendance_insert_authenticated on public.attendance
   for insert to authenticated
   with check (
@@ -207,7 +193,6 @@ create policy attendance_insert_authenticated on public.attendance
       )
     )
   );
-
 create policy attendance_update_authenticated on public.attendance
   for update to authenticated
   using (
@@ -218,11 +203,9 @@ create policy attendance_update_authenticated on public.attendance
     app.can_manage_team(team_id)
     or app.is_team_player(team_id, player_id)
   );
-
 create policy attendance_delete_manager on public.attendance
   for delete to authenticated
   using (app.can_manage_team(team_id));
-
 create or replace function app.guard_attendance_self_edit()
 returns trigger
 language plpgsql
@@ -253,12 +236,10 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists attendance_guard_self_edit on public.attendance;
 create trigger attendance_guard_self_edit
   before update on public.attendance
   for each row execute function app.guard_attendance_self_edit();
-
 -- Avaliador e avaliado precisam ter confirmado presenca na mesma partida.
 drop policy if exists player_ratings_insert_self on public.player_ratings;
 create policy player_ratings_insert_self on public.player_ratings
@@ -287,7 +268,6 @@ create policy player_ratings_insert_self on public.player_ratings
         and a.status = 'confirmed'
     )
   );
-
 -- ---------------------------------------------------------------------------
 -- Projecoes publicas: anonimo nunca recebe invite_code ou dados privados.
 -- Estas views ignoram a RLS da tabela-base de proposito, mas so projetam campos
@@ -369,7 +349,6 @@ left join lateral (
 where t.is_public
   and nullif(trim(t.city), '') is not null
   and nullif(trim(t.state), '') is not null;
-
 create or replace view public.public_team_roster
 with (security_barrier = true)
 as
@@ -388,12 +367,10 @@ where t.is_public
   and t.public_roster_enabled
   and p.status = 'active'
   and p.deleted_at is null;
-
 revoke all on public.public_team_summaries from public;
 revoke all on public.public_team_roster from public;
 grant select on public.public_team_summaries to anon, authenticated;
 grant select on public.public_team_roster to anon, authenticated;
-
 -- ---------------------------------------------------------------------------
 -- Storage: leitura continua publica via URL do bucket; escrita exige JWT e
 -- permissao no primeiro segmento do caminho.
@@ -416,7 +393,6 @@ drop policy if exists "Allow update team videos puyuh4_0" on storage.objects;
 drop policy if exists "Allow update team videos puyuh4_1" on storage.objects;
 drop policy if exists "anon insert allowed media buckets" on storage.objects;
 drop policy if exists "anon update allowed media buckets" on storage.objects;
-
 create or replace function app.can_write_media_object(p_bucket text, p_name text)
 returns boolean
 language sql
@@ -460,26 +436,20 @@ as $$
     else false
   end
 $$;
-
 grant execute on function app.can_write_media_object(text, text) to authenticated;
-
 create policy media_select_authenticated on storage.objects
   for select to authenticated
   using (app.can_write_media_object(bucket_id, name));
-
 create policy media_insert_authenticated on storage.objects
   for insert to authenticated
   with check (app.can_write_media_object(bucket_id, name));
-
 create policy media_update_authenticated on storage.objects
   for update to authenticated
   using (app.can_write_media_object(bucket_id, name))
   with check (app.can_write_media_object(bucket_id, name));
-
 create policy media_delete_authenticated on storage.objects
   for delete to authenticated
   using (app.can_write_media_object(bucket_id, name));
-
 -- ---------------------------------------------------------------------------
 -- Indices de foreign keys usadas por RLS, joins e exclusoes.
 -- ---------------------------------------------------------------------------
@@ -504,7 +474,6 @@ create index if not exists expenses_paid_by_player_id_idx
   on public.expenses (paid_by_player_id) where paid_by_player_id is not null;
 create index if not exists expenses_created_by_idx
   on public.expenses (created_by) where created_by is not null;
-
 -- ---------------------------------------------------------------------------
 -- Integridade: uma partida nunca pode apontar para jogador de outro time.
 -- ---------------------------------------------------------------------------
@@ -513,12 +482,10 @@ alter table public.matches
   add constraint matches_id_team_id_key unique (id, team_id);
 alter table public.players
   add constraint players_id_team_id_key unique (id, team_id);
-
 alter table public.lineups
   add constraint lineups_match_team_fkey
   foreign key (match_id, team_id)
   references public.matches (id, team_id) on delete cascade;
-
 alter table public.attendance
   add constraint attendance_match_team_fkey
   foreign key (match_id, team_id)
@@ -527,7 +494,6 @@ alter table public.attendance
   add constraint attendance_player_team_fkey
   foreign key (player_id, team_id)
   references public.players (id, team_id) on delete cascade;
-
 alter table public.match_stats
   add constraint match_stats_match_team_fkey
   foreign key (match_id, team_id)
@@ -536,7 +502,6 @@ alter table public.match_stats
   add constraint match_stats_player_team_fkey
   foreign key (player_id, team_id)
   references public.players (id, team_id) on delete cascade;
-
 alter table public.mvp_votes
   add constraint mvp_votes_match_team_fkey
   foreign key (match_id, team_id)
@@ -549,7 +514,6 @@ alter table public.mvp_votes
   add constraint mvp_votes_target_team_fkey
   foreign key (target_player_id, team_id)
   references public.players (id, team_id) on delete cascade;
-
 alter table public.player_ratings
   add constraint player_ratings_match_team_fkey
   foreign key (match_id, team_id)
@@ -562,12 +526,10 @@ alter table public.player_ratings
   add constraint player_ratings_target_team_fkey
   foreign key (target_player_id, team_id)
   references public.players (id, team_id) on delete cascade;
-
 alter table public.match_diary_entries
   add constraint match_diary_match_team_fkey
   foreign key (match_id, team_id)
   references public.matches (id, team_id) on delete cascade;
-
 alter table public.matches
   add constraint matches_line_players_count_check
   check (line_players_count between 1 and 15);
@@ -577,7 +539,6 @@ alter table public.matches
 alter table public.player_ratings
   add constraint player_ratings_overall_range_check
   check (overall between 0 and 10);
-
 create or replace function app.limit_active_rating_criteria()
 returns trigger
 language plpgsql
@@ -606,7 +567,6 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists rating_criteria_limit_active on public.rating_criteria;
 create trigger rating_criteria_limit_active
   before insert or update of active, team_id on public.rating_criteria

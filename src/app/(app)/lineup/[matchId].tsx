@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useNavigation, usePreventRemove } from '@react-navigation/native';
-import * as Sharing from 'expo-sharing';
-import { captureRef } from 'react-native-view-shot';
 
 import { MetricCard } from '@/components/cards/MetricCard';
 import { LineupField } from '@/components/lineup/LineupField';
@@ -40,7 +38,6 @@ interface LocalLineupState {
 }
 
 type SaveStatus = 'clean' | 'dirty' | 'saving' | 'saved';
-type ShareAvailability = 'unknown' | 'available' | 'unavailable';
 type ShareAction = 'idle' | 'sharing' | 'downloading';
 
 const EXPORT_WIDTH = 1080;
@@ -209,9 +206,6 @@ export default function LineupScreen() {
   const [draft, setDraft] = useState<LocalLineupState>(initialDraft);
   const [isDragging, setIsDragging] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('clean');
-  const [shareAvailability, setShareAvailability] = useState<ShareAvailability>(
-    Platform.OS === 'web' ? 'unknown' : 'available',
-  );
   const [shareAction, setShareAction] = useState<ShareAction>('idle');
   const [shareCardReady, setShareCardReady] = useState(false);
 
@@ -221,7 +215,6 @@ export default function LineupScreen() {
   const isDraggingRef = useRef(false);
   const justSavedRef = useRef(false);
   const saveStatusRef = useRef<SaveStatus>('clean');
-  const shareCardRef = useRef<View>(null);
 
   const setSavePhase = useCallback((next: SaveStatus) => {
     saveStatusRef.current = next;
@@ -290,33 +283,6 @@ export default function LineupScreen() {
     },
     [existingLineup, normalizeDraft, setSavePhase],
   );
-
-  useEffect(() => {
-    let active = true;
-
-    if (Platform.OS !== 'web') {
-      setShareAvailability('available');
-      return () => {
-        active = false;
-      };
-    }
-
-    void Sharing.isAvailableAsync()
-      .then((available) => {
-        if (active) {
-          setShareAvailability(available ? 'available' : 'unavailable');
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setShareAvailability('unavailable');
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (!editableSourceLineup || !currentMatch) {
@@ -483,7 +449,7 @@ export default function LineupScreen() {
     try {
       setSavePhase('saving');
 
-      if (__DEV__) console.log('[lineup-save] firebase write start', { matchId: currentMatch.id });
+      if (__DEV__) console.log('[lineup-save] database write start', { matchId: currentMatch.id });
 
       await saveLineup({
         matchId: currentMatch.id,
@@ -492,7 +458,7 @@ export default function LineupScreen() {
         benchPlayerIds: payload.benchPlayerIds,
       });
 
-      if (__DEV__) console.log('[lineup-save] firebase write success', { matchId: currentMatch.id });
+      if (__DEV__) console.log('[lineup-save] database write success', { matchId: currentMatch.id });
 
       const storeLineups = useAppStore.getState().snapshot.lineups;
       const savedDoc = storeLineups.find((l) => l.matchId === currentMatch.id) ?? null;
@@ -552,7 +518,7 @@ export default function LineupScreen() {
       const errorMessage = error instanceof Error ? error.message : 'Tente novamente.';
 
       if (__DEV__) {
-        console.log('[lineup-save] firebase write failed', {
+        console.log('[lineup-save] database write failed', {
           code: errorCode,
           message: errorMessage,
           error,
@@ -572,9 +538,7 @@ export default function LineupScreen() {
         const label =
           mode === 'download' ? '[lineup-share] download pressed' : '[lineup-share] button pressed';
         console.log(label, {
-          platform: Platform.OS,
           canExport: canExportLineup,
-          refExists: Boolean(shareCardRef.current),
         });
       }
 
@@ -607,12 +571,7 @@ export default function LineupScreen() {
       try {
         setShareAction(action);
 
-        // ── WEB: html2canvas direto no elemento DOM ──────────────────────
-        if (Platform.OS === 'web') {
-          if (__DEV__) {
-            console.log('[lineup-share] ref exists', Boolean(shareCardRef.current));
-          }
-
+        // html2canvas captura diretamente o elemento DOM no navegador.
           const domElement = document.getElementById('lineup-export-card');
 
           if (__DEV__) {
@@ -727,45 +686,10 @@ export default function LineupScreen() {
             webDownload();
           }
           return;
-        }
-
-        // ── NATIVE ──────────────────────────────────────────────────────
-        if (!shareCardRef.current) {
-          throw new Error('Referência da arte não disponível. Tente novamente.');
-        }
-
-        if (__DEV__) {
-          console.log('[lineup-share] ref exists', true);
-          console.log('[lineup-share] capture start', { mode });
-        }
-
-        const imageUri = await captureRef(shareCardRef.current, {
-          format: 'png',
-          quality: 1,
-          result: 'tmpfile',
-          width: EXPORT_WIDTH,
-          height: EXPORT_HEIGHT,
-        });
-
-        if (__DEV__) {
-          console.log('[lineup-share] capture success', { uri: imageUri.substring(0, 80) });
-        }
-
-        const shareAvailable = await Sharing.isAvailableAsync();
-        if (!shareAvailable) {
-          throw new Error('Compartilhamento não disponível neste dispositivo.');
-        }
-
-        await Sharing.shareAsync(
-          imageUri.startsWith('file://') ? imageUri : `file://${imageUri}`,
-          { dialogTitle: 'Compartilhar escalação', mimeType: 'image/png' },
-        );
       } catch (error) {
         if (__DEV__) {
           console.log('[lineup-share] failed', {
             mode,
-            platform: Platform.OS,
-            refExists: Boolean(shareCardRef.current),
             name: error instanceof Error ? error.name : 'unknown',
             message: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack?.substring(0, 400) : undefined,
@@ -1005,7 +929,6 @@ export default function LineupScreen() {
           />
 
           <View
-            ref={shareCardRef}
             nativeID="lineup-export-card"
             collapsable={false}
             onLayout={() => setShareCardReady(true)}
@@ -1028,41 +951,25 @@ export default function LineupScreen() {
           </View>
 
           <Text style={[styles.shareHint, { color: theme.colors.textMuted }]}>
-            {Platform.OS === 'web'
-              ? shareAvailability === 'available'
-                ? 'No navegador compatível você pode compartilhar ou baixar a imagem PNG.'
-                : 'Se o navegador não oferecer compartilhamento nativo, o fluxo cai para download do PNG.'
-              : 'No celular, o botão usa o compartilhamento nativo quando disponível.'}
+            No navegador compatível você pode compartilhar ou baixar a imagem PNG.
           </Text>
 
           <View style={styles.actionRow}>
-            {Platform.OS === 'web' && shareAvailability === 'available' ? (
-              <AppButton
-                label="Compartilhar escalação"
-                variant="secondary"
-                disabled={!canExportLineup || shareAction !== 'idle'}
-                loading={shareAction === 'sharing'}
-                onPress={() => void handleShareOrDownload('share')}
-              />
-            ) : null}
+            <AppButton
+              label="Compartilhar escalação"
+              variant="secondary"
+              disabled={!canExportLineup || shareAction !== 'idle'}
+              loading={shareAction === 'sharing'}
+              onPress={() => void handleShareOrDownload('share')}
+            />
 
-            {Platform.OS === 'web' ? (
-              <AppButton
-                label="Baixar imagem PNG"
-                variant={shareAvailability === 'available' ? 'ghost' : 'secondary'}
-                disabled={!canExportLineup || shareAction !== 'idle'}
-                loading={shareAction === 'downloading'}
-                onPress={() => void handleShareOrDownload('download')}
-              />
-            ) : (
-              <AppButton
-                label="Compartilhar escalação"
-                variant="secondary"
-                disabled={!canExportLineup || shareAction !== 'idle'}
-                loading={shareAction === 'sharing'}
-                onPress={() => void handleShareOrDownload('share')}
-              />
-            )}
+            <AppButton
+              label="Baixar imagem PNG"
+              variant="ghost"
+              disabled={!canExportLineup || shareAction !== 'idle'}
+              loading={shareAction === 'downloading'}
+              onPress={() => void handleShareOrDownload('download')}
+            />
           </View>
         </View>
       ) : null}

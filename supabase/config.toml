@@ -382,6 +382,24 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
+# O gateway legado não valida JWT de provedores terceiros. Cada função abaixo
+# exige Bearer token e valida a identidade no Data API/RLS antes de usar o
+# cliente service_role.
+[functions.enviar-push]
+verify_jwt = false
+
+[functions.excluir-time]
+verify_jwt = false
+
+[functions.excluir-conta]
+verify_jwt = false
+
+[functions.exportar-dados]
+verify_jwt = false
+
+[functions.preparar-conta]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 

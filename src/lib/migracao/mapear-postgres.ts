@@ -86,6 +86,7 @@ export const TABELAS_DE_MODULO_JA_MIGRADO: Partial<Record<NomeDaTabela, string>>
   // sessão, e reimportar qualquer um deles desfaria vínculo criado depois da
   // virada — a pessoa abriria o app sem time.
   players: 'elenco',
+  seasons: 'elenco',
   users: 'elenco',
   teams: 'elenco',
   team_members: 'elenco',

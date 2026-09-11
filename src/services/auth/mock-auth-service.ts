@@ -67,6 +67,10 @@ class MockAuthService implements AuthService {
     await mockRepository.resetPassword(email.trim());
   }
 
+  async deleteAccount() {
+    this.currentUser = null;
+  }
+
   async logout() {
     this.currentUser = null;
     resetMockRepositorySession();

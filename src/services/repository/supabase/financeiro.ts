@@ -1,9 +1,7 @@
 /**
  * Financeiro lendo e gravando no Postgres.
  *
- * Primeiro módulo a sair do Firestore. Foi escolhido por ser o mais novo, o
- * mais isolado e o de menos dado — se algo der errado, o estrago é pequeno e o
- * rollback é desligar `EXPO_PUBLIC_SUPABASE_MODULES`.
+ * O Supabase é a fonte definitiva deste módulo.
  *
  * O que muda em relação ao Firestore:
  *
@@ -53,7 +51,7 @@ function agora() {
   return new Date().toISOString();
 }
 
-/** Id no mesmo formato do Firestore, para os dois bancos conviverem. */
+/** Mantém o formato histórico dos identificadores existentes. */
 function novoId() {
   const alfabeto = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let id = '';

@@ -1,9 +1,7 @@
 /**
  * Push no navegador (Web Push).
  *
- * O app é web, instalado pela tela de início. `expo-notifications` só entrega
- * push em build nativo, então aqui a tecnologia é outra: Web Push, com service
- * worker e chave VAPID.
+ * O app usa Web Push no navegador, com service worker e chave VAPID.
  *
  * Diferenças que importam para quem for mexer:
  *

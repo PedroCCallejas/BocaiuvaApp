@@ -8,6 +8,10 @@ import {
   supabaseEnabled,
 } from '@/config/supabase/client';
 import { appendCacheBustParam } from '@/lib/storage-url';
+import {
+  createStorageReference,
+  isPrivateMediaBucket,
+} from '@/lib/storage-reference';
 
 const DEFAULT_MAX_DIMENSION = 1600;
 const DEFAULT_COMPRESSION = 0.72;
@@ -262,10 +266,9 @@ async function uploadToSupabaseStorage(input: {
     data,
   });
 
-  const { data: publicUrlData } = supabase.storage
-    .from(input.bucket)
-    .getPublicUrl(input.objectPath);
-  const publicUrl = publicUrlData.publicUrl;
+  const publicUrl = isPrivateMediaBucket(input.bucket)
+    ? createStorageReference(input.bucket, input.objectPath)
+    : supabase.storage.from(input.bucket).getPublicUrl(input.objectPath).data.publicUrl;
 
   logUploadDebug('[upload-image] public-url', {
     bucket: input.bucket,
@@ -277,11 +280,6 @@ async function uploadToSupabaseStorage(input: {
     data,
     publicUrl,
   };
-}
-
-function createTestUploadBody() {
-  // Minimal binary payload for storage diagnostics in React Native.
-  return Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]).buffer;
 }
 
 export function buildPlayerPhotoStoragePath(teamId: string, playerId: string) {
@@ -352,7 +350,9 @@ export async function uploadImage({
       body,
       contentType,
     });
-    const downloadUrl = appendCacheBustParam(publicUrl, cacheBustKey);
+    const downloadUrl = isPrivateMediaBucket(bucket)
+      ? publicUrl
+      : appendCacheBustParam(publicUrl, cacheBustKey);
     onProgress?.(normalizeProgress(1));
     onProgress?.(1);
 
@@ -371,61 +371,5 @@ export async function uploadImage({
       'error',
     );
     throw error;
-  }
-}
-
-export async function testSupabaseUpload(): Promise<SupabaseUploadDebugResult> {
-  const bucket = 'team-logos';
-  const path = 'test-upload.jpg';
-  const contentType = 'image/jpeg';
-  const url = supabaseConfigSummary.normalizedUrl;
-
-  logUploadDebug('[upload-image] upload-start', {
-    mode: 'testSupabaseUpload',
-    bucket,
-    path,
-    contentType,
-  });
-
-  try {
-    const { data, publicUrl } = await uploadToSupabaseStorage({
-      bucket,
-      objectPath: path,
-      body: createTestUploadBody(),
-      contentType,
-    });
-
-    return {
-      url,
-      bucket,
-      path,
-      contentType,
-      responseData: data,
-      error: null,
-      publicUrl,
-    };
-  } catch (error) {
-    const serializedError = serializeUploadError(error);
-    logUploadDebug(
-      '[upload-image] upload-error',
-      {
-        mode: 'testSupabaseUpload',
-        bucket,
-        path,
-        contentType,
-        error: serializedError,
-      },
-      'error',
-    );
-
-    return {
-      url,
-      bucket,
-      path,
-      contentType,
-      responseData: null,
-      error: serializedError,
-      publicUrl: null,
-    };
   }
 }

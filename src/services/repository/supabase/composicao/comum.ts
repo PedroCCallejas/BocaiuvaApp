@@ -20,7 +20,10 @@ import {
  */
 export async function buscarTimeAtivo(): Promise<string | null> {
   if (!supabase) {
-    return null;
+    throw criarErroDoRepositorio(
+      'A conexão com o banco não está configurada.',
+      'failed-precondition',
+    );
   }
 
   const { data, error } = await supabase

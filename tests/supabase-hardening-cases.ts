@@ -72,7 +72,7 @@ export const supabaseHardeningTestCases: TestCase[] = [
       const client = fs.readFileSync('src/config/supabase/client.ts', 'utf8');
 
       assert.match(client, /accessToken: getFirebaseAccessToken/);
-      assert.match(client, /getIdToken\(forceRefresh\)/);
+      assert.match(client, /getIdTokenResult\(forceRefresh\)/);
       assert.match(client, /tokenRefreshedForUserId !== currentUser\.uid/);
     },
   },

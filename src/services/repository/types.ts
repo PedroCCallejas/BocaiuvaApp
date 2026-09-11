@@ -43,7 +43,8 @@ import type {
   RegisterFinishedMatchPlayerInput,
 } from '@/types/match-import';
 
-export type RepositoryMode = 'mock' | 'firebase';
+/** `firebase` permanece no tipo apenas para os arquivos históricos de migração. */
+export type RepositoryMode = 'mock' | 'supabase' | 'firebase';
 
 export interface AppSnapshot {
   users: User[];

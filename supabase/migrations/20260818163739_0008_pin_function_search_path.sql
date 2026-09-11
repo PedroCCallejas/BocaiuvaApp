@@ -7,3 +7,4 @@
 alter function app.current_uid() set search_path = public, pg_temp;
 alter function app.current_email() set search_path = public, pg_temp;
 alter function app.touch_updated_at() set search_path = public, pg_temp;
+;

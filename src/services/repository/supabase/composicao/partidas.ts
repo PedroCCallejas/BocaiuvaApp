@@ -19,7 +19,6 @@ import {
   resolverJogadoresDoJogoAntigo,
   validarCabecalhoDoJogoAntigo,
 } from '@/lib/finished-match';
-import { formatMatchDateTime } from '@/lib/date';
 import { calculateMatchResult } from '@/lib/match';
 import {
   buildNotificationId,
@@ -376,11 +375,8 @@ export function comPartidas(base: AppRepository): AppRepository {
       // o push falhou. Mesmo critério das notificações internas.
       void avisarTime({
         teamId: input.teamId,
-        title: 'Jogo marcado',
-        body: `${formatMatchDateTime(partida)} contra ${partida.opponentName}. Confirme sua presença.`,
-        url: `/matches/${partida.id}`,
-        tag: `partida-${partida.id}`,
-        excluirUserId: creatorUserId,
+        matchId: partida.id,
+        event: 'match-created',
       });
 
       return partida;
@@ -514,15 +510,10 @@ export function comPartidas(base: AppRepository): AppRepository {
       );
 
       if (estavaAberta) {
-        const placar = `${input.teamScore} x ${input.opponentScore}`;
-
         void avisarTime({
           teamId: partida.teamId,
-          title: `Jogo encerrado: ${placar}`,
-          body: `Contra ${partida.opponentName}. A votação de MVP está aberta — escolha o craque.`,
-          url: `/matches/${input.matchId}`,
-          tag: `mvp-${input.matchId}`,
-          excluirUserId: actorUserId,
+          matchId: input.matchId,
+          event: 'match-finished',
         });
       }
 
@@ -633,13 +624,8 @@ export function comPartidas(base: AppRepository): AppRepository {
 
       void avisarTime({
         teamId,
-        title: 'Escalação publicada',
-        body: partida
-          ? `Time montado para o jogo contra ${partida.opponentName}. Veja se você está.`
-          : 'O time da próxima partida foi montado. Veja se você está.',
-        url: `/matches/${input.matchId}`,
-        // Reescalar não empilha aviso: o segundo substitui o primeiro.
-        tag: `escalacao-${input.matchId}`,
+        matchId: input.matchId,
+        event: 'lineup-published',
       });
 
       return escalacao;

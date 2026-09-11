@@ -1,13 +1,3 @@
--- Duas funções de campo que não deveriam ter existido.
---
--- Escritas antes de eu encontrar `salvar_custo_do_campo`, da migration das
--- partidas, que já resolve custo e participantes numa transação só. A migration
--- seguinte (`limpar_custo_do_campo`) derruba as duas.
---
--- Ficam registradas porque foram aplicadas de verdade no banco, e um histórico
--- que omite o que aconteceu deixa de servir para reconstruir o schema. O
--- arrependimento fica documentado no lugar certo: aqui.
-
 create or replace function public.save_match_field_cost(
   p_match_id text,
   p_total_amount_cents bigint,
@@ -94,4 +84,4 @@ grant execute on function public.save_match_field_cost(text, bigint, int, bigint
 revoke all on function public.save_match_field_payment(text, text[], text[], int, text, text, boolean)
   from public, anon;
 grant execute on function public.save_match_field_payment(text, text[], text[], int, text, text, boolean)
-  to authenticated;
+  to authenticated;;

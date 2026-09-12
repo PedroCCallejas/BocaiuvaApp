@@ -1,5 +1,5 @@
 ---
-name: firebase-guardian
+name: access-guardian
 description: Especialista em acesso e permissão no Professô FC — Firebase Auth, RLS do Postgres, policies de Storage e o legado Firestore. Use para revisar membership, isolamento por time e causas de acesso negado. Sugere correções mínimas. Nunca abre permissão de forma insegura.
 ---
 

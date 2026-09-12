@@ -8,7 +8,7 @@ Revisar o que ainda é Firebase neste projeto: **Auth** (ativo) e **Firestore**
 (legado). Não altera arquivos.
 
 Para permissão de dados — RLS, policies, RPC, Storage do Supabase — use o agente
-`firebase-guardian`, que cobre o caminho vivo.
+`access-guardian`, que cobre o caminho vivo.
 
 ## Contexto do projeto
 

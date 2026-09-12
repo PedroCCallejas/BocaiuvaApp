@@ -70,9 +70,17 @@ dist/
 .claude/history/
 .claude/projects/
 
-# Espelhos do harness para outros agentes (Codex e afins). Inventariados na
-# auditoria de harness; decisão de manter ou remover ainda pendente.
-.agents
+# Harness de agentes. `.agents/skills/` é a árvore que o Google Antigravity lê,
+# mantida em dia a partir de `.claude/skills/` por
+# `scripts/sync-agent-skills.ps1`. Só ela é versionada; qualquer outro conteúdo
+# local de `.agents/` fica de fora.
+.agents/*
+!.agents/skills/
+!.agents/skills/**
+
+# Codex não é usado neste projeto. A linha fica para que uma instalação local
+# do CLI (que grava config e credencial em `.codex/`) não entre no git por
+# acidente.
 .codex
 
 # Dump cru do Firestore: dado pessoal do time, nao versionar

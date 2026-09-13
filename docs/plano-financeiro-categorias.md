@@ -1,5 +1,16 @@
 # Plano — Financeiro por categorias (bola, água, cerveja, campo)
 
+> **DÍVIDA DOCUMENTAL — registrada em 11/09/2026, não resolvida.**
+>
+> O texto abaixo afirma que nada foi implementado. O banco contradiz: existem as
+> tabelas `expenses`, `expense_categories` e `expense_shares`, e a RPC
+> `salvar_despesa` (`supabase/migrations/`).
+>
+> **Não foi verificado** se o que existe implementa este plano, parte dele, ou
+> outra coisa. A divergência está registrada aqui em vez de resolvida em
+> silêncio (Constitution II). Antes de usar este documento como base para
+> qualquer decisão, confira o AS-IS no código.
+
 > Documento de **planejamento**. Nenhuma linha de código foi escrita para isso ainda.
 > Aprovar antes de implementar, porque mexe em modelo de dados e regras de negócio.
 

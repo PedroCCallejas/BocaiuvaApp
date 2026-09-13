@@ -59,20 +59,30 @@ GoogleService-Info.plist
 dist-web/
 dist/
 
-# Claude Code - configurações locais/pessoais
-.claude/
+# Claude Code — o harness do projeto é versionado (.claude/agents,
+# .claude/skills). Fora do git: configuração da máquina, cache e histórico.
 .claude/settings.local.json
-
-
-# Claude Code - arquivos temporários ou memória local, caso existam no projeto
+.claude/settings.local.*.json
 .claude/memory/
 .claude/logs/
 .claude/cache/
 .claude/tmp/
+.claude/history/
+.claude/projects/
 
-AGENTS.md
-.agents
+# Harness de agentes. `.agents/skills/` é a árvore que o Google Antigravity lê,
+# mantida em dia a partir de `.claude/skills/` por
+# `scripts/sync-agent-skills.ps1`. Só ela é versionada; qualquer outro conteúdo
+# local de `.agents/` fica de fora.
+.agents/*
+!.agents/skills/
+!.agents/skills/**
+
+# Codex não é usado neste projeto. A linha fica para que uma instalação local
+# do CLI (que grava config e credencial em `.codex/`) não entre no git por
+# acidente.
 .codex
+
 # Dump cru do Firestore: dado pessoal do time, nao versionar
 dados-firestore/
 

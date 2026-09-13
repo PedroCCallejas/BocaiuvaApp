@@ -27,6 +27,7 @@ elas estão.
 
 | Assunto | Onde |
 |---|---|
+| Quem decide acesso, onde cada domínio mora, camadas e fatias | [`docs/arquitetura-dados.md`](docs/arquitetura-dados.md) |
 | Arquitetura, configuração local, release, privacidade de mídias | [`README.md`](README.md) |
 | Schema vivo do banco | `supabase/migrations/` |
 | Histórico da migração Firestore → Postgres | `docs/` (veja o bloco STATUS no topo de cada arquivo) |

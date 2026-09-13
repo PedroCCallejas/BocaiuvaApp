@@ -34,9 +34,10 @@ Function `enviar-push`), não `expo-notifications`.
 
 | Procurando | Vá em |
 |---|---|
+| Quem decide acesso, mapa de domínio, ordem das camadas, fatias | [`docs/arquitetura-dados.md`](docs/arquitetura-dados.md) |
 | Arquitetura, privacidade de mídia, Storage, procedimento de release | [`README.md`](README.md) |
 | Schema vivo do banco | `supabase/migrations/` (26 arquivos, ordem cronológica) |
-| Permissões | RLS e helpers `app.*` nas migrations — não no cliente |
+| Permissões | RLS e helpers `app.*` nas migrations — não no cliente ([autoridade](docs/arquitetura-dados.md)) |
 | Regras de domínio | `src/lib/` (limites, cálculo, elegibilidade) |
 | Telas e rotas | `src/app/` (Expo Router; `.native.tsx` vence no mobile) |
 | Estado da UI | `src/store/` (Zustand, sobre o snapshot único) |

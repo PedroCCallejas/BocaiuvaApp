@@ -1,0 +1,5 @@
+# Spec Kit confere o hash dos arquivos que gerencia. Com core.autocrlf=true o
+# checkout converteria para CRLF e `specify integration status` acusaria
+# arquivos modificados. Manter LF nesses caminhos.
+/.specify/** text eol=lf
+/.claude/skills/speckit-*/** text eol=lf

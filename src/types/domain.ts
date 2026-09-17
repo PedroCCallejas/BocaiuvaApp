@@ -10,6 +10,7 @@ export type PublicOpponentSource = 'manual' | 'public_team';
 export type PlayerStatus = 'active' | 'injured' | 'suspended' | 'inactive';
 
 export type AttendanceStatus = 'confirmed' | 'absent' | 'pending';
+export type InitialAttendanceStatus = Extract<AttendanceStatus, 'absent' | 'pending'>;
 
 export type FootPreference = 'right' | 'left' | 'both';
 
@@ -116,6 +117,11 @@ export interface Team extends BaseEntity {
   state?: string | null;
   neighborhood?: string | null;
   homeFieldName?: string | null;
+  homeFieldLocationUrl?: string | null;
+  defaultPixKey?: string | null;
+  defaultPaymentResponsibleName?: string | null;
+  defaultMatchWeekday?: number | null;
+  defaultAttendanceStatus?: InitialAttendanceStatus;
   contactName?: string | null;
   contactPhone?: string | null;
   contactWhatsapp?: string | null;

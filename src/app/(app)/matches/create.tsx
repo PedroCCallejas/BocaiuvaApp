@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -12,6 +12,7 @@ import { MATCH_TYPE_LABELS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatDateBR, isValidTime, parseDateBRToISO } from '@/lib/date';
+import { buildNewMatchDefaults } from '@/lib/match-defaults';
 import { buildPublicLocationLabel } from '@/lib/public-team';
 import { isValidExternalUrl } from '@/lib/url';
 import { useAppStore } from '@/store/app-store';
@@ -55,6 +56,7 @@ export default function CreateMatchScreen() {
   const team = useAppStore(selectCurrentTeam);
   const createMatch = useAppStore((state) => state.createMatch);
   const listPublicTeams = useAppStore((state) => state.listPublicTeams);
+  const initializedDefaultsTeamId = useRef<string | null>(null);
   const [publicTeams, setPublicTeams] = useState<PublicTeamSummary[]>([]);
   const [selectedPublicTeamId, setSelectedPublicTeamId] = useState<string | null>(null);
   const [loadingPublicTeams, setLoadingPublicTeams] = useState(false);
@@ -68,7 +70,7 @@ export default function CreateMatchScreen() {
     resolver: zodResolver(schema),
     defaultValues: {
       opponentName: 'Novo adversário',
-      date: formatDateBR('2026-05-20'),
+      date: formatDateBR(new Date()),
       time: '20:00',
       venue: 'Campo principal',
       locationUrl: '',
@@ -79,6 +81,18 @@ export default function CreateMatchScreen() {
   });
 
   const opponentName = watch('opponentName');
+
+  useEffect(() => {
+    if (!team || initializedDefaultsTeamId.current === team.id) {
+      return;
+    }
+
+    const defaults = buildNewMatchDefaults(team);
+    setValue('date', defaults.date);
+    setValue('venue', defaults.venue);
+    setValue('locationUrl', defaults.locationUrl);
+    initializedDefaultsTeamId.current = team.id;
+  }, [setValue, team]);
 
   const suggestedPublicTeams = useMemo(() => {
     if (!team) return [];
@@ -170,7 +184,7 @@ export default function CreateMatchScreen() {
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>Criar nova partida</Text>
         <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          A criação da partida já gera presença pendente para todo o elenco do time.
+          A criação da partida já aplica os padrões de data, local e presença do time.
         </Text>
       </View>
 

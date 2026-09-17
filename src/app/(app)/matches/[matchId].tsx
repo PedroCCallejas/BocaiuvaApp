@@ -28,6 +28,7 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatDateBR, formatMatchDateTime, hasMatchElapsedHours, isValidTime, parseDateBRToISO } from '@/lib/date';
 import { isValidExternalUrl } from '@/lib/url';
 import { openExternalUrl } from '@/lib/external-url';
+import { buildDefaultFieldPayment } from '@/lib/match-defaults';
 import {
   checkFieldCostSplit,
   formatCurrencyBRL,
@@ -57,6 +58,7 @@ import {
   getAttendanceSummary,
   selectCanManageTeam,
   selectCurrentMembership,
+  selectCurrentTeam,
   selectCurrentUser,
   selectCurrentPlayer,
   selectTeamPlayers,
@@ -80,6 +82,7 @@ export default function MatchDetailsScreen() {
   const match = useAppStore((state) => findMatchById(state, resolvedMatchId));
   const lineup = useAppStore((state) => findLineupByMatchId(state, resolvedMatchId));
   const currentUser = useAppStore(selectCurrentUser);
+  const currentTeam = useAppStore(selectCurrentTeam);
   const currentMembership = useAppStore(selectCurrentMembership);
   const currentPlayer = useAppStore(selectCurrentPlayer);
   const teamPlayers = useAppStore(selectTeamPlayers);
@@ -125,11 +128,12 @@ export default function MatchDetailsScreen() {
   const [paidGuestCountDraft, setPaidGuestCountDraft] = useState(
     () => String(match?.fieldPayment?.paidGuestCount ?? 0),
   );
+  const initialPaymentDefaults = buildDefaultFieldPayment(currentTeam, match?.fieldPayment);
   const [pixKeyDraft, setPixKeyDraft] = useState(
-    () => match?.fieldPayment?.pixKey ?? '',
+    () => initialPaymentDefaults.pixKey,
   );
   const [responsibleNameDraft, setResponsibleNameDraft] = useState(
-    () => match?.fieldPayment?.responsibleName ?? '',
+    () => initialPaymentDefaults.responsibleName,
   );
 
   const [editMetaModalVisible, setEditMetaModalVisible] = useState(false);
@@ -170,14 +174,17 @@ export default function MatchDetailsScreen() {
     }
 
     setPaidGuestCountDraft(String(fp?.paidGuestCount ?? 0));
-    setPixKeyDraft(fp?.pixKey ?? '');
-    setResponsibleNameDraft(fp?.responsibleName ?? '');
+    const defaults = buildDefaultFieldPayment(currentTeam, fp);
+    setPixKeyDraft(defaults.pixKey);
+    setResponsibleNameDraft(defaults.responsibleName);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     match?.id,
     match?.fieldPayment?.paidGuestCount,
     match?.fieldPayment?.pixKey,
     match?.fieldPayment?.responsibleName,
+    currentTeam?.defaultPixKey,
+    currentTeam?.defaultPaymentResponsibleName,
     persistedPayerPlayerIdsKey,
     persistedExemptPlayerIdsKey,
   ]);

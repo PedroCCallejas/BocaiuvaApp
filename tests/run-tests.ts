@@ -125,6 +125,7 @@ import { expensesRepositoryTestCases } from './expenses-repository-cases';
 import { feeExemptionTestCases } from './fee-exemption-cases';
 import { joinTeamTestCases } from './join-team-cases';
 import { matchHighlightsTestCases } from './match-highlights-cases';
+import { matchDefaultsTestCases } from './match-defaults-cases';
 import { selosDeCartaoTestCases } from './selos-de-cartao-cases';
 import { mobileLayoutTestCases } from './mobile-layout-cases';
 import { mvpVotePermissionTestCases } from './mvp-vote-permission-cases';
@@ -167,6 +168,7 @@ const testCases: TestCase[] = [
   ...joinTeamTestCases,
   ...playerDeletionTestCases,
   ...matchHighlightsTestCases,
+  ...matchDefaultsTestCases,
   ...ratingAverageTestCases,
   ...mobileLayoutTestCases,
   ...mvpVotePermissionTestCases,

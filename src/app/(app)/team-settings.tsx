@@ -24,6 +24,8 @@ import { Screen } from '@/components/ui/Screen';
 import { TEAM_COLOR_PRESETS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { MATCH_WEEKDAY_OPTIONS } from '@/lib/match-defaults';
+import { isValidExternalUrl } from '@/lib/url';
 import {
   buildTeamBannerStoragePath,
   buildTeamLogoStoragePath,
@@ -63,6 +65,16 @@ const schema = z
     state: z.string().optional(),
     neighborhood: z.string().optional(),
     homeFieldName: z.string().optional(),
+    homeFieldLocationUrl: z
+      .string()
+      .optional()
+      .refine((value) => !value?.trim() || isValidExternalUrl(value), {
+        message: 'Cole um link válido de mapas.',
+      }),
+    defaultPixKey: z.string().optional(),
+    defaultPaymentResponsibleName: z.string().optional(),
+    defaultMatchWeekday: z.number().int().min(1).max(7).nullable(),
+    defaultAttendanceStatus: z.enum(['pending', 'absent']),
     contactName: z.string().optional(),
     contactPhone: z.string().optional(),
     contactWhatsapp: z.string().optional(),
@@ -148,6 +160,11 @@ export default function TeamSettingsScreen() {
       state: team?.state ?? '',
       neighborhood: team?.neighborhood ?? '',
       homeFieldName: team?.homeFieldName ?? '',
+      homeFieldLocationUrl: team?.homeFieldLocationUrl ?? '',
+      defaultPixKey: team?.defaultPixKey ?? '',
+      defaultPaymentResponsibleName: team?.defaultPaymentResponsibleName ?? '',
+      defaultMatchWeekday: team?.defaultMatchWeekday ?? null,
+      defaultAttendanceStatus: team?.defaultAttendanceStatus ?? 'pending',
       contactName: team?.contactName ?? '',
       contactPhone: team?.contactPhone ?? '',
       contactWhatsapp: team?.contactWhatsapp ?? '',
@@ -330,6 +347,12 @@ export default function TeamSettingsScreen() {
         state: values.state?.trim().toUpperCase() || null,
         neighborhood: values.neighborhood?.trim() || null,
         homeFieldName: values.homeFieldName?.trim() || null,
+        homeFieldLocationUrl: values.homeFieldLocationUrl?.trim() || null,
+        defaultPixKey: values.defaultPixKey?.trim() || null,
+        defaultPaymentResponsibleName:
+          values.defaultPaymentResponsibleName?.trim() || null,
+        defaultMatchWeekday: values.defaultMatchWeekday,
+        defaultAttendanceStatus: values.defaultAttendanceStatus,
         contactName: values.contactName?.trim() || null,
         contactPhone: values.contactPhone?.trim() || null,
         contactWhatsapp: values.contactWhatsapp?.trim() || null,
@@ -648,6 +671,175 @@ export default function TeamSettingsScreen() {
             },
           ]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+            Padrões das novas partidas
+          </Text>
+          <Text style={[styles.sectionText, { color: theme.colors.textMuted }]}>
+            Estes valores entram preenchidos ao criar um jogo e continuam editáveis.
+          </Text>
+
+          <Controller
+            control={control}
+            name="homeFieldName"
+            render={({ field }) => (
+              <AppInput
+                label="Local padrão"
+                value={field.value ?? ''}
+                onBlur={field.onBlur}
+                onChangeText={field.onChange}
+              />
+            )}
+          />
+          <Controller
+            control={control}
+            name="homeFieldLocationUrl"
+            render={({ field }) => (
+              <AppInput
+                label="Link padrão do local"
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={field.value ?? ''}
+                onBlur={field.onBlur}
+                onChangeText={field.onChange}
+                error={errors.homeFieldLocationUrl?.message}
+              />
+            )}
+          />
+
+          <View style={styles.row}>
+            <View style={styles.half}>
+              <Controller
+                control={control}
+                name="defaultPixKey"
+                render={({ field }) => (
+                  <AppInput
+                    label="PIX padrão"
+                    value={field.value ?? ''}
+                    onBlur={field.onBlur}
+                    onChangeText={field.onChange}
+                  />
+                )}
+              />
+            </View>
+            <View style={styles.half}>
+              <Controller
+                control={control}
+                name="defaultPaymentResponsibleName"
+                render={({ field }) => (
+                  <AppInput
+                    label="Responsável pelo PIX"
+                    value={field.value ?? ''}
+                    onBlur={field.onBlur}
+                    onChangeText={field.onChange}
+                  />
+                )}
+              />
+            </View>
+          </View>
+
+          <Text style={[styles.fieldLabel, { color: theme.colors.textMuted }]}>
+            Dia padrão
+          </Text>
+          <Controller
+            control={control}
+            name="defaultMatchWeekday"
+            render={({ field }) => (
+              <View style={styles.optionGrid}>
+                <Pressable
+                  onPress={() => field.onChange(null)}
+                  style={[
+                    styles.optionChip,
+                    {
+                      backgroundColor:
+                        field.value == null
+                          ? theme.colors.primarySoft
+                          : theme.colors.surface,
+                      borderColor:
+                        field.value == null ? theme.colors.primary : theme.colors.border,
+                    },
+                  ]}>
+                  <Text style={[styles.optionChipText, { color: theme.colors.text }]}>
+                    Sem padrão
+                  </Text>
+                </Pressable>
+                {MATCH_WEEKDAY_OPTIONS.map((option) => {
+                  const selected = field.value === option.value;
+
+                  return (
+                    <Pressable
+                      key={option.value}
+                      onPress={() => field.onChange(option.value)}
+                      style={[
+                        styles.optionChip,
+                        {
+                          backgroundColor: selected
+                            ? theme.colors.primarySoft
+                            : theme.colors.surface,
+                          borderColor: selected ? theme.colors.primary : theme.colors.border,
+                        },
+                      ]}>
+                      <Text style={[styles.optionChipText, { color: theme.colors.text }]}>
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+          />
+          <Text style={[styles.helperNote, { color: theme.colors.textMuted }]}>
+            Se o jogo for criado no mesmo dia escolhido, o app sugere a semana seguinte.
+          </Text>
+
+          <Text style={[styles.fieldLabel, { color: theme.colors.textMuted }]}>
+            Situação inicial do elenco
+          </Text>
+          <Controller
+            control={control}
+            name="defaultAttendanceStatus"
+            render={({ field }) => (
+              <View style={styles.optionGrid}>
+                {[
+                  { value: 'pending' as const, label: 'Pendente' },
+                  { value: 'absent' as const, label: 'Ausente' },
+                ].map((option) => {
+                  const selected = field.value === option.value;
+
+                  return (
+                    <Pressable
+                      key={option.value}
+                      onPress={() => field.onChange(option.value)}
+                      style={[
+                        styles.optionChip,
+                        {
+                          backgroundColor: selected
+                            ? theme.colors.primarySoft
+                            : theme.colors.surface,
+                          borderColor: selected ? theme.colors.primary : theme.colors.border,
+                        },
+                      ]}>
+                      <Text style={[styles.optionChipText, { color: theme.colors.text }]}>
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+          />
+          <Text style={[styles.helperNote, { color: theme.colors.textMuted }]}>
+            A escolha vale somente para novas partidas.
+          </Text>
+        </View>
+
+        <View
+          style={[
+            styles.publicCard,
+            {
+              backgroundColor: theme.colors.backgroundElevated,
+              borderColor: theme.colors.border,
+            },
+          ]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
             Perfil público do time
           </Text>
           <Text style={[styles.sectionText, { color: theme.colors.textMuted }]}>
@@ -715,18 +907,6 @@ export default function TeamSettingsScreen() {
             render={({ field }) => (
               <AppInput
                 label="Bairro opcional"
-                value={field.value ?? ''}
-                onBlur={field.onBlur}
-                onChangeText={field.onChange}
-              />
-            )}
-          />
-          <Controller
-            control={control}
-            name="homeFieldName"
-            render={({ field }) => (
-              <AppInput
-                label="Campo principal opcional"
                 value={field.value ?? ''}
                 onBlur={field.onBlur}
                 onChangeText={field.onChange}
@@ -1104,6 +1284,22 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 13,
     lineHeight: 19,
+  },
+  optionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  optionChip: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+  },
+  optionChipText: {
+    fontFamily: fonts.heading,
+    fontSize: 13,
+    fontWeight: '700',
   },
   row: {
     flexDirection: 'row',

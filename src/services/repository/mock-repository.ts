@@ -2092,6 +2092,24 @@ export const mockRepository: AppRepository = {
     team.state = publicProfile.state;
     team.neighborhood = publicProfile.neighborhood;
     team.homeFieldName = publicProfile.homeFieldName;
+    team.homeFieldLocationUrl =
+      input.homeFieldLocationUrl !== undefined
+        ? input.homeFieldLocationUrl?.trim() || null
+        : team.homeFieldLocationUrl ?? null;
+    team.defaultPixKey =
+      input.defaultPixKey !== undefined
+        ? input.defaultPixKey?.trim() || null
+        : team.defaultPixKey ?? null;
+    team.defaultPaymentResponsibleName =
+      input.defaultPaymentResponsibleName !== undefined
+        ? input.defaultPaymentResponsibleName?.trim() || null
+        : team.defaultPaymentResponsibleName ?? null;
+    team.defaultMatchWeekday =
+      input.defaultMatchWeekday !== undefined
+        ? input.defaultMatchWeekday
+        : team.defaultMatchWeekday ?? null;
+    team.defaultAttendanceStatus =
+      input.defaultAttendanceStatus ?? team.defaultAttendanceStatus ?? 'pending';
     team.contactName = publicProfile.contactName;
     team.contactPhone = publicProfile.contactPhone;
     team.contactWhatsapp = publicProfile.contactWhatsapp;
@@ -3099,6 +3117,18 @@ export const mockRepository: AppRepository = {
             updatedByUserId: creator.id,
           })
         : null;
+    const defaultFieldPayment =
+      defaultFieldCost && (team.defaultPixKey || team.defaultPaymentResponsibleName)
+        ? {
+            payerPlayerIds: [],
+            exemptPlayerIds: [],
+            paidGuestCount: 0,
+            pixKey: team.defaultPixKey ?? null,
+            responsibleName: team.defaultPaymentResponsibleName ?? null,
+            updatedAt: createdAt,
+            updatedByUserId: creator.id,
+          }
+        : null;
 
     const match: Match = {
       id: createId('match'),
@@ -3120,6 +3150,7 @@ export const mockRepository: AppRepository = {
       status: 'scheduled',
       createdBy: creator.id,
       fieldCost: defaultFieldCost,
+      fieldPayment: defaultFieldPayment,
       createdAt,
       updatedAt: createdAt,
       finishedAt: null,
@@ -3133,7 +3164,7 @@ export const mockRepository: AppRepository = {
       matchId: match.id,
       playerId: player.id,
       userId: player.linkedUserId ?? null,
-      status: 'pending',
+      status: team.defaultAttendanceStatus ?? 'pending',
       createdAt,
       updatedAt: createdAt,
     }));
@@ -3270,6 +3301,7 @@ export const mockRepository: AppRepository = {
   ) {
     const { activeTeamId } = ensureActiveTeamContext(actorUserId);
     const match = findMatchForTeam(activeTeamId, matchId);
+    const team = findTeam(match.teamId);
     requireTeamAdmin(actorUserId, match.teamId);
 
     if (match.deletedAt) {
@@ -3297,7 +3329,20 @@ export const mockRepository: AppRepository = {
     }
 
     match.fieldCost = nextFieldCost;
-    match.fieldPayment = nextFieldCost ? match.fieldPayment ?? null : null;
+    match.fieldPayment = nextFieldCost
+      ? match.fieldPayment ??
+        (team.defaultPixKey || team.defaultPaymentResponsibleName
+          ? {
+              payerPlayerIds: [],
+              exemptPlayerIds: [],
+              paidGuestCount: 0,
+              pixKey: team.defaultPixKey ?? null,
+              responsibleName: team.defaultPaymentResponsibleName ?? null,
+              updatedAt,
+              updatedByUserId: actorUserId,
+            }
+          : null)
+      : null;
     match.updatedAt = updatedAt;
 
     return clone(match);

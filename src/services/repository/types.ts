@@ -143,6 +143,11 @@ export interface UpdateTeamInput {
   state?: string | null;
   neighborhood?: string | null;
   homeFieldName?: string | null;
+  homeFieldLocationUrl?: string | null;
+  defaultPixKey?: string | null;
+  defaultPaymentResponsibleName?: string | null;
+  defaultMatchWeekday?: number | null;
+  defaultAttendanceStatus?: 'pending' | 'absent';
   contactName?: string | null;
   contactPhone?: string | null;
   contactWhatsapp?: string | null;

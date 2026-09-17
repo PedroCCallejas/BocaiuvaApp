@@ -209,6 +209,8 @@ export function comPartidas(base: AppRepository): AppRepository {
 
     async updateMatchFieldCost(matchId, input, actorUserId) {
       const atual = await buscarPartidaPorId(matchId);
+      const contextoDoElenco = await fatiaDoElenco.obter();
+      const time = contextoDoElenco.teams.find((item) => item.id === atual.teamId) ?? null;
 
       if (atual.deletedAt) {
         throw criarErroDoRepositorio(
@@ -251,8 +253,9 @@ export function comPartidas(base: AppRepository): AppRepository {
         note: custo.note,
         // O pagamento sobrevive à mudança de valor: quem já pagou continua
         // pago, e reescrever isso obrigaria o admin a remarcar todo mundo.
-        pixKey: atual.fieldPayment?.pixKey ?? null,
-        responsibleName: atual.fieldPayment?.responsibleName ?? null,
+        pixKey: atual.fieldPayment?.pixKey ?? time?.defaultPixKey ?? null,
+        responsibleName:
+          atual.fieldPayment?.responsibleName ?? time?.defaultPaymentResponsibleName ?? null,
         paidGuestCount: atual.fieldPayment?.paidGuestCount ?? 0,
         payerPlayerIds: atual.fieldPayment?.payerPlayerIds ?? [],
         exemptPlayerIds: atual.fieldPayment?.exemptPlayerIds ?? [],

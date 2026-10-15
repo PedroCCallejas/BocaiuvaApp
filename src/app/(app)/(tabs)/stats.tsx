@@ -22,11 +22,10 @@ import {
   calculateRankingMetric,
   filterMatchesForStats,
   formatPlayerMetricValue,
+  formatRankingMetricValue,
   formatStatNumber,
   getAvailableStatsMonths,
   getAvailableStatsYears,
-  getCriterionIdFromMetric,
-  isCriterionMetric,
   PLAYER_STATS_LABELS,
   type StatsFilters,
   type StatsPeriodPreset,
@@ -35,7 +34,7 @@ import {
 } from '@/lib/stats';
 import { useAppStore } from '@/store/app-store';
 import { selectActiveTeamRatingCriteria, selectCurrentTeam } from '@/store/selectors';
-import type { MatchType, TeamRatingCriterion } from '@/types/domain';
+import type { MatchType } from '@/types/domain';
 
 type StatsTabId = 'goals' | 'assists' | 'ga' | 'average' | 'mvp' | 'games';
 
@@ -66,20 +65,6 @@ const TAB_CONFIG: Array<{
   { id: 'mvp', label: PLAYER_STATS_LABELS.mvpAwards, metric: 'mvpAwards' },
   { id: 'games', label: PLAYER_STATS_LABELS.games, metric: 'games' },
 ];
-
-function valueLabelForMetric(
-  metric: StatsSortMetric,
-  value: number,
-  criterion?: TeamRatingCriterion | null,
-) {
-  if (isCriterionMetric(metric)) {
-    return criterion?.type === 'negative'
-      ? `${formatStatNumber(value, 1)} adj.`
-      : formatStatNumber(value, 1);
-  }
-
-  return formatPlayerMetricValue(metric, value);
-}
 
 function FilterChip({
   label,
@@ -164,9 +149,6 @@ export default function StatsScreen() {
     minGames,
   });
   const hasManualHistoryInStats = playerStats.some((item) => item.manualHistoryIncluded);
-  const selectedCriterionId = getCriterionIdFromMetric(selectedRatingMetric);
-  const selectedCriterion =
-    activeCriteria.find((criterion) => criterion.id === selectedCriterionId) ?? null;
   const filteredMatches = filterMatchesForStats(snapshot.matches, team.id, filters);
   const hasFinishedMatches =
     teamStats.totalMatches > 0 || playerStats.some((item) => item.hasHistory);
@@ -388,9 +370,10 @@ export default function StatsScreen() {
                 label: item.player.nickname,
                 subtitle: buildPlayerMetricSubtitle(selectedMetric, item),
                 value: calculateRankingMetric(item, selectedMetric),
-                valueLabel: valueLabelForMetric(
+                valueLabel: formatRankingMetricValue(
                   selectedMetric,
                   calculateRankingMetric(item, selectedMetric),
+                  item,
                 ),
               }))}
             />
@@ -439,10 +422,10 @@ export default function StatsScreen() {
                     label: item.player.nickname,
                     subtitle: buildPlayerMetricSubtitle(selectedRatingMetric, item),
                     value: calculateRankingMetric(item, selectedRatingMetric),
-                    valueLabel: valueLabelForMetric(
+                    valueLabel: formatRankingMetricValue(
                       selectedRatingMetric,
                       calculateRankingMetric(item, selectedRatingMetric),
-                      selectedCriterion,
+                      item,
                     ),
                   }))}
                 />

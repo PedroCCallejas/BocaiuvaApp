@@ -845,6 +845,17 @@ export function formatPlayerMetricValue(
   }
 }
 
+export function formatRankingMetricValue(
+  metric: StatsSortMetric,
+  value: number,
+  item: Pick<PlayerAggregateStats, 'criteriaAverages'>,
+) {
+  const criterionId = getCriterionIdFromMetric(metric);
+  return criterionId
+    ? formatStatNumber(item.criteriaAverages[criterionId] ?? 0, 1)
+    : formatPlayerMetricValue(metric as PlayerStatsMetric, value);
+}
+
 export function buildPlayerMetricSubtitle(
   metric: StatsSortMetric,
   item: PlayerAggregateStats,

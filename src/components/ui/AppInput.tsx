@@ -63,7 +63,7 @@ export function AppInput({
               ? theme.colors.danger
               : focused
                 ? theme.colors.focus
-                : theme.colors.borderStrong,
+                : theme.colors.borderInput,
           },
           style,
         ]}
@@ -117,8 +117,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   input: {
-    minHeight: 54,
-    borderRadius: 16,
+    minHeight: 48,
+    borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 16,
     fontFamily: fonts.body,

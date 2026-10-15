@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 
 import { ToolPageShell } from '@/components/tools/ToolPageShell';
 import { TOOL_COLORS } from '@/components/tools/tool-theme';
+import { AppButton } from '@/components/ui/AppButton';
 import { fonts } from '@/constants/theme';
 import {
   TIMER_DEFAULTS,
@@ -43,6 +44,7 @@ const FAQ = [
 ];
 
 export default function CronometroScreen() {
+  const [showHelp, setShowHelp] = useState(false);
   const store = usePickupToolsStore();
   const {
     durationMs,
@@ -162,13 +164,13 @@ export default function CronometroScreen() {
       title="Cronômetro"
       subtitle="Tempo, placar e limite de gols."
       seoTitle="Cronômetro de Pelada com Placar | Professô FC"
-      seoDescription="Cronômetro online para pelada com placar, limite de gols e alerta de fim de partida. Grátis, sem login, feito para quadra e society."
+      seoDescription="Cronômetro online para pelada com placar, limite de gols e alerta de fim de partida. Na sua conta, feito para quadra e society."
       compactHero>
 
       {/* Session banner */}
       {sessionActive ? (
         <View style={[styles.sessionBanner, { backgroundColor: 'rgba(22,163,74,0.09)', borderColor: 'rgba(22,163,74,0.3)' }]}>
-          <Text style={[styles.sessionBannerText, { color: '#15803D' }]}>
+          <Text style={[styles.sessionBannerText, { color: C.textMuted }]}>
             Continuando pelada salva neste dispositivo.
           </Text>
         </View>
@@ -188,7 +190,7 @@ export default function CronometroScreen() {
           <View style={styles.configRow}>
             <View style={styles.configField}>
               <Text style={styles.configLabel}>Duração (minutos)</Text>
-              <TextInput
+              <TextInput accessibilityLabel="Duração (minutos)"
                 value={minutesInput}
                 onChangeText={setMinutesInput}
                 keyboardType="number-pad"
@@ -201,7 +203,7 @@ export default function CronometroScreen() {
 
             <View style={styles.configField}>
               <Text style={styles.configLabel}>Limite de gols (0 = sem limite)</Text>
-              <TextInput
+              <TextInput accessibilityLabel="Limite de gols (0 = sem limite)"
                 value={goalLimitInput}
                 onChangeText={setGoalLimitInput}
                 keyboardType="number-pad"
@@ -217,7 +219,7 @@ export default function CronometroScreen() {
             <Text style={styles.errorText}>{inputError}</Text>
           ) : null}
 
-          <Pressable onPress={handleStart} style={styles.primaryButton}>
+          <Pressable accessibilityRole="button" onPress={handleStart} style={styles.primaryButton}>
             <Text style={styles.primaryButtonText}>Iniciar pelada</Text>
           </Pressable>
         </View>
@@ -245,13 +247,15 @@ export default function CronometroScreen() {
             <Text style={styles.teamName}>Time A</Text>
             <Text style={styles.score}>{teamAScore}</Text>
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Adicionar gol do Time A"
               onPress={() => store.addGoal('A')}
               disabled={gameOver}
               style={[
                 styles.goalButton,
-                { backgroundColor: gameOver ? C.cardMuted : '#16A34A', borderColor: gameOver ? C.border : '#16A34A' },
+                { backgroundColor: gameOver ? C.cardMuted : C.accent, borderColor: gameOver ? C.border : C.accent },
               ]}>
-              <Text style={[styles.goalButtonText, { color: gameOver ? C.textMuted : '#FFF' }]}>
+              <Text style={[styles.goalButtonText, { color: gameOver ? C.textMuted : C.background }]}>
                 + Gol
               </Text>
             </Pressable>
@@ -263,13 +267,15 @@ export default function CronometroScreen() {
             <Text style={styles.teamName}>Time B</Text>
             <Text style={styles.score}>{teamBScore}</Text>
             <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Adicionar gol do Time B"
               onPress={() => store.addGoal('B')}
               disabled={gameOver}
               style={[
                 styles.goalButton,
-                { backgroundColor: gameOver ? C.cardMuted : '#16A34A', borderColor: gameOver ? C.border : '#16A34A' },
+                { backgroundColor: gameOver ? C.cardMuted : C.accent, borderColor: gameOver ? C.border : C.accent },
               ]}>
-              <Text style={[styles.goalButtonText, { color: gameOver ? C.textMuted : '#FFF' }]}>
+              <Text style={[styles.goalButtonText, { color: gameOver ? C.textMuted : C.background }]}>
                 + Gol
               </Text>
             </Pressable>
@@ -279,11 +285,11 @@ export default function CronometroScreen() {
         {gameStarted ? (
           <View style={styles.controlsRow}>
             {!gameOver ? (
-              <Pressable onPress={handleToggle} style={styles.controlButton}>
+              <Pressable accessibilityRole="button" onPress={handleToggle} style={styles.controlButton}>
                 <Text style={styles.controlButtonText}>{isRunning ? 'Pausar' : 'Continuar'}</Text>
               </Pressable>
             ) : null}
-            <Pressable
+            <Pressable accessibilityRole="button"
               onPress={handleReset}
               style={[styles.controlButton, { backgroundColor: C.cardMuted, borderColor: C.border, borderWidth: 1 }]}>
               <Text style={[styles.controlButtonText, { color: C.textMuted }]}>
@@ -309,7 +315,7 @@ export default function CronometroScreen() {
               <Text style={styles.rodizioPlayers}>{rodizioB.join(', ')}</Text>
             </View>
           </View>
-          <Pressable
+          <Pressable accessibilityRole="button"
             onPress={() => router.push('/ferramentas/rodizio-de-times' as never)}
             style={styles.secondaryButton}>
             <Text style={styles.secondaryButtonText}>Abrir rodízio</Text>
@@ -320,6 +326,8 @@ export default function CronometroScreen() {
       {/* Anúncio removido desta tela: cronômetro é tela de uso comportamental
           (política AdSense de "telas sem conteúdo do editor"). */}
 
+      <View style={{ alignItems: 'flex-start' }}><AppButton variant="ghost" label={showHelp ? 'Fechar ajuda' : 'Como usar'} onPress={() => setShowHelp(!showHelp)} /></View>
+      {showHelp ? <View>
       <View style={styles.tipsSection}>
         <Text style={styles.sectionTitle}>Regras comuns para adaptar</Text>
         <View style={styles.tipsList}>
@@ -346,6 +354,7 @@ export default function CronometroScreen() {
         ))}
       </View>
 
+      </View> : null}
       <View style={styles.relatedLinks}>
         <Text style={styles.relatedTitle}>Outras ferramentas</Text>
         <View style={styles.relatedRow}>
@@ -354,7 +363,7 @@ export default function CronometroScreen() {
             { label: 'Rodízio de Times', href: '/ferramentas/rodizio-de-times' },
             { label: 'Campeonato Rápido', href: '/ferramentas/campeonato-rapido' },
           ].map((link) => (
-            <Pressable
+            <Pressable accessibilityRole="button"
               key={link.href}
               onPress={() => router.push(link.href as never)}
               style={styles.relatedChip}>
@@ -375,8 +384,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   sessionBannerText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '600' },
-  card: { borderWidth: 1, borderRadius: 24, padding: 20, gap: 16, backgroundColor: C.card, borderColor: C.border },
-  cardTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800', color: C.text },
+  card: { borderWidth: 1, borderRadius: 18, padding: 20, gap: 16, backgroundColor: C.card, borderColor: C.border },
+  cardTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '600', color: C.text },
   configRow: { flexDirection: 'row', gap: 12 },
   configField: { flex: 1, gap: 6 },
   configLabel: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
@@ -387,29 +396,29 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontFamily: fonts.heading,
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '600',
     color: C.text,
     backgroundColor: C.cardMuted,
-    borderColor: C.border,
+    borderColor: C.borderStrong,
   },
-  errorText: { fontFamily: fonts.body, fontSize: 13, color: '#EF4444' },
-  primaryButton: { borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: '#16A34A' },
-  primaryButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
-  secondaryButton: {
+  errorText: { fontFamily: fonts.body, fontSize: 13, color: C.danger },
+  primaryButton: { minHeight: 44, borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: C.accent },
+  primaryButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '600', color: C.background },
+  secondaryButton: { minHeight: 44,
     borderWidth: 1,
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 16,
     alignItems: 'center',
     alignSelf: 'flex-start',
-    borderColor: '#16A34A',
+    borderColor: C.accent,
   },
-  secondaryButtonText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700', color: '#16A34A' },
-  scoreboard: { borderWidth: 1, borderRadius: 28, padding: 24, gap: 20, alignItems: 'center', backgroundColor: C.card, borderColor: C.borderStrong },
+  secondaryButtonText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700', color: C.accent },
+  scoreboard: { borderWidth: 1, borderRadius: 18, padding: 24, gap: 20, alignItems: 'center', backgroundColor: C.card, borderColor: C.borderStrong },
   timerRow: { alignItems: 'center', gap: 4 },
-  timer: { fontFamily: fonts.display, fontSize: 64, fontWeight: '900', letterSpacing: -2 },
+  timer: { fontFamily: fonts.display, fontSize: 58, fontWeight: '600', letterSpacing: -2, fontVariant: ['tabular-nums'] },
   goalLimitLabel: { fontFamily: fonts.body, fontSize: 12, color: C.textMuted },
-  winnerLabel: { fontFamily: fonts.heading, fontSize: 22, fontWeight: '800', textAlign: 'center', color: '#22C55E' },
+  winnerLabel: { fontFamily: fonts.heading, fontSize: 22, fontWeight: '600', textAlign: 'center', color: C.accent },
   scoreRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -419,8 +428,8 @@ const styles = StyleSheet.create({
   },
   teamBlock: { alignItems: 'center', gap: 10 },
   teamName: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
-  score: { fontFamily: fonts.display, fontSize: 72, fontWeight: '900', lineHeight: 80, color: C.text },
-  goalButton: {
+  score: { fontFamily: fonts.display, fontSize: 48, fontWeight: '700', lineHeight: 80, color: C.text },
+  goalButton: { minHeight: 44,
     borderRadius: 12,
     paddingHorizontal: 20,
     paddingVertical: 10,
@@ -428,36 +437,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
   },
-  goalButtonText: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800' },
-  vs: { fontFamily: fonts.display, fontSize: 32, fontWeight: '900', color: C.textMuted },
+  goalButtonText: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '600' },
+  vs: { fontFamily: fonts.display, fontSize: 32, fontWeight: '700', color: C.textMuted },
   controlsRow: { flexDirection: 'row', gap: 12, justifyContent: 'center', flexWrap: 'wrap' },
-  controlButton: {
+  controlButton: { minHeight: 44,
     borderRadius: 14,
     paddingHorizontal: 28,
     paddingVertical: 14,
     minWidth: 120,
     alignItems: 'center',
-    backgroundColor: '#16A34A',
+    backgroundColor: C.accent,
   },
-  controlButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
-  rodizioInfo: { borderWidth: 1.5, borderRadius: 20, padding: 16, gap: 12, borderColor: '#16A34A', backgroundColor: C.card },
-  rodizioTitle: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800', color: '#16A34A' },
+  controlButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '600', color: C.background },
+  rodizioInfo: { borderWidth: 1.5, borderRadius: 20, padding: 16, gap: 12, borderColor: C.accent, backgroundColor: C.card },
+  rodizioTitle: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '600', color: C.accent },
   rodizioTeams: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
   rodizioTeam: { flex: 1, gap: 4 },
   rodizioTeamLabel: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '700', color: C.textMuted },
   rodizioPlayers: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20, color: C.text },
   tipsSection: { gap: 12 },
-  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800', color: C.text },
+  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '600', color: C.text },
   tipsList: { gap: 10 },
   tipItem: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
-  tipBullet: { fontFamily: fonts.heading, fontSize: 16, lineHeight: 22, color: '#16A34A' },
+  tipBullet: { fontFamily: fonts.heading, fontSize: 16, lineHeight: 22, color: C.accent },
   tipText: { flex: 1, fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: C.textMuted },
   faqList: { gap: 12 },
   faqCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 8, backgroundColor: C.card, borderColor: C.border },
-  faqQ: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800', color: C.text },
+  faqQ: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '600', color: C.text },
   faqA: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: C.textMuted },
   relatedLinks: { gap: 12 },
-  relatedTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800', color: C.text },
+  relatedTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '600', color: C.text },
   relatedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   relatedChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: C.card, borderColor: C.border },
   relatedChipText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.accentLight },

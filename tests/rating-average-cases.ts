@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { formatRankingMetricValue } from '@/lib/stats';
 
 import {
   MAX_RATING_SCORE,
@@ -35,6 +36,17 @@ function overall(scores: Record<string, number>, snapshot = SNAPSHOT) {
 }
 
 export const ratingAverageTestCases: TestCase[] = [
+  {
+    name: 'ranking mostra a media original de reclamacao e fominha sem inverter o rotulo',
+    run() {
+      const item = { criteriaAverages: { reclamacao: 1, fominha: 3.2, qualidade: 8.5 } };
+      assert.equal(formatRankingMetricValue('criterion:reclamacao', 10, item), '1');
+      assert.equal(formatRankingMetricValue('criterion:fominha', 7.8, item), '3.2');
+      assert.equal(formatRankingMetricValue('criterion:qualidade', 8.5, item), '8.5');
+      assert.equal(formatRankingMetricValue('goals', 10, item), '10');
+      assert.equal(formatRankingMetricValue('avgRating', 8.2, item), '8.2');
+    },
+  },
   {
     name: 'criterio negativo alto derruba a media, nao aumenta',
     run() {

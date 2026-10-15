@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { router } from 'expo-router';
-import { Alert, Platform, StyleSheet, Text, View } from 'react-native';
+import { router, usePathname } from 'expo-router';
+import { Alert, Platform, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { CartaoDeAvisos } from '@/components/notifications/CartaoDeAvisos';
 import { AppButton } from '@/components/ui/AppButton';
+import { AppNavigation } from '@/components/navigation/AppNavigation';
 import { Avatar } from '@/components/ui/Avatar';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { Pill } from '@/components/ui/Pill';
@@ -23,6 +24,8 @@ import {
 
 export default function ProfileScreen() {
   const isWeb = Platform.OS === 'web';
+  const { width } = useWindowDimensions();
+  const standaloneAccount = usePathname() === '/account';
   const theme = useAppTheme();
   const user = useAppStore(selectCurrentUser);
   const player = useAppStore(selectCurrentPlayer);
@@ -89,7 +92,8 @@ export default function ProfileScreen() {
   }
 
   return (
-    <Screen>
+    <Screen hideWebHeader={standaloneAccount}>
+      {standaloneAccount || width < 768 ? <AppNavigation /> : null}
       {!isWeb ? (
         <SectionHeader
           title="Conta e acesso"
@@ -153,12 +157,12 @@ export default function ProfileScreen() {
             variant="secondary"
             onPress={() => router.push(`/players/${player.id}/edit`)}
           />
-        ) : (
+        ) : team ? (
           <Text style={[styles.note, { color: theme.colors.textMuted }]}>
             Voce esta no time, mas ainda nao possui um jogador vinculado ao seu usuario.
             Peca para um administrador revisar o vinculo correto.
           </Text>
-        )}
+        ) : null}
         <CartaoDeAvisos userId={currentUserId} />
 
         <AppButton

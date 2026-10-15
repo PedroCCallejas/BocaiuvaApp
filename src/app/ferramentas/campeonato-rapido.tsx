@@ -6,6 +6,7 @@ import { SafeAd } from '@/components/ads/SafeAd';
 import { ToolPageShell } from '@/components/tools/ToolPageShell';
 import { TOOL_COLORS } from '@/components/tools/tool-theme';
 import { AD_PLACEMENTS } from '@/constants/ads';
+import { AppButton } from '@/components/ui/AppButton';
 import { fonts } from '@/constants/theme';
 
 const C = TOOL_COLORS;
@@ -137,6 +138,7 @@ const FAQ = [
 ];
 
 export default function CampeonatoScreen() {
+  const [showHelp, setShowHelp] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [teams, setTeams] = useState<string[]>([]);
   const [format, setFormat] = useState<Format>('knockout');
@@ -280,7 +282,7 @@ export default function CampeonatoScreen() {
               </Text>
             ) : null}
             <View style={styles.inputRow}>
-              <TextInput
+              <TextInput accessibilityLabel="Nome do time"
                 value={inputValue}
                 onChangeText={setInputValue}
                 onSubmitEditing={addTeam}
@@ -289,11 +291,11 @@ export default function CampeonatoScreen() {
                 returnKeyType="done"
                 style={styles.input}
               />
-              <Pressable
+              <Pressable accessibilityRole="button"
                 onPress={addTeam}
                 disabled={teams.length >= 16}
-                style={[styles.addButton, { backgroundColor: teams.length >= 16 ? C.cardMuted : '#16A34A' }]}>
-                <Text style={[styles.addButtonText, { color: teams.length >= 16 ? C.textMuted : '#FFFFFF' }]}>
+                style={[styles.addButton, { backgroundColor: teams.length >= 16 ? C.cardMuted : C.accent }]}>
+                <Text style={[styles.addButtonText, { color: teams.length >= 16 ? C.textMuted : C.background }]}>
                   Adicionar
                 </Text>
               </Pressable>
@@ -304,7 +306,7 @@ export default function CampeonatoScreen() {
                   <View key={`${team}-${index}`} style={styles.teamChip}>
                     <Text style={styles.teamIndex}>{index + 1}</Text>
                     <Text style={styles.teamName}>{team}</Text>
-                    <Pressable onPress={() => removeTeam(index)} hitSlop={8}>
+                    <Pressable accessibilityRole="button" onPress={() => removeTeam(index)} hitSlop={8}>
                       <Text style={styles.removeText}>✕</Text>
                     </Pressable>
                   </View>
@@ -330,7 +332,7 @@ export default function CampeonatoScreen() {
                   },
                 ] as const
               ).map((f) => (
-                <Pressable
+                <Pressable accessibilityRole="button"
                   key={f.key}
                   onPress={() => setFormat(f.key)}
                   style={[
@@ -348,14 +350,14 @@ export default function CampeonatoScreen() {
             </View>
           </View>
 
-          <Pressable
+          <Pressable accessibilityRole="button"
             onPress={generate}
             disabled={teams.length < 2}
             style={[
               styles.generateButton,
-              { backgroundColor: teams.length >= 2 ? '#16A34A' : C.cardMuted, borderColor: teams.length >= 2 ? '#16A34A' : C.border },
+              { backgroundColor: teams.length >= 2 ? C.accent : C.cardMuted, borderColor: teams.length >= 2 ? C.accent : C.border },
             ]}>
-            <Text style={[styles.generateButtonText, { color: teams.length >= 2 ? '#FFFFFF' : C.textMuted }]}>
+            <Text style={[styles.generateButtonText, { color: teams.length >= 2 ? C.background : C.textMuted }]}>
               Gerar campeonato
             </Text>
           </Pressable>
@@ -384,7 +386,7 @@ export default function CampeonatoScreen() {
                     style={[
                       styles.matchCard,
                       {
-                        borderColor: match.played ? '#16A34A' : C.border,
+                        borderColor: match.played ? C.accent : C.border,
                         opacity: ri < currentRound ? 0.6 : 1,
                       },
                     ]}>
@@ -396,13 +398,13 @@ export default function CampeonatoScreen() {
                           <Text style={styles.matchTeam}>{match.teamA}</Text>
                           <View style={styles.matchScoreControls}>
                             {ri === currentRound ? (
-                              <Pressable onPress={() => updateKnockoutScore(match.id, 'A', -1)} style={styles.scoreBtn}>
+                              <Pressable accessibilityRole="button" onPress={() => updateKnockoutScore(match.id, 'A', -1)} style={styles.scoreBtn}>
                                 <Text style={styles.scoreBtnText}>-</Text>
                               </Pressable>
                             ) : null}
                             <Text style={styles.matchScore}>{match.scoreA}</Text>
                             {ri === currentRound ? (
-                              <Pressable onPress={() => updateKnockoutScore(match.id, 'A', 1)} style={[styles.scoreBtn, styles.scoreBtnActive]}>
+                              <Pressable accessibilityRole="button" onPress={() => updateKnockoutScore(match.id, 'A', 1)} style={[styles.scoreBtn, styles.scoreBtnActive]}>
                                 <Text style={styles.scoreBtnTextWhite}>+</Text>
                               </Pressable>
                             ) : null}
@@ -413,13 +415,13 @@ export default function CampeonatoScreen() {
                           <Text style={styles.matchTeam}>{match.teamB}</Text>
                           <View style={styles.matchScoreControls}>
                             {ri === currentRound ? (
-                              <Pressable onPress={() => updateKnockoutScore(match.id, 'B', -1)} style={styles.scoreBtn}>
+                              <Pressable accessibilityRole="button" onPress={() => updateKnockoutScore(match.id, 'B', -1)} style={styles.scoreBtn}>
                                 <Text style={styles.scoreBtnText}>-</Text>
                               </Pressable>
                             ) : null}
                             <Text style={styles.matchScore}>{match.scoreB}</Text>
                             {ri === currentRound ? (
-                              <Pressable onPress={() => updateKnockoutScore(match.id, 'B', 1)} style={[styles.scoreBtn, styles.scoreBtnActive]}>
+                              <Pressable accessibilityRole="button" onPress={() => updateKnockoutScore(match.id, 'B', 1)} style={[styles.scoreBtn, styles.scoreBtnActive]}>
                                 <Text style={styles.scoreBtnTextWhite}>+</Text>
                               </Pressable>
                             ) : null}
@@ -434,12 +436,12 @@ export default function CampeonatoScreen() {
           ))}
 
           {isKnockoutRoundComplete && !isFinal ? (
-            <Pressable onPress={advanceKnockout} style={styles.advanceButton}>
+            <Pressable accessibilityRole="button" onPress={advanceKnockout} style={styles.advanceButton}>
               <Text style={styles.advanceButtonText}>Avançar para próxima fase</Text>
             </Pressable>
           ) : null}
 
-          <Pressable onPress={reset} style={styles.resetButton}>
+          <Pressable accessibilityRole="button" onPress={reset} style={styles.resetButton}>
             <Text style={styles.resetButtonText}>Reiniciar campeonato</Text>
           </Pressable>
         </View>
@@ -452,15 +454,15 @@ export default function CampeonatoScreen() {
             {leagueMatches.map((match) => (
               <View
                 key={match.id}
-                style={[styles.matchCard, { borderColor: match.played ? '#16A34A' : C.border }]}>
+                style={[styles.matchCard, { borderColor: match.played ? C.accent : C.border }]}>
                 <View style={styles.matchTeamRow}>
                   <Text style={styles.matchTeam}>{match.teamA}</Text>
                   <View style={styles.matchScoreControls}>
-                    <Pressable onPress={() => updateLeagueScore(match.id, 'A', -1)} style={styles.scoreBtn}>
+                    <Pressable accessibilityRole="button" onPress={() => updateLeagueScore(match.id, 'A', -1)} style={styles.scoreBtn}>
                       <Text style={styles.scoreBtnText}>-</Text>
                     </Pressable>
                     <Text style={styles.matchScore}>{match.scoreA}</Text>
-                    <Pressable onPress={() => updateLeagueScore(match.id, 'A', 1)} style={[styles.scoreBtn, styles.scoreBtnActive]}>
+                    <Pressable accessibilityRole="button" onPress={() => updateLeagueScore(match.id, 'A', 1)} style={[styles.scoreBtn, styles.scoreBtnActive]}>
                       <Text style={styles.scoreBtnTextWhite}>+</Text>
                     </Pressable>
                   </View>
@@ -469,17 +471,17 @@ export default function CampeonatoScreen() {
                 <View style={styles.matchTeamRow}>
                   <Text style={styles.matchTeam}>{match.teamB}</Text>
                   <View style={styles.matchScoreControls}>
-                    <Pressable onPress={() => updateLeagueScore(match.id, 'B', -1)} style={styles.scoreBtn}>
+                    <Pressable accessibilityRole="button" onPress={() => updateLeagueScore(match.id, 'B', -1)} style={styles.scoreBtn}>
                       <Text style={styles.scoreBtnText}>-</Text>
                     </Pressable>
                     <Text style={styles.matchScore}>{match.scoreB}</Text>
-                    <Pressable onPress={() => updateLeagueScore(match.id, 'B', 1)} style={[styles.scoreBtn, styles.scoreBtnActive]}>
+                    <Pressable accessibilityRole="button" onPress={() => updateLeagueScore(match.id, 'B', 1)} style={[styles.scoreBtn, styles.scoreBtnActive]}>
                       <Text style={styles.scoreBtnTextWhite}>+</Text>
                     </Pressable>
                   </View>
                 </View>
                 {!match.played ? (
-                  <Pressable onPress={() => markLeagueMatchPlayed(match.id)} style={styles.confirmButton}>
+                  <Pressable accessibilityRole="button" onPress={() => markLeagueMatchPlayed(match.id)} style={styles.confirmButton}>
                     <Text style={styles.confirmButtonText}>Confirmar placar</Text>
                   </Pressable>
                 ) : null}
@@ -523,7 +525,7 @@ export default function CampeonatoScreen() {
             </View>
           ) : null}
 
-          <Pressable onPress={reset} style={styles.resetButton}>
+          <Pressable accessibilityRole="button" onPress={reset} style={styles.resetButton}>
             <Text style={styles.resetButtonText}>Reiniciar campeonato</Text>
           </Pressable>
         </View>
@@ -531,6 +533,8 @@ export default function CampeonatoScreen() {
 
       <SafeAd placement={AD_PLACEMENTS.TOOLS_AFTER_RESULT} hasContent={hasResult} />
 
+      <View style={{ alignItems: 'flex-start' }}><AppButton variant="ghost" label={showHelp ? 'Fechar ajuda' : 'Como usar'} onPress={() => setShowHelp(!showHelp)} /></View>
+      {showHelp ? <View>
       <View style={styles.tipsSection}>
         <Text style={styles.sectionTitle}>Dicas de uso</Text>
         <View style={styles.tipsList}>
@@ -559,6 +563,7 @@ export default function CampeonatoScreen() {
 
       <SafeAd placement={AD_PLACEMENTS.TOOLS_HUB_AFTER_CARDS} hasContent />
 
+      </View> : null}
       <View style={styles.relatedLinks}>
         <Text style={styles.relatedTitle}>Outras ferramentas</Text>
         <View style={styles.relatedRow}>
@@ -567,7 +572,7 @@ export default function CampeonatoScreen() {
             { label: 'Cronômetro de Pelada', href: '/ferramentas/cronometro-pelada' },
             { label: 'Rodízio de Times', href: '/ferramentas/rodizio-de-times' },
           ].map((link) => (
-            <Pressable
+            <Pressable accessibilityRole="button"
               key={link.href}
               onPress={() => router.push(link.href as never)}
               style={styles.relatedChip}>
@@ -581,41 +586,41 @@ export default function CampeonatoScreen() {
 }
 
 const styles = StyleSheet.create({
-  card: { borderWidth: 1, borderRadius: 24, padding: 20, gap: 14, backgroundColor: C.card, borderColor: C.border },
-  cardTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800', color: C.text },
+  card: { borderWidth: 1, borderRadius: 18, padding: 20, gap: 14, backgroundColor: C.card, borderColor: C.border },
+  cardTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '600', color: C.text },
   cardSubtitle: { fontFamily: fonts.body, fontSize: 13, marginTop: -8, color: C.textMuted },
   inputRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   input: { flex: 1, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontFamily: fonts.body, fontSize: 15, color: C.text, backgroundColor: C.cardMuted, borderColor: C.border },
-  addButton: { borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, justifyContent: 'center' },
-  addButtonText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800' },
+  addButton: { minHeight: 44, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, justifyContent: 'center' },
+  addButtonText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '600' },
   teamList: { gap: 8 },
   teamChip: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: C.cardMuted, borderColor: C.border },
-  teamIndex: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '800', minWidth: 18, color: C.accentLight },
+  teamIndex: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '600', minWidth: 18, color: C.accentLight },
   teamName: { flex: 1, fontFamily: fonts.body, fontSize: 14, color: C.text },
   removeText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
   formatRow: { flexDirection: 'row', gap: 12 },
   formatCard: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 6 },
-  formatLabel: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800', color: C.text },
+  formatLabel: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '600', color: C.text },
   formatDesc: { fontFamily: fonts.body, fontSize: 13, lineHeight: 18, color: C.textMuted },
   generateButton: { borderWidth: 1, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  generateButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800' },
+  generateButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '600' },
   hint: { fontFamily: fonts.body, fontSize: 13, color: C.textMuted },
   playingSection: { gap: 18 },
   championCard: { borderWidth: 2, borderRadius: 20, padding: 20, alignItems: 'center', gap: 6, backgroundColor: C.accentSoft, borderColor: C.accent },
-  championLabel: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, color: C.accentLight },
-  championName: { fontFamily: fonts.display, fontSize: 32, fontWeight: '900', textAlign: 'center', color: C.text },
+  championLabel: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, color: C.accentLight },
+  championName: { fontFamily: fonts.display, fontSize: 32, fontWeight: '700', textAlign: 'center', color: C.text },
   roundSection: { gap: 12 },
-  roundName: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800', color: C.text },
+  roundName: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '600', color: C.text },
   matchList: { gap: 10 },
   matchCard: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 10, backgroundColor: C.card },
   matchTeamRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   matchTeam: { flex: 1, fontFamily: fonts.heading, fontSize: 15, fontWeight: '700', color: C.text },
   matchScoreControls: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  matchScore: { fontFamily: fonts.display, fontSize: 24, fontWeight: '900', minWidth: 30, textAlign: 'center', color: C.text },
+  matchScore: { fontFamily: fonts.display, fontSize: 24, fontWeight: '700', minWidth: 30, textAlign: 'center', color: C.text },
   scoreBtn: { width: 32, height: 32, borderRadius: 8, borderWidth: 1, alignItems: 'center', justifyContent: 'center', borderColor: C.border, backgroundColor: C.cardMuted },
-  scoreBtnActive: { backgroundColor: '#16A34A', borderColor: '#16A34A' },
-  scoreBtnText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', color: C.textMuted },
-  scoreBtnTextWhite: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', color: '#FFFFFF' },
+  scoreBtnActive: { backgroundColor: C.accent, borderColor: C.accent },
+  scoreBtnText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '600', color: C.textMuted },
+  scoreBtnTextWhite: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '600', color: C.background },
   matchDivider: { height: 1, backgroundColor: C.border },
   byeText: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: C.textMuted },
   confirmButton: { borderWidth: 1, borderRadius: 10, paddingVertical: 8, alignItems: 'center', marginTop: 4, borderColor: C.border },
@@ -623,25 +628,25 @@ const styles = StyleSheet.create({
   standingsSection: { gap: 12 },
   standingsTable: { borderWidth: 1, borderRadius: 16, overflow: 'hidden', backgroundColor: C.card, borderColor: C.border },
   standingsHeader: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border },
-  standingsHeaderCell: { fontFamily: fonts.heading, fontSize: 11, fontWeight: '800', textTransform: 'uppercase', color: C.textMuted },
+  standingsHeaderCell: { fontFamily: fonts.heading, fontSize: 11, fontWeight: '600', textTransform: 'uppercase', color: C.textMuted },
   standingsRow: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 10 },
   standingsCell: { fontFamily: fonts.body, fontSize: 13 },
-  advanceButton: { borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: '#16A34A' },
-  advanceButtonText: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800', color: '#FFFFFF' },
+  advanceButton: { borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: C.accent },
+  advanceButtonText: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '600', color: C.background },
   resetButton: { borderWidth: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center', borderColor: C.border, backgroundColor: C.cardMuted },
   resetButtonText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700', color: C.textMuted },
   tipsSection: { gap: 12 },
-  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800', color: C.text },
+  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '600', color: C.text },
   tipsList: { gap: 10 },
   tipItem: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   tipBullet: { fontFamily: fonts.heading, fontSize: 16, lineHeight: 22, color: C.accentLight },
   tipText: { flex: 1, fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: C.textMuted },
   faqList: { gap: 12 },
   faqCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 8, backgroundColor: C.card, borderColor: C.border },
-  faqQ: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800', color: C.text },
+  faqQ: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '600', color: C.text },
   faqA: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: C.textMuted },
   relatedLinks: { gap: 12 },
-  relatedTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '800', color: C.text },
+  relatedTitle: { fontFamily: fonts.heading, fontSize: 18, fontWeight: '600', color: C.text },
   relatedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   relatedChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: C.card, borderColor: C.border },
   relatedChipText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.accentLight },

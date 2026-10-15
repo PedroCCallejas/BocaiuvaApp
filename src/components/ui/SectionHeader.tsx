@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: fonts.heading,
     fontSize: 21,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   subtitle: {
     fontFamily: fonts.body,
@@ -96,6 +96,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   actionWrap: {
+    minHeight: 44,
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 12,

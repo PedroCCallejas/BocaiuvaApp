@@ -1,0 +1,26 @@
+[
+  {
+    "package": "braces",
+    "version": "3.0.3",
+    "nodes": [
+      "node_modules/braces"
+    ],
+    "advisory": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+    "expires": "2026-11-12",
+    "approved": true,
+    "reason": "Exceção temporária aprovada explicitamente pelo usuário em 13/10/2026, restrita ao advisory, versão e caminho listados, sem correção publicada na data da consulta.",
+    "approvedOn": "2026-10-13"
+  },
+  {
+    "package": "node-forge",
+    "version": "1.4.0",
+    "nodes": [
+      "node_modules/node-forge"
+    ],
+    "advisory": "https://github.com/advisories/GHSA-86w9-cpqp-85rv",
+    "expires": "2026-11-12",
+    "approved": true,
+    "reason": "Exceção temporária aprovada explicitamente pelo usuário em 13/10/2026, restrita ao advisory, versão e caminho listados, sem correção publicada na data da consulta.",
+    "approvedOn": "2026-10-13"
+  }
+]

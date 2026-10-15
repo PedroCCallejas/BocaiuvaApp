@@ -6,6 +6,7 @@ import { SafeAd } from '@/components/ads/SafeAd';
 import { ToolPageShell } from '@/components/tools/ToolPageShell';
 import { TOOL_COLORS } from '@/components/tools/tool-theme';
 import { AD_PLACEMENTS } from '@/constants/ads';
+import { AppButton } from '@/components/ui/AppButton';
 import { fonts } from '@/constants/theme';
 import {
   type PlayerWithPot,
@@ -22,7 +23,7 @@ type SortMode = 'random' | 'potes';
 const PER_TEAM_OPTIONS = [3, 4, 5, 6, 7];
 const POT_OPTIONS: PotNumber[] = [1, 2, 3, 4];
 const POT_COLORS: Record<PotNumber, string> = {
-  1: '#16A34A',
+  1: C.accent,
   2: '#2563EB',
   3: '#D97706',
   4: '#9333EA',
@@ -48,6 +49,7 @@ const FAQ = [
 ];
 
 export default function SorteadorScreen() {
+  const [showHelp, setShowHelp] = useState(false);
   const [mode, setMode] = useState<SortMode>('random');
   const [perTeam, setPerTeam] = useState(5);
   const [inputValue, setInputValue] = useState('');
@@ -99,23 +101,23 @@ export default function SorteadorScreen() {
       title="Sortear Times"
       subtitle="Escolha os jogadores e deixa o app dividir."
       seoTitle="Sorteador de Times Online Grátis | Professô FC"
-      seoDescription="Sorteie times equilibrados para pelada, society e futsal. Divisão simples ou por potes de nível, sem login e direto no navegador."
+      seoDescription="Sorteie times equilibrados para pelada, society e futsal. Divisão simples ou por potes de nível, com sua conta e direto no navegador."
       compactHero>
 
       {/* Mode selector */}
       <View style={styles.modeRow}>
         {(['random', 'potes'] as SortMode[]).map((m) => (
-          <Pressable
+          <Pressable accessibilityRole="button"
             key={m}
             onPress={() => { setMode(m); setResult(null); }}
             style={[
               styles.modeChip,
               {
-                backgroundColor: mode === m ? '#16A34A' : C.cardMuted,
-                borderColor: mode === m ? '#16A34A' : C.border,
+                backgroundColor: mode === m ? C.accent : C.cardMuted,
+                borderColor: mode === m ? C.accent : C.border,
               },
             ]}>
-            <Text style={[styles.modeChipText, { color: mode === m ? '#FFF' : C.textMuted }]}>
+            <Text style={[styles.modeChipText, { color: mode === m ? C.background : C.textMuted }]}>
               {m === 'random' ? 'Aleatório' : 'Por potes'}
             </Text>
           </Pressable>
@@ -136,17 +138,17 @@ export default function SorteadorScreen() {
         <Text style={styles.sectionLabel}>Jogadores por time</Text>
         <View style={styles.optionsRow}>
           {PER_TEAM_OPTIONS.map((n) => (
-            <Pressable
+            <Pressable accessibilityRole="button"
               key={n}
               onPress={() => { setPerTeam(n); setResult(null); }}
               style={[
                 styles.optionChip,
                 {
-                  backgroundColor: perTeam === n ? '#16A34A' : C.cardMuted,
-                  borderColor: perTeam === n ? '#16A34A' : C.border,
+                  backgroundColor: perTeam === n ? C.accent : C.cardMuted,
+                  borderColor: perTeam === n ? C.accent : C.border,
                 },
               ]}>
-              <Text style={[styles.optionChipText, { color: perTeam === n ? '#FFF' : C.textMuted }]}>
+              <Text style={[styles.optionChipText, { color: perTeam === n ? C.background : C.textMuted }]}>
                 {n}v{n}
               </Text>
             </Pressable>
@@ -158,7 +160,7 @@ export default function SorteadorScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>Adicionar jogador</Text>
         <View style={styles.inputRow}>
-          <TextInput
+          <TextInput accessibilityLabel="Nome do jogador"
             value={inputValue}
             onChangeText={setInputValue}
             onSubmitEditing={addPlayer}
@@ -167,7 +169,7 @@ export default function SorteadorScreen() {
             style={styles.textInput}
             returnKeyType="done"
           />
-          <Pressable onPress={addPlayer} style={styles.addButton}>
+          <Pressable accessibilityRole="button" onPress={addPlayer} style={styles.addButton}>
             <Text style={styles.addButtonText}>+</Text>
           </Pressable>
         </View>
@@ -188,7 +190,7 @@ export default function SorteadorScreen() {
                 {mode === 'potes' ? (
                   <View style={styles.potSelector}>
                     {POT_OPTIONS.map((pot) => (
-                      <Pressable
+                      <Pressable accessibilityRole="button"
                         key={pot}
                         onPress={() => setPot(name, pot)}
                         style={[
@@ -200,7 +202,7 @@ export default function SorteadorScreen() {
                               playerPots[name] === pot ? POT_COLORS[pot] : C.border,
                           },
                         ]}>
-                        <Text style={[styles.potChipText, { color: playerPots[name] === pot ? '#FFF' : C.textMuted }]}>
+                        <Text style={[styles.potChipText, { color: playerPots[name] === pot ? C.background : C.textMuted }]}>
                           P{pot}
                         </Text>
                       </Pressable>
@@ -208,21 +210,21 @@ export default function SorteadorScreen() {
                   </View>
                 ) : null}
 
-                <Pressable onPress={() => removePlayer(name)} style={styles.removeButton}>
+                <Pressable accessibilityRole="button" onPress={() => removePlayer(name)} style={styles.removeButton}>
                   <Text style={styles.removeButtonText}>✕</Text>
                 </Pressable>
               </View>
             ))}
           </View>
 
-          <Pressable
+          <Pressable accessibilityRole="button"
             onPress={sort}
             disabled={players.length < 2}
             style={[
               styles.sortButton,
-              { backgroundColor: players.length < 2 ? C.cardMuted : '#16A34A' },
+              { backgroundColor: players.length < 2 ? C.cardMuted : C.accent },
             ]}>
-            <Text style={[styles.sortButtonText, { color: players.length < 2 ? C.textMuted : '#FFF' }]}>
+            <Text style={[styles.sortButtonText, { color: players.length < 2 ? C.textMuted : C.background }]}>
               Sortear agora
             </Text>
           </Pressable>
@@ -263,7 +265,7 @@ export default function SorteadorScreen() {
             </View>
           ) : null}
 
-          <Pressable onPress={sort} style={styles.resortButton}>
+          <Pressable accessibilityRole="button" onPress={sort} style={styles.resortButton}>
             <Text style={styles.resortButtonText}>Sortear novamente</Text>
           </Pressable>
         </View>
@@ -271,7 +273,8 @@ export default function SorteadorScreen() {
 
       <SafeAd placement={AD_PLACEMENTS.TOOLS_AFTER_RESULT} hasContent={hasResult} />
 
-      <View style={styles.editorial}>
+      <View style={{ alignItems: 'flex-start' }}><AppButton variant="ghost" label={showHelp ? 'Fechar ajuda' : 'Como usar'} onPress={() => setShowHelp(!showHelp)} /></View>
+      {showHelp ? <View><View style={styles.editorial}>
         <Text style={styles.sectionTitle}>Como montar times equilibrados</Text>
         <Text style={styles.editorialText}>
           A divisão por potes é a forma mais justa de equilibrar times em peladas. Classifique
@@ -290,8 +293,8 @@ export default function SorteadorScreen() {
         ))}
       </View>
 
+      </View> : null}
       <SafeAd placement={AD_PLACEMENTS.TOOLS_HUB_AFTER_CARDS} hasContent />
-
       <View style={styles.relatedLinks}>
         <Text style={styles.sectionTitle}>Outras ferramentas</Text>
         <View style={styles.relatedRow}>
@@ -300,7 +303,7 @@ export default function SorteadorScreen() {
             { label: 'Rodízio de Times', href: '/ferramentas/rodizio-de-times' },
             { label: 'Campeonato Rápido', href: '/ferramentas/campeonato-rapido' },
           ].map((link) => (
-            <Pressable
+            <Pressable accessibilityRole="button"
               key={link.href}
               onPress={() => router.push(link.href as never)}
               style={styles.relatedChip}>
@@ -315,16 +318,16 @@ export default function SorteadorScreen() {
 
 const styles = StyleSheet.create({
   modeRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  modeChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 10 },
-  modeChipText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800' },
+  modeChip: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 10 },
+  modeChipText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '600' },
   infoBox: { borderWidth: 1, borderRadius: 14, padding: 14, backgroundColor: 'rgba(22,163,74,0.08)', borderColor: 'rgba(22,163,74,0.3)' },
   infoText: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20, color: C.textMuted },
   section: { gap: 12 },
   sectionLabel: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
-  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800', color: C.text },
+  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '600', color: C.text },
   optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  optionChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 },
-  optionChipText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800' },
+  optionChip: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 },
+  optionChipText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '600' },
   inputRow: { flexDirection: 'row', gap: 10 },
   textInput: {
     flex: 1,
@@ -336,17 +339,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: C.text,
     backgroundColor: C.cardMuted,
-    borderColor: C.border,
+    borderColor: C.borderStrong,
   },
-  addButton: {
+  addButton: { minHeight: 44,
     width: 48,
     height: 48,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#16A34A',
+    backgroundColor: C.accent,
   },
-  addButtonText: { fontFamily: fonts.heading, fontSize: 24, fontWeight: '800', color: '#FFF' },
+  addButtonText: { fontFamily: fonts.heading, fontSize: 24, fontWeight: '600', color: C.background },
   playerList: { gap: 8 },
   playerRow: {
     flexDirection: 'row',
@@ -362,12 +365,12 @@ const styles = StyleSheet.create({
   playerIndex: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '700', width: 20, color: C.textMuted },
   playerName: { flex: 1, fontFamily: fonts.body, fontSize: 14, color: C.text },
   potSelector: { flexDirection: 'row', gap: 4 },
-  potChip: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 4 },
-  potChipText: { fontFamily: fonts.heading, fontSize: 11, fontWeight: '800' },
-  removeButton: { padding: 4 },
+  potChip: { minHeight: 44, borderWidth: 1, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 4 },
+  potChipText: { fontFamily: fonts.heading, fontSize: 11, fontWeight: '600' },
+  removeButton: { minHeight: 44, padding: 4 },
   removeButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '700', color: C.textMuted },
-  sortButton: { borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
-  sortButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800' },
+  sortButton: { minHeight: 44, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  sortButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '600' },
   teamCard: { borderWidth: 1, borderRadius: 20, overflow: 'hidden', borderColor: C.borderStrong, backgroundColor: C.card },
   teamHeader: {
     flexDirection: 'row',
@@ -378,8 +381,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: C.border,
   },
-  teamBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#16A34A' },
-  teamBadgeText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '800', color: '#FFF' },
+  teamBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: C.accent },
+  teamBadgeText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '600', color: C.background },
   teamCount: { fontFamily: fonts.body, fontSize: 13, color: C.textMuted },
   teamPlayers: { padding: 12, gap: 8 },
   playerChip: {
@@ -398,13 +401,13 @@ const styles = StyleSheet.create({
   reservasCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 6, backgroundColor: C.card, borderColor: C.border },
   reservasTitle: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
   reservasNames: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: C.text },
-  resortButton: { borderWidth: 1.5, borderRadius: 14, paddingVertical: 12, alignItems: 'center', borderColor: '#16A34A' },
-  resortButtonText: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800', color: '#16A34A' },
+  resortButton: { minHeight: 44, borderWidth: 1.5, borderRadius: 14, paddingVertical: 12, alignItems: 'center', borderColor: C.accent },
+  resortButtonText: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '600', color: C.accent },
   editorial: { gap: 10 },
   editorialText: { fontFamily: fonts.body, fontSize: 14, lineHeight: 22, color: C.textMuted },
   faqList: { gap: 12 },
   faqCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 8, backgroundColor: C.card, borderColor: C.border },
-  faqQ: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800', color: C.text },
+  faqQ: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '600', color: C.text },
   faqA: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: C.textMuted },
   relatedLinks: { gap: 12 },
   relatedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },

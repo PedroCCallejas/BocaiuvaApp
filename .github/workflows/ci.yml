@@ -19,8 +19,13 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run test
-      - run: npm run build:web
-      - run: npm audit --omit=dev --audit-level=high
+      - name: Instalar dependências do lockfile
+        run: npm ci
+      - name: Conferir TypeScript
+        run: npm run typecheck
+      - name: Executar testes
+        run: npm run test
+      - name: Exportar aplicação web
+        run: npm run build:web
+      - name: Auditar segurança e exceções aprovadas
+        run: npm run audit:security

@@ -17,12 +17,9 @@ import {
   buildRankingByMetric,
   calculateRankingMetric,
   filterMatchesForStats,
-  formatPlayerMetricValue,
-  formatStatNumber,
+  formatRankingMetricValue,
   getAvailableStatsMonths,
   getAvailableStatsYears,
-  getCriterionIdFromMetric,
-  isCriterionMetric,
   PLAYER_STATS_LABELS,
   type StatsFilters,
   type StatsPeriodPreset,
@@ -31,7 +28,7 @@ import {
 } from '@/lib/stats';
 import { useAppStore } from '@/store/app-store';
 import { selectActiveTeamRatingCriteria, selectCurrentTeam } from '@/store/selectors';
-import type { MatchType, TeamRatingCriterion } from '@/types/domain';
+import type { MatchType } from '@/types/domain';
 
 const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const MATCH_TYPE_FILTERS: Array<'all' | MatchType> = ['all', 'society', 'futsal', 'field', 'training'];
@@ -89,20 +86,6 @@ function FilterChip({
   );
 }
 
-function rankingValueLabel(
-  metric: StatsSortMetric,
-  value: number,
-  criterion?: TeamRatingCriterion | null,
-) {
-  if (isCriterionMetric(metric)) {
-    return criterion?.type === 'negative'
-      ? `${formatStatNumber(value, 1)} adj.`
-      : formatStatNumber(value, 1);
-  }
-
-  return formatPlayerMetricValue(metric, value);
-}
-
 export default function RankingsScreen() {
   const isWeb = Platform.OS === 'web';
   const theme = useAppTheme();
@@ -149,9 +132,6 @@ export default function RankingsScreen() {
     minGames,
   });
   const hasManualHistoryInRanking = playerStats.some((item) => item.manualHistoryIncluded);
-  const selectedCriterionId = getCriterionIdFromMetric(selectedMetric);
-  const selectedCriterion =
-    activeCriteria.find((criterion) => criterion.id === selectedCriterionId) ?? null;
   const filteredMatches = filterMatchesForStats(snapshot.matches, team.id, filters);
 
   return (
@@ -333,7 +313,7 @@ export default function RankingsScreen() {
                 label: item.player.nickname,
                 subtitle: buildPlayerMetricSubtitle(selectedMetric, item),
                 value,
-                valueLabel: rankingValueLabel(selectedMetric, value, selectedCriterion),
+                valueLabel: formatRankingMetricValue(selectedMetric, value, item),
               };
             })}
           />

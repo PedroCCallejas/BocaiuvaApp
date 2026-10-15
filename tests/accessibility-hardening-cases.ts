@@ -48,7 +48,7 @@ export const accessibilityHardeningTestCases: TestCase[] = [
       );
 
       assert.match(source, /accessibilityRole="header"[\s\S]{0,80}aria-level=\{1\}/);
-      assert.match(source, /accessibilityRole="link"/);
+      assert.match(fs.readFileSync('src/components/navigation/AppNavigation.tsx', 'utf8'), /accessibilityRole="link"/);
     },
   },
 ];

@@ -26,7 +26,9 @@
     "migrar:baixar": "node --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./scripts/migrar-para-postgres.ts --dry-run --salvar-em=dados-firestore",
     "migrar:preflight": "node --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./scripts/migrar-para-postgres.ts --dry-run --ler-de=dados-firestore",
     "migrar:postgres:dry": "node --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./scripts/migrar-para-postgres.ts --dry-run",
-    "migrar:postgres": "node --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./scripts/migrar-para-postgres.ts"
+    "migrar:postgres": "node --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./scripts/migrar-para-postgres.ts",
+    "preview:web": "node ./scripts/preview-web.mjs",
+    "audit:security": "node ./scripts/security-audit.mjs"
   },
   "dependencies": {
     "@expo/log-box": "55.0.13",
@@ -62,5 +64,8 @@
     "firebase-admin": "^13.10.0",
     "typescript": "~5.9.2"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "@grpc/grpc-js": "1.14.6"
+  }
 }

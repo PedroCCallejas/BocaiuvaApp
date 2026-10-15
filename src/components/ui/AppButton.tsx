@@ -6,7 +6,7 @@ import {
   View,
   type GestureResponderEvent,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useState } from 'react';
 
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -18,6 +18,7 @@ interface AppButtonProps {
   disabled?: boolean;
   loading?: boolean;
   fullWidth?: boolean;
+  size?: 'sm' | 'md' | 'lg';
 }
 
 export function AppButton({
@@ -27,8 +28,12 @@ export function AppButton({
   disabled,
   loading,
   fullWidth,
+  size = 'md',
 }: AppButtonProps) {
   const theme = useAppTheme();
+  const [focused, setFocused] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const contentColor =
     variant === 'primary'
       ? theme.colors.actionText
@@ -39,24 +44,28 @@ export function AppButton({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={label}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       accessibilityState={{ disabled: Boolean(disabled || loading), busy: Boolean(loading) }}
       onPress={onPress}
       disabled={disabled || loading}
       style={({ pressed }) => [
         styles.pressable,
         fullWidth && styles.fullWidth,
-        variant === 'primary' ? styles.primaryShadow : null,
+        size === 'sm' ? styles.small : size === 'lg' ? styles.large : null,
+        focused ? { borderWidth: 2, borderColor: theme.colors.focus } : null,
         pressed && !disabled && !loading ? styles.pressed : null,
         disabled ? styles.disabled : null,
       ]}>
       {variant === 'primary' ? (
-        <LinearGradient
-          colors={[theme.colors.action, theme.colors.actionPressed]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.gradient}>
+        <View style={[styles.primary, { backgroundColor: pressed ? theme.colors.actionPressed : theme.colors.action }]}>
           <ButtonLabel label={label} color={contentColor} loading={loading} />
-        </LinearGradient>
+        </View>
       ) : (
         <View
           style={[
@@ -64,13 +73,13 @@ export function AppButton({
             {
               backgroundColor:
                 variant === 'danger'
-                  ? `${theme.colors.danger}14`
+                  ? theme.colors.dangerSoft
                   : variant === 'secondary'
-                    ? theme.colors.surfaceRaised
+                    ? (hovered ? theme.colors.surfaceRaised : theme.colors.surfaceMuted)
                     : 'transparent',
               borderColor:
                 variant === 'danger'
-                  ? `${theme.colors.danger}52`
+                  ? theme.colors.dangerBorder
                   : variant === 'ghost'
                     ? theme.colors.border
                     : theme.colors.borderStrong,
@@ -107,14 +116,16 @@ function ButtonLabel({
 const styles = StyleSheet.create({
   pressable: {
     minWidth: 120,
-    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    borderRadius: 12,
   },
   fullWidth: {
     width: '100%',
   },
-  gradient: {
-    minHeight: 50,
-    borderRadius: 16,
+  primary: {
+    minHeight: 48,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -122,8 +133,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   fallback: {
-    minHeight: 50,
-    borderRadius: 16,
+    minHeight: 48,
+    borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -134,19 +145,15 @@ const styles = StyleSheet.create({
   label: {
     fontFamily: fonts.heading,
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '600',
     letterSpacing: 0.15,
+    flexShrink: 1,
+    textAlign: 'center',
   },
-  primaryShadow: {
-    shadowColor: '#D7FF64',
-    shadowOpacity: 0.16,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 7 },
-    elevation: 3,
-  },
+  small: { minWidth: 88 },
+  large: { width: '100%' },
   pressed: {
     opacity: 0.9,
-    transform: [{ scale: 0.985 }],
   },
   disabled: {
     opacity: 0.5,

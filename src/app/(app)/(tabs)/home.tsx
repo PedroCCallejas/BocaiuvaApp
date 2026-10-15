@@ -12,6 +12,8 @@ import { MatchDiaryEntryCard } from '@/components/matches/MatchDiaryEntryCard';
 import { BotaoDeAvisos } from '@/components/notifications/BotaoDeAvisos';
 import { RankingList } from '@/components/stats/RankingList';
 import { PresentationVideoCard } from '@/components/video/PresentationVideoCard';
+import { AppNavigation } from '@/components/navigation/AppNavigation';
+import { useWindowDimensions } from 'react-native';
 import { AppButton } from '@/components/ui/AppButton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
@@ -49,6 +51,7 @@ function buildHomeLocationLabel(city?: string | null, state?: string | null) {
 }
 
 export default function HomeScreen() {
+  const { width } = useWindowDimensions();
   const theme = useAppTheme();
   const snapshot = useAppStore((state) => state.snapshot);
   const team = useAppStore(selectCurrentTeam);
@@ -139,7 +142,8 @@ export default function HomeScreen() {
   }
 
   return (
-    <Screen onRefresh={() => void refreshData()} refreshing={refreshing}>
+    <Screen onRefresh={() => void refreshData()} refreshing={refreshing} ambient>
+      {width < 768 ? <AppNavigation /> : null}
       <TeamHeroCard
         team={team}
         modeLabel={canManageTeam ? 'Comando do time' : 'Vestiário do elenco'}

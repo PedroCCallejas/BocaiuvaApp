@@ -12,6 +12,8 @@
   Instalação pelo lockfile, TypeScript, testes, exportação web e auditoria
   passaram. A execução terminou às 15:59:35 UTC (11:59:35 em Cuiabá).
 - Check de preview Vercel **SUCCESS** no mesmo commit.
+- O commit documental `2645b78` também passou no CI e no preview Vercel:
+  https://github.com/PedroCCallejas/BocaiuvaApp/actions/runs/38765700565.
 - Os 294 arquivos de aplicação enviados à Vercel em 14/10 foram comparados
   com o checkout em 15/10: nenhum conteúdo diferente. Esta etapa sincroniza
   no Git a aplicação já publicada; o registro anterior permanece histórico.
@@ -44,22 +46,28 @@ ausência de vulnerabilidades. Não houve atualização dos SDKs principais.
 2. No Edge, o botão abriu o seletor oficial de conta Google para o Firebase Auth.
 3. A conta Google apresentada diferia da conta que estava no app. A escolha foi
    entregue ao usuário, sem vincular contas ou escolher outra identidade.
-4. O usuário informou que concluiu a entrada. Na inspeção posterior disponível
-   ao agente, o Edge ainda mostrava o seletor e o app em `/login`; recarregar
-   o app não demonstrou sessão autenticada. Foi solicitada a confirmação da
-   tela e do navegador usados para resolver essa divergência.
+4. A inspeção disponível ao agente ainda mostrava `/login`, então foi pedida
+   confirmação do resultado ao usuário.
+5. O usuário esclareceu em 15/10 que entrou com outra conta Google e chegou à
+   tela para informar código ou criar time. **Login Google confirmado pelo
+   usuário até o acesso autenticado de conta sem time.** Esse destino corresponde
+   a `src/app/index.tsx` e `src/app/(app)/_layout.tsx`: sessão autenticada sem
+   time segue para `/team-access`, cuja tela oferece convite e criação de time.
 
-**Resultado atual: autenticação completa e persistência da sessão Google ainda
-não confirmadas de forma independente.** Não foi alterado o fluxo OAuth,
+O teste não confirmou ingresso em time nem persistência após fechar e reabrir
+o navegador. A confirmação da tela veio do usuário, sem nova observação direta
+do agente. Nenhum time foi criado, convite utilizado ou conta vinculada pelo
+agente. Não foi alterado o fluxo OAuth,
 credenciais, provedores ou configuração do Firebase. Nenhuma senha, código
 ou URL completa de OAuth integra este registro. Capturas locais de verificação
 ficam em `.expo/verification/`, fora do Git.
 
 ## Próximos passos propostos (TO-BE)
 
-1. Confirmar retorno do Google à conta/time esperado e restauração após recarga.
-   Se houver falha real, registrar mensagem/código antes de propor correção.
-2. Com o critério de login atendido, revisar o PR e obter aprovação para integrar
+1. Em uma próxima rodada, conferir persistência Google ao reabrir o navegador
+   e ingresso por convite com a conta desejada. Se houver falha real, registrar
+   mensagem/código antes de propor correção.
+2. Com o login confirmado pelo usuário, revisar o PR e obter aprovação para integrar
    `main`, acompanhando CI e publicação automática da Vercel.
 3. Validar em celular real a jornada de conta sem time, convite, permissões,
    troca de time e retorno das ferramentas, preservando dados do Bocaiúva.

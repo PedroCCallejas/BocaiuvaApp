@@ -149,6 +149,7 @@ import { statsBreakdownFinanceTestCases } from './stats-breakdown-finance-cases'
 import { supabaseHardeningTestCases } from './supabase-hardening-cases';
 import { webSupabaseTestCases } from './web-supabase-cases';
 import { themeContrastTestCases } from './theme-contrast-cases';
+import { securityAuditTestCases } from './security-audit-cases';
 
 type TestCase = {
   name: string;
@@ -156,6 +157,7 @@ type TestCase = {
 };
 
 const testCases: TestCase[] = [
+  ...securityAuditTestCases,
   ...accessibilityHardeningTestCases,
   ...selosDeCartaoTestCases,
   ...statsBreakdownFinanceTestCases,

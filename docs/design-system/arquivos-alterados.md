@@ -81,4 +81,7 @@ tests/rating-average-cases.ts
 tests/security-audit-cases.ts
 ```
 
+Registro posterior da sincronização e validação:
+`docs/design-system/sincronizacao-ci-login-google-2026-10-15.md`.
+
 Obsidian: C:/Pedro/Obsidian/PedroCallejas/Projetos/App Futebol.md (registro atualizado na mesma entrega).

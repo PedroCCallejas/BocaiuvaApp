@@ -1,5 +1,9 @@
 # Publicação — Professô FC, 14/10/2026
 
+Registro histórico da publicação. Para a sincronização posterior no Git,
+resultado do CI remoto e situação do teste Google, veja
+[o registro de 15/10](sincronizacao-ci-login-google-2026-10-15.md).
+
 Status: **READY**, produção. O usuário autorizou publicar após a revisão local
 e pediu corrigir Reclamação/Fominha e avaliar a troca de time.
 

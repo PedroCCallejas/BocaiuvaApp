@@ -36,15 +36,15 @@ const styles = StyleSheet.create({
   kicker: {
     fontFamily: fonts.heading,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '600',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
     color: TOOL_COLORS.highlight,
   },
   title: {
     fontFamily: fonts.display,
-    fontSize: 28,
-    fontWeight: '900',
+    fontSize: 20,
+    fontWeight: '700',
     lineHeight: 30,
     color: TOOL_COLORS.text,
   },

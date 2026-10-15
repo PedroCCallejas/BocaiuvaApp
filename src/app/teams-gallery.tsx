@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 
 import { PublicPageShell } from '@/components/public/PublicPageShell';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
 import { Avatar } from '@/components/ui/Avatar';
+import { LoadingState } from '@/components/ui/LoadingState';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -127,24 +127,8 @@ export default function TeamsGalleryScreen() {
         description: 'Conheça times de futebol amador que optaram por compartilhar publicamente seu perfil no Professô FC.',
         canonicalPath: '/teams-gallery',
       }}
-      eyebrow="Galeria pública"
-      title="Times que escolheram aparecer publicamente"
-      description="Aqui aparecem apenas perfis públicos liberados pelos próprios administradores. Dados privados, partidas internas, presença, notas, rankings protegidos e informações administrativas não são exibidos."
-      actions={[
-        { label: 'Criar conta', href: '/register' },
-        { label: 'Entrar', href: '/login', variant: 'secondary' },
-      ]}>
-      <View style={styles.infoRow}>
-        <InfoCard
-          title="Somente perfis públicos"
-          description="Cada time decide se quer aparecer na galeria e quais informações públicas deseja mostrar."
-        />
-        <InfoCard
-          title="Privacidade preservada"
-          description="Escalações internas, presenças, notas, votos, dados de elenco privado e histórico protegido ficam fora da vitrine."
-        />
-      </View>
-
+      title="Galeria de times"
+      description="Perfis que os próprios times escolheram mostrar.">
       <View
         style={[
           styles.filtersCard,
@@ -158,10 +142,7 @@ export default function TeamsGalleryScreen() {
             <Text style={[styles.filtersTitle, { color: theme.colors.text }]}>
               Filtrar a galeria
             </Text>
-            <Text style={[styles.filtersDescription, { color: theme.colors.textMuted }]}>
-              Use cidade, estado, nome do time, campo ou bairro para encontrar adversários e
-              perfis públicos de interesse.
-            </Text>
+
           </View>
           <AppButton label="Limpar filtros" variant="ghost" onPress={clearFilters} />
         </View>
@@ -183,10 +164,7 @@ export default function TeamsGalleryScreen() {
       </View>
 
       {loading ? (
-        <EmptyState
-          title="Carregando a galeria pública"
-          description="Estamos buscando os times que mantêm perfil público liberado no Professô FC."
-        />
+        <LoadingState title="Carregando a galeria…" description="Buscando os perfis públicos." />
       ) : loadError ? (
         <EmptyState
           title="Não foi possível carregar a galeria pública"
@@ -219,35 +197,16 @@ export default function TeamsGalleryScreen() {
               const areaLabel = buildPublicAreaLabel(team);
 
               return (
-                <Pressable
+                <View
                   key={team.id}
-                  onPress={() => openPublicProfile(team.id)}
-                  style={({ pressed }) => [
+                  style={[
                     styles.cardShell,
                     {
                       backgroundColor: theme.colors.surface,
                       borderColor: theme.colors.border,
-                      opacity: pressed ? 0.97 : 1,
                     },
                   ]}>
-                  <View style={styles.bannerShell}>
-                    {team.bannerUrl ? (
-                      <Image source={{ uri: team.bannerUrl }} resizeMode="cover" style={styles.banner} />
-                    ) : null}
-                    <LinearGradient
-                      colors={[`${team.primaryColor}F3`, `${team.secondaryColor}D0`, `${team.primaryColor}FA`]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.bannerGradient}
-                    />
-                    <LinearGradient
-                      colors={['rgba(4,10,8,0.12)', 'rgba(4,10,8,0.68)']}
-                      start={{ x: 0.2, y: 0 }}
-                      end={{ x: 0.8, y: 1 }}
-                      style={styles.bannerOverlay}
-                    />
-                    <Text style={styles.bannerTag}>{buildPublicLocationLabel(team)}</Text>
-                  </View>
+                  <View style={{ height: 4, backgroundColor: team.primaryColor }} />
 
                   <View style={styles.cardBody}>
                     <View style={styles.identityRow}>
@@ -255,7 +214,7 @@ export default function TeamsGalleryScreen() {
                         <Avatar
                           name={team.name}
                           photoUrl={team.logoUrl}
-                          size={84}
+                          size={56}
                           accent={theme.colors.primarySoft}
                         />
                       </View>
@@ -307,52 +266,26 @@ export default function TeamsGalleryScreen() {
 
                       <View style={styles.buttonRow}>
                         <AppButton
-                          label="Ver perfil público"
-                          variant="secondary"
+                          label="Ver perfil"
                           onPress={() => openPublicProfile(team.id)}
                         />
                         {team.allowFriendlyContact ? (
                           <AppButton
                             label="Chamar para amistoso"
+                            variant="secondary"
                             onPress={() => void handleFriendlyContact(team)}
                           />
                         ) : null}
                       </View>
                     </View>
                   </View>
-                </Pressable>
+                </View>
               );
             })}
           </View>
         </View>
       )}
     </PublicPageShell>
-  );
-}
-
-function InfoCard({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  const theme = useAppTheme();
-
-  return (
-    <View
-      style={[
-        styles.infoCard,
-        {
-          backgroundColor: theme.colors.surface,
-          borderColor: theme.colors.border,
-        },
-      ]}>
-      <Text style={[styles.infoTitle, { color: theme.colors.text }]}>{title}</Text>
-      <Text style={[styles.infoDescription, { color: theme.colors.textMuted }]}>
-        {description}
-      </Text>
-    </View>
   );
 }
 
@@ -384,14 +317,14 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexBasis: 280,
     borderWidth: 1,
-    borderRadius: 24,
+    borderRadius: 18,
     padding: 18,
     gap: 8,
   },
   infoTitle: {
     fontFamily: fonts.heading,
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '600',
   },
   infoDescription: {
     fontFamily: fonts.body,
@@ -400,7 +333,7 @@ const styles = StyleSheet.create({
   },
   filtersCard: {
     borderWidth: 1,
-    borderRadius: 24,
+    borderRadius: 18,
     padding: 16,
     gap: 12,
   },
@@ -419,7 +352,7 @@ const styles = StyleSheet.create({
   filtersTitle: {
     fontFamily: fonts.heading,
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '600',
   },
   filtersDescription: {
     fontFamily: fonts.body,
@@ -453,7 +386,7 @@ const styles = StyleSheet.create({
   },
   cardShell: {
     borderWidth: 1,
-    borderRadius: 28,
+    borderRadius: 18,
     overflow: 'hidden',
   },
   bannerShell: {
@@ -475,20 +408,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontFamily: fonts.heading,
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   cardBody: {
     paddingHorizontal: 18,
     paddingBottom: 18,
+    paddingTop: 18,
     gap: 16,
   },
   identityRow: {
     flexDirection: 'row',
     gap: 14,
-    alignItems: 'flex-end',
-    marginTop: -42,
+    alignItems: 'center',
+    marginTop: 0,
   },
   logoFrame: {
     padding: 8,
@@ -505,7 +439,7 @@ const styles = StyleSheet.create({
   teamName: {
     fontFamily: fonts.display,
     fontSize: 28,
-    fontWeight: '900',
+    fontWeight: '700',
     lineHeight: 30,
   },
   cityText: {
@@ -533,7 +467,7 @@ const styles = StyleSheet.create({
   statValue: {
     fontFamily: fonts.display,
     fontSize: 22,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   statLabel: {
     fontFamily: fonts.heading,

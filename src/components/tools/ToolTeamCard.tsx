@@ -58,7 +58,7 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: fonts.heading,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '600',
     color: TOOL_COLORS.background,
   },
   subtitle: {

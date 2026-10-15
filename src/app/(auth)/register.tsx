@@ -1,14 +1,13 @@
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { z } from 'zod';
 
+import { getSafeReturnPath } from '@/lib/navigation';
 import { PublicPageShell } from '@/components/public/PublicPageShell';
 import { AppInput } from '@/components/ui/AppInput';
 import { AppButton } from '@/components/ui/AppButton';
-import { APP_NAME } from '@/constants/branding';
-import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { useAppStore } from '@/store/app-store';
 
@@ -22,6 +21,7 @@ type RegisterValues = z.infer<typeof schema>;
 
 export default function RegisterScreen() {
   const theme = useAppTheme();
+  const { next } = useLocalSearchParams<{ next?: string | string[] }>();
   const register = useAppStore((state) => state.register);
   const {
     control,
@@ -39,7 +39,7 @@ export default function RegisterScreen() {
   async function onSubmit(values: RegisterValues) {
     try {
       await register(values);
-      router.replace('/');
+      router.replace(getSafeReturnPath(next) as never);
     } catch (error) {
       Alert.alert(
         'Não foi possível criar a conta',
@@ -51,29 +51,9 @@ export default function RegisterScreen() {
   return (
     <PublicPageShell
       eyebrow="Cadastro"
-      title="Crie sua conta e comece a organizar o seu time"
-      description={`Com uma conta no ${APP_NAME}, você pode receber convites, criar seu próprio elenco, acompanhar partidas e navegar pela área pública com mais contexto.`}
-      actions={[
-        { label: 'Conhecer o projeto', href: '/' },
-        { label: 'Ver galeria pública', href: '/teams-gallery', variant: 'secondary' },
-        { label: 'Entrar', href: '/login', variant: 'ghost' },
-      ]}>
-      <View
-        style={[
-          styles.helperCard,
-          {
-            backgroundColor: theme.colors.surface,
-            borderColor: theme.colors.border,
-          },
-        ]}>
-        <Text style={[styles.helperTitle, { color: theme.colors.text }]}>
-          Depois do cadastro
-        </Text>
-        <Text style={[styles.helperDescription, { color: theme.colors.textMuted }]}>
-          Você poderá criar um time, entrar com um código de convite ou abrir a galeria pública
-          para conhecer elencos que decidiram se apresentar.
-        </Text>
-      </View>
+      title="Criar conta"
+      description="Crie sua conta para usar as ferramentas e organizar seu futebol."
+      >
 
       <View
         style={[
@@ -132,45 +112,16 @@ export default function RegisterScreen() {
           loading={isSubmitting}
           fullWidth
         />
-        <View style={styles.actionsRow}>
-          <AppButton label="Voltar para o login" variant="ghost" onPress={() => router.push('/login')} />
-          <AppButton
-            label="Ver galeria pública"
-            variant="secondary"
-            onPress={() => router.push('/teams-gallery')}
-          />
-        </View>
       </View>
     </PublicPageShell>
   );
 }
 
 const styles = StyleSheet.create({
-  helperCard: {
-    borderWidth: 1,
-    borderRadius: 24,
-    padding: 18,
-    gap: 8,
-  },
-  helperTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  helperDescription: {
-    fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 22,
-  },
   card: {
     borderWidth: 1,
-    borderRadius: 28,
+    borderRadius: 14,
     padding: 20,
     gap: 14,
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
   },
 });

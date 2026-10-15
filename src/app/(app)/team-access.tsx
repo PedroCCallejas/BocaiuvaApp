@@ -5,6 +5,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { router } from 'expo-router';
 import { z } from 'zod';
 
+import { AppNavigation } from '@/components/navigation/AppNavigation';
+import { useWindowDimensions } from 'react-native';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -79,6 +81,7 @@ function buildJoinTeamFeedbackMessage(input: {
 }
 
 export default function TeamAccessScreen() {
+  const { width } = useWindowDimensions();
   const theme = useAppTheme();
   const currentUser = useAppStore(selectCurrentUser);
   const currentTeam = useAppStore(selectCurrentTeam);
@@ -355,6 +358,7 @@ export default function TeamAccessScreen() {
 
   return (
     <Screen formMode contentContainerStyle={styles.screen}>
+      {width < 768 ? <AppNavigation /> : null}
       <View style={styles.hero}>
         <Text style={[styles.title, { color: theme.colors.text }]}>
           {membershipCards.length > 0 ? 'Meus times' : 'Entrar em um time'}

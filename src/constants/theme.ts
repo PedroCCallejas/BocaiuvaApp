@@ -48,6 +48,18 @@ export const baseTheme = {
     field: '#0B5E2D',
     fieldStripe: '#106E35',
     chip: 'rgba(255,255,255,0.07)',
+    identity: defaultPrimary,
+    info: defaultAccent,
+    actionHover: '#E1FF85',
+    borderInput: '#6A7A88',
+    borderControl: '#34424E',
+    borderHover: '#42505D',
+    successSoft: '#122D23',
+    warningSoft: '#2D2519',
+    dangerSoft: '#301A24',
+    dangerBorder: '#8C4650',
+    infoSoft: 'rgba(110,219,255,0.12)',
+    actionSoft: 'rgba(215,255,100,0.12)',
   },
   spacing: {
     xxs: 4,
@@ -57,6 +69,15 @@ export const baseTheme = {
     lg: 20,
     xl: 28,
     xxl: 36,
+    space1: 4,
+    space2: 8,
+    space3: 12,
+    space4: 16,
+    space5: 20,
+    space6: 24,
+    space7: 28,
+    space8: 32,
+    space9: 36,
   },
   radius: {
     sm: 12,
@@ -64,6 +85,8 @@ export const baseTheme = {
     lg: 26,
     xl: 32,
     pill: 999,
+    xs: 8,
+    tile: 14,
   },
   typography: {
     display: 32,
@@ -72,7 +95,14 @@ export const baseTheme = {
     body: 15,
     caption: 13,
     micro: 11,
+    page: 28,
+    section: 20,
+    bodyLarge: 16,
+    score: 58,
+    scoreLarge: 96,
   },
+  control: { minTouch: 44, height: 48 },
+  motion: { fast: 120, base: 160, slow: 200 },
 };
 
 export type AppTheme = ReturnType<typeof createTeamTheme>;
@@ -90,7 +120,7 @@ export function createTeamTheme(
   // fixa passava em AA. Aqui escolhemos uma única cor sólida e legível, testando
   // accent → secondary → primary, e só caímos no verde-limão padrão se nenhuma servir.
   const actionPalette = buildActionPalette(
-    [accent, secondary, primary],
+    team ? [accent, secondary, primary] : [baseTheme.colors.action],
     baseTheme.colors.action,
     baseTheme.colors.background,
   );

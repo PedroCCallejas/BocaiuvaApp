@@ -3,6 +3,7 @@ import { router, usePathname } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/components/ui/AppButton';
+import { AppNavigation } from '@/components/navigation/AppNavigation';
 import { Pill } from '@/components/ui/Pill';
 import { canEditOwnPlayerProfile } from '@/lib/player-profile-access';
 import { fonts } from '@/constants/theme';
@@ -79,6 +80,7 @@ export function WebScreenHeader() {
         },
       ]}>
       <View style={styles.inner}>
+        <AppNavigation />
         <View style={styles.topRow}>
           <View style={styles.breadcrumbRow}>
             {meta.backHref ? (

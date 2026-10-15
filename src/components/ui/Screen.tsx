@@ -44,6 +44,7 @@ interface ScreenProps extends PropsWithChildren {
   style?: StyleProp<ViewStyle>;
   contentContainerStyle?: StyleProp<ViewStyle>;
   hideWebHeader?: boolean;
+  ambient?: boolean;
 }
 
 /**
@@ -66,6 +67,7 @@ export function Screen({
   style,
   contentContainerStyle,
   hideWebHeader = false,
+  ambient = false,
 }: ScreenProps) {
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
@@ -114,20 +116,20 @@ export function Screen({
     <SafeAreaView
       edges={['top', 'left', 'right']}
       style={[styles.safeArea, { backgroundColor: theme.colors.background }, style]}>
-      <LinearGradient
+      {ambient ? <LinearGradient
         pointerEvents="none"
         colors={[theme.colors.primaryFaint, 'rgba(7,10,13,0)']}
         start={{ x: 1, y: 0 }}
         end={{ x: 0.25, y: 1 }}
         style={styles.ambientTop}
-      />
-      <LinearGradient
+      /> : null}
+      {ambient ? <LinearGradient
         pointerEvents="none"
         colors={['rgba(7,10,13,0)', theme.colors.secondaryFaint]}
         start={{ x: 0.35, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={styles.ambientBottom}
-      />
+      /> : null}
       <KeyboardAvoidingView
         behavior="padding"
         enabled={keyboardAvoidanceEnabled}

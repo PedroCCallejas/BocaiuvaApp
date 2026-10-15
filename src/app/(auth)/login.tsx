@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { router } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { getSafeReturnPath } from '@/lib/navigation';
+import { selectCurrentUser } from '@/store/selectors';
 import { z } from 'zod';
 
 import {
@@ -12,7 +14,6 @@ import {
 import { PublicPageShell } from '@/components/public/PublicPageShell';
 import { AppInput } from '@/components/ui/AppInput';
 import { AppButton } from '@/components/ui/AppButton';
-import { APP_NAME } from '@/constants/branding';
 import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { toFriendlyAuthError } from '@/services/auth';
@@ -45,6 +46,10 @@ function getErrorDebugInfo(error: unknown) {
 
 export default function LoginScreen() {
   const theme = useAppTheme();
+  const { next } = useLocalSearchParams<{ next?: string | string[] }>();
+  const destination = getSafeReturnPath(next);
+  const ready = useAppStore(state => state.ready);
+  const user = useAppStore(selectCurrentUser);
   const backendMode = useAppStore((state) => state.backendMode);
   const login = useAppStore((state) => state.login);
   const loginWithGoogle = useAppStore((state) => state.loginWithGoogle);
@@ -100,7 +105,7 @@ export default function LoginScreen() {
       }
 
       await loginWithGoogle({});
-      router.replace('/');
+      router.replace(destination as never);
     } catch (error) {
       const friendlyError = toFriendlyAuthError(
         error,
@@ -127,7 +132,7 @@ export default function LoginScreen() {
   async function onSubmit(values: LoginValues) {
     try {
       await login(values);
-      router.replace('/');
+      router.replace(destination as never);
     } catch (error) {
       Alert.alert(
         'Não foi possível entrar',
@@ -141,7 +146,7 @@ export default function LoginScreen() {
 
     try {
       await login({ email, password: '123456' });
-      router.replace('/');
+      router.replace(destination as never);
     } catch (error) {
       Alert.alert(
         'Não foi possível entrar',
@@ -152,36 +157,18 @@ export default function LoginScreen() {
     }
   }
 
+  if (ready && user && !isSubmitting && !googleLoading && !demoLoading) return <Redirect href={destination as never} />;
+
   return (
     <PublicPageShell
       eyebrow="Acesso à plataforma"
-      title="Entre no Professô FC e retome a rotina do seu time"
+      title="Entrar"
       description={
         isMockMode
-          ? 'Use uma conta demonstrativa para conhecer a navegação do produto, entender a proposta e explorar a organização de um elenco completo.'
-          : `Entre com sua conta para abrir o ${APP_NAME}, receber convites, acompanhar partidas e acessar a galeria pública de times.`
+          ? 'Escolha uma conta demonstrativa para explorar o app.'
+          : 'Acesse seus times e suas ferramentas.'
       }
-      actions={[
-        { label: 'Conhecer o projeto', href: '/' },
-        { label: 'Ver galeria pública', href: '/teams-gallery', variant: 'secondary' },
-        { label: 'Criar conta', href: '/register', variant: 'ghost' },
-      ]}>
-      <View
-        style={[
-          styles.helperCard,
-          {
-            backgroundColor: theme.colors.surface,
-            borderColor: theme.colors.border,
-          },
-        ]}>
-        <Text style={[styles.helperTitle, { color: theme.colors.text }]}>
-          Como funciona o acesso
-        </Text>
-        <Text style={[styles.helperDescription, { color: theme.colors.textMuted }]}>
-          Entre com e-mail e senha para abrir seus times, usar convites e acompanhar elenco,
-          partidas, presença, estatísticas e perfis públicos.
-        </Text>
-      </View>
+      >
 
       <View
         style={[
@@ -247,11 +234,6 @@ export default function LoginScreen() {
         ) : null}
         <View style={styles.row}>
           <AppButton
-            label="Criar conta"
-            variant="secondary"
-            onPress={() => router.push('/register')}
-          />
-          <AppButton
             label="Esqueci a senha"
             variant="ghost"
             onPress={() => router.push('/forgot-password')}
@@ -289,25 +271,9 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  helperCard: {
-    borderWidth: 1,
-    borderRadius: 24,
-    padding: 18,
-    gap: 8,
-  },
-  helperTitle: {
-    fontFamily: fonts.heading,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  helperDescription: {
-    fontFamily: fonts.body,
-    fontSize: 14,
-    lineHeight: 22,
-  },
   card: {
     borderWidth: 1,
-    borderRadius: 28,
+    borderRadius: 14,
     padding: 20,
     gap: 14,
   },
@@ -327,7 +293,7 @@ const styles = StyleSheet.create({
   demoTitle: {
     fontFamily: fonts.heading,
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '600',
   },
   demoRow: {
     flexDirection: 'row',

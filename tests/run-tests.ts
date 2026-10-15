@@ -149,6 +149,7 @@ import { statsBreakdownFinanceTestCases } from './stats-breakdown-finance-cases'
 import { supabaseHardeningTestCases } from './supabase-hardening-cases';
 import { webSupabaseTestCases } from './web-supabase-cases';
 import { themeContrastTestCases } from './theme-contrast-cases';
+import { experienceNavigationTestCases } from './experience-navigation-cases';
 import { securityAuditTestCases } from './security-audit-cases';
 
 type TestCase = {
@@ -157,6 +158,7 @@ type TestCase = {
 };
 
 const testCases: TestCase[] = [
+  ...experienceNavigationTestCases,
   ...securityAuditTestCases,
   ...accessibilityHardeningTestCases,
   ...selosDeCartaoTestCases,
@@ -189,7 +191,7 @@ const testCases: TestCase[] = [
   ...supabasePartidasModuloTestCases,
   ...pushCorsTestCases,
   {
-    name: 'sitemap oficial contem somente as dez URLs publicas canonicas',
+    name: 'sitemap oficial contém somente as cinco URLs públicas canônicas',
     run() {
       assert.equal(fs.existsSync('public/sitemap.xml'), true);
       assert.equal(fs.existsSync('public/sitemap-main.xml'), false);
@@ -199,18 +201,13 @@ const testCases: TestCase[] = [
       const urls = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
       const expected = [
         `${SITE_URL}/`,
-        `${SITE_URL}/ferramentas`,
-        `${SITE_URL}/ferramentas/sorteador-de-times`,
-        `${SITE_URL}/ferramentas/cronometro-pelada`,
-        `${SITE_URL}/ferramentas/rodizio-de-times`,
-        `${SITE_URL}/ferramentas/campeonato-rapido`,
         `${SITE_URL}/teams-gallery`,
         `${SITE_URL}/privacidade`,
         `${SITE_URL}/termos`,
         `${SITE_URL}/suporte`,
       ];
       assert.deepEqual(urls, expected);
-      assert.equal(new Set(urls).size, 10);
+      assert.equal(new Set(urls).size, 5);
       for (const url of urls) {
         const parsed = new URL(url);
         assert.equal(parsed.protocol, 'https:');
@@ -220,7 +217,7 @@ const testCases: TestCase[] = [
         assert.doesNotMatch(url, /\[|%5B|\.html|undefined|null/i);
         if (url !== `${SITE_URL}/`) assert.equal(url.endsWith('/'), false);
       }
-      assert.doesNotMatch(xml, /login|register|forgot-password|\/home|\/matches|\/players|\/profile|\/stats|\/rankings|\/notifications|\/team-/);
+      assert.doesNotMatch(xml, /ferramentas|account|login|register|forgot-password|\/home|\/matches|\/players|\/profile|\/stats|\/rankings|\/notifications|\/team-/);
     },
   },
   {
@@ -278,7 +275,7 @@ const testCases: TestCase[] = [
       assert.equal(isIndexablePublicRoute(['(auth)', 'login']), false);
       assert.equal(isIndexablePublicRoute(['+not-found']), false);
       assert.equal(isIndexablePublicRoute([]), true);
-      assert.equal(isIndexablePublicRoute(['ferramentas']), true);
+      assert.equal(isIndexablePublicRoute(['ferramentas']), false);
       assert.equal(isIndexablePublicRoute(['teams-gallery']), true);
     },
   },

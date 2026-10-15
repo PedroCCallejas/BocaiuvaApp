@@ -1,6 +1,7 @@
 ﻿import { create } from 'zustand';
 
 import { authService } from '@/services/auth';
+import { createSingleFlight } from '@/lib/single-flight';
 import type { AuthSessionUser } from '@/services/auth';
 import {
   clearCurrentUserPushToken,
@@ -167,6 +168,7 @@ export interface AppState {
 type StoreSet = (partial: Partial<AppState>) => void;
 type StoreGet = () => AppState;
 
+const runBootstrap = createSingleFlight();
 let authSubscription: (() => void) | null = null;
 let realtimeSubscription: (() => void) | null = null;
 let realtimeUserId: string | null = null;
@@ -491,45 +493,48 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
-    const sessionUser = await authService.restoreSession();
-    const currentUserId = resolveCurrentUserId(sessionUser);
-    let snapshot: AppSnapshot;
+    await runBootstrap(async () => {
+      const sessionUser = await authService.restoreSession();
+      const currentUserId = resolveCurrentUserId(sessionUser);
+      let snapshot: AppSnapshot;
 
-    try {
-      snapshot = await repository.getInitialSnapshot();
-    } catch (error) {
-      if (recoverFromPermissionDenied(set, get, sessionUser, error, 'bootstrap')) {
-        ensureAuthSubscription(set, get);
-        return;
+      try {
+        snapshot = await repository.getInitialSnapshot();
+      } catch (error) {
+        if (recoverFromPermissionDenied(set, get, sessionUser, error, 'bootstrap')) {
+          ensureAuthSubscription(set, get);
+          return;
+        }
+
+        throw error;
       }
 
-      throw error;
-    }
+      applySnapshot(set, get, snapshot, currentUserId);
+      set({
+        ready: true,
+        backendMode: repository.getMode(),
+        currentUserId,
+      });
+      ensureAuthSubscription(set, get);
+      try {
+        await ensureRealtimeSubscription(set, get, sessionUser);
+      } catch (error) {
+        if (recoverFromPermissionDenied(set, get, sessionUser, error, 'realtime')) {
+          return;
+        }
 
-    applySnapshot(set, get, snapshot, currentUserId);
-    set({
-      ready: true,
-      backendMode: repository.getMode(),
-      currentUserId,
+        if (__DEV__) {
+          console.warn('[bootstrap] failed to start realtime subscription.', error);
+        }
+        set({ hasLiveSync: false, syncStatus: 'idle' });
+      }
+      await syncPushTokenForUser(currentUserId);
     });
-    ensureAuthSubscription(set, get);
-    try {
-      await ensureRealtimeSubscription(set, get, sessionUser);
-    } catch (error) {
-      if (recoverFromPermissionDenied(set, get, sessionUser, error, 'realtime')) {
-        return;
-      }
-
-      if (__DEV__) {
-        console.warn('[bootstrap] failed to start realtime subscription.', error);
-      }
-      set({ hasLiveSync: false, syncStatus: 'idle' });
-    }
-    await syncPushTokenForUser(currentUserId);
   },
 
   async login(input) {
-    await repository.login(input);
+    if (repository.getMode() === 'mock') await authService.login(input);
+    else await repository.login(input);
     await refreshCurrentSession(set, get);
     await syncPushTokenForUser(get().currentUserId);
   },
@@ -541,7 +546,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   async register(input) {
-    await repository.register(input);
+    if (repository.getMode() === 'mock') await authService.register(input);
+    else await repository.register(input);
     await refreshCurrentSession(set, get);
     await syncPushTokenForUser(get().currentUserId);
   },

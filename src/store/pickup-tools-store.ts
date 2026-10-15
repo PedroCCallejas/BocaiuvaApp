@@ -102,6 +102,8 @@ export const RODIZIO_DEFAULTS: RodizioSlice = {
 };
 
 export const PICKUP_TOOLS_STORAGE_KEY = 'professo-pickup-tools';
+let activeStorageKey: string | null = PICKUP_TOOLS_STORAGE_KEY;
+let activeAccountId: string | null | undefined;
 
 type StorageReader = Pick<Storage, 'getItem'>;
 type StorageWriter = Pick<Storage, 'setItem' | 'removeItem'>;
@@ -285,7 +287,7 @@ export function loadStoredState(storage: StorageReader | null = getBrowserStorag
   }
 
   try {
-    const raw = storage.getItem(PICKUP_TOOLS_STORAGE_KEY);
+    const raw = storage.getItem(activeStorageKey ?? PICKUP_TOOLS_STORAGE_KEY);
 
     if (!raw) {
       return {
@@ -308,10 +310,10 @@ export function loadStoredState(storage: StorageReader | null = getBrowserStorag
 
 function saveStoredState(state: PickupToolsState): void {
   const storage = getBrowserStorage();
-  if (!storage) return;
+  if (!storage || !activeStorageKey) return;
 
   try {
-    storage.setItem(PICKUP_TOOLS_STORAGE_KEY, JSON.stringify(pickPersistedState(state)));
+    storage.setItem(activeStorageKey, JSON.stringify(pickPersistedState(state)));
   } catch {
     // ignore write errors (private/incognito mode, quota exceeded)
   }
@@ -319,10 +321,10 @@ function saveStoredState(state: PickupToolsState): void {
 
 function clearStoredState(): void {
   const storage = getBrowserStorage();
-  if (!storage) return;
+  if (!storage || !activeStorageKey) return;
 
   try {
-    storage.removeItem(PICKUP_TOOLS_STORAGE_KEY);
+    storage.removeItem(activeStorageKey);
   } catch {
     // ignore
   }
@@ -512,6 +514,14 @@ export function rehydratePickupToolsState(
     ...loaded,
     restored: hasStoredData,
   };
+}
+
+export function scopePickupToolsToAccount(userId: string | null) {
+  if (activeAccountId === userId) return;
+  activeAccountId = userId;
+  activeStorageKey = userId ? `${PICKUP_TOOLS_STORAGE_KEY}:${encodeURIComponent(userId)}` : null;
+  const loaded = userId ? loadStoredState() : { state: {}, storageWasRead: true };
+  usePickupToolsStore.setState({ ...buildDefaultPersistedState(), ...loaded.state, storageWasRead: loaded.storageWasRead });
 }
 
 // Persist every state change to localStorage

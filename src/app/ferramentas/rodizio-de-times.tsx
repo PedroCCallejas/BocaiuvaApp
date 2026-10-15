@@ -7,6 +7,7 @@ import { SafeAd } from '@/components/ads/SafeAd';
 import { ToolPageShell } from '@/components/tools/ToolPageShell';
 import { TOOL_COLORS } from '@/components/tools/tool-theme';
 import { AD_PLACEMENTS } from '@/constants/ads';
+import { AppButton } from '@/components/ui/AppButton';
 import { fonts } from '@/constants/theme';
 import { getQueuedTeams } from '@/lib/pickup-tools';
 import {
@@ -48,6 +49,7 @@ const FAQ = [
 ];
 
 export default function RodizioScreen() {
+  const [showHelp, setShowHelp] = useState(false);
   const { debugPickup } = useLocalSearchParams<{ debugPickup?: string | string[] }>();
 
   const store = usePickupToolsStore();
@@ -146,7 +148,7 @@ export default function RodizioScreen() {
       {/* Session banner */}
       {sessionActive ? (
         <View style={[styles.sessionBanner, { backgroundColor: 'rgba(22,163,74,0.09)', borderColor: 'rgba(22,163,74,0.3)' }]}>
-          <Text style={[styles.sessionBannerText, { color: '#15803D' }]}>
+          <Text style={[styles.sessionBannerText, { color: C.textMuted }]}>
             Continuando pelada salva neste dispositivo.
           </Text>
         </View>
@@ -178,17 +180,17 @@ export default function RodizioScreen() {
             <Text style={styles.sectionLabel}>Jogadores por time</Text>
             <View style={styles.optionsRow}>
               {PER_TEAM_OPTIONS.map((n) => (
-                <Pressable
+                <Pressable accessibilityRole="button"
                   key={n}
                   onPress={() => store.setRodizioPlayersPerTeam(n)}
                   style={[
                     styles.optionChip,
                     {
-                      backgroundColor: playersPerTeam === n ? '#16A34A' : C.cardMuted,
-                      borderColor: playersPerTeam === n ? '#16A34A' : C.border,
+                      backgroundColor: playersPerTeam === n ? C.accent : C.cardMuted,
+                      borderColor: playersPerTeam === n ? C.accent : C.border,
                     },
                   ]}>
-                  <Text style={[styles.optionChipText, { color: playersPerTeam === n ? '#FFF' : C.textMuted }]}>
+                  <Text style={[styles.optionChipText, { color: playersPerTeam === n ? C.background : C.textMuted }]}>
                     {n}v{n}
                   </Text>
                 </Pressable>
@@ -202,7 +204,7 @@ export default function RodizioScreen() {
               Adicionar jogadores (na ordem de chegada)
             </Text>
             <View style={styles.inputRow}>
-              <TextInput
+              <TextInput accessibilityLabel="Nome do jogador"
                 value={inputValue}
                 onChangeText={setInputValue}
                 onSubmitEditing={addPlayer}
@@ -211,7 +213,7 @@ export default function RodizioScreen() {
                 style={styles.textInput}
                 returnKeyType="done"
               />
-              <Pressable onPress={addPlayer} style={styles.addButton}>
+              <Pressable accessibilityRole="button" onPress={addPlayer} style={styles.addButton}>
                 <Text style={styles.addButtonText}>+</Text>
               </Pressable>
             </View>
@@ -222,7 +224,7 @@ export default function RodizioScreen() {
                   <View key={name} style={styles.playerRow}>
                     <Text style={styles.playerIndex}>{idx + 1}</Text>
                     <Text style={styles.playerName} numberOfLines={1}>{name}</Text>
-                    <Pressable onPress={() => removeSetupPlayer(name)} style={styles.removeButton}>
+                    <Pressable accessibilityRole="button" onPress={() => removeSetupPlayer(name)} style={styles.removeButton}>
                       <Text style={styles.removeButtonText}>✕</Text>
                     </Pressable>
                   </View>
@@ -247,11 +249,11 @@ export default function RodizioScreen() {
               </View>
             ) : null}
 
-            <Pressable
+            <Pressable accessibilityRole="button"
               onPress={handleStart}
               disabled={!canStart}
-              style={[styles.startButton, { backgroundColor: canStart ? '#16A34A' : C.cardMuted }]}>
-              <Text style={[styles.startButtonText, { color: canStart ? '#FFF' : C.textMuted }]}>
+              style={[styles.startButton, { backgroundColor: canStart ? C.accent : C.cardMuted }]}>
+              <Text style={[styles.startButtonText, { color: canStart ? C.background : C.textMuted }]}>
                 Iniciar lista
               </Text>
             </Pressable>
@@ -272,25 +274,25 @@ export default function RodizioScreen() {
               {pendingRemove.type === 'queue' ? (
                 <>
                   <Text style={styles.modalTitle}>Remover {pendingRemove.player} da lista?</Text>
-                  <Pressable onPress={handleConfirmQueueRemove} style={[styles.modalBtn, { backgroundColor: '#DC2626' }]}>
+                  <Pressable accessibilityRole="button" onPress={handleConfirmQueueRemove} style={[styles.modalBtn, { backgroundColor: '#DC2626' }]}>
                     <Text style={styles.modalBtnTextWhite}>Sim, remover da lista</Text>
                   </Pressable>
-                  <Pressable onPress={() => setPendingRemove(null)} style={[styles.modalBtn, { backgroundColor: C.cardMuted, borderColor: C.border, borderWidth: 1 }]}>
+                  <Pressable accessibilityRole="button" onPress={() => setPendingRemove(null)} style={[styles.modalBtn, { backgroundColor: C.cardMuted, borderColor: C.border, borderWidth: 1 }]}>
                     <Text style={[styles.modalBtnText, { color: C.text }]}>Cancelar</Text>
                   </Pressable>
                 </>
               ) : (
                 <>
                   <Text style={styles.modalTitle}>Remover {pendingRemove.player}?</Text>
-                  <Pressable onPress={handleRemoveNow} style={[styles.modalBtn, { backgroundColor: '#DC2626' }]}>
+                  <Pressable accessibilityRole="button" onPress={handleRemoveNow} style={[styles.modalBtn, { backgroundColor: '#DC2626' }]}>
                     <Text style={styles.modalBtnTextWhite}>Remover agora e puxar próximo da lista</Text>
                   </Pressable>
                   {!leavingAfterMatch.includes(pendingRemove.player) ? (
-                    <Pressable onPress={handleRemoveAfterMatch} style={[styles.modalBtn, { backgroundColor: '#D97706' }]}>
+                    <Pressable accessibilityRole="button" onPress={handleRemoveAfterMatch} style={[styles.modalBtn, { backgroundColor: '#D97706' }]}>
                       <Text style={styles.modalBtnTextWhite}>Remover só depois do jogo</Text>
                     </Pressable>
                   ) : null}
-                  <Pressable onPress={() => setPendingRemove(null)} style={[styles.modalBtn, { backgroundColor: C.cardMuted, borderColor: C.border, borderWidth: 1 }]}>
+                  <Pressable accessibilityRole="button" onPress={() => setPendingRemove(null)} style={[styles.modalBtn, { backgroundColor: C.cardMuted, borderColor: C.border, borderWidth: 1 }]}>
                     <Text style={[styles.modalBtnText, { color: C.text }]}>Cancelar</Text>
                   </Pressable>
                 </>
@@ -313,7 +315,7 @@ export default function RodizioScreen() {
             <View style={styles.matchTeams}>
               {/* Team A */}
               <View style={styles.matchTeam}>
-                <View style={[styles.teamBadge, { backgroundColor: '#16A34A' }]}>
+                <View style={[styles.teamBadge, { backgroundColor: C.accent }]}>
                   <Text style={styles.teamBadgeText}>Time A</Text>
                 </View>
                 <View style={styles.matchPlayerList}>
@@ -325,7 +327,7 @@ export default function RodizioScreen() {
                       {leavingAfterMatch.includes(name) ? (
                         <Text style={styles.leavingBadge}>sai após</Text>
                       ) : null}
-                      <Pressable
+                      <Pressable accessibilityRole="button"
                         onPress={() => setPendingRemove({ type: 'active', player: name })}
                         style={styles.removeButton}
                         hitSlop={8}>
@@ -334,7 +336,7 @@ export default function RodizioScreen() {
                     </View>
                   ))}
                 </View>
-                <Pressable onPress={() => handleWin('A')} style={[styles.winButton, { backgroundColor: '#16A34A' }]}>
+                <Pressable accessibilityRole="button" onPress={() => handleWin('A')} style={[styles.winButton, { backgroundColor: C.accent }]}>
                   <Text style={styles.winButtonText}>Registrar vitória do Time A</Text>
                 </Pressable>
               </View>
@@ -355,7 +357,7 @@ export default function RodizioScreen() {
                       {leavingAfterMatch.includes(name) ? (
                         <Text style={styles.leavingBadge}>sai após</Text>
                       ) : null}
-                      <Pressable
+                      <Pressable accessibilityRole="button"
                         onPress={() => setPendingRemove({ type: 'active', player: name })}
                         style={styles.removeButton}
                         hitSlop={8}>
@@ -364,13 +366,13 @@ export default function RodizioScreen() {
                     </View>
                   ))}
                 </View>
-                <Pressable onPress={() => handleWin('B')} style={[styles.winButton, { backgroundColor: '#3B82F6' }]}>
+                <Pressable accessibilityRole="button" onPress={() => handleWin('B')} style={[styles.winButton, { backgroundColor: '#3B82F6' }]}>
                   <Text style={styles.winButtonText}>Registrar vitória do Time B</Text>
                 </Pressable>
               </View>
             </View>
 
-            <Pressable
+            <Pressable accessibilityRole="button"
               onPress={() => router.push('/ferramentas/cronometro-pelada' as never)}
               style={styles.timerLink}>
               <Text style={styles.timerLinkText}>Abrir cronômetro desta partida</Text>
@@ -395,7 +397,7 @@ export default function RodizioScreen() {
                         <Text style={styles.queuePlayerText}>
                           {ti * playersPerTeam + pi + 1}. {name}
                         </Text>
-                        <Pressable
+                        <Pressable accessibilityRole="button"
                           onPress={() => setPendingRemove({ type: 'queue', player: name })}
                           style={styles.removeButton}
                           hitSlop={6}>
@@ -419,7 +421,7 @@ export default function RodizioScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Chegou alguém novo? Adicionar à lista</Text>
             <View style={styles.inputRow}>
-              <TextInput
+              <TextInput accessibilityLabel="Nome do jogador"
                 value={addDuringValue}
                 onChangeText={(t) => { setAddDuringValue(t); setAddDuringError(''); }}
                 onSubmitEditing={handleAddDuring}
@@ -428,7 +430,7 @@ export default function RodizioScreen() {
                 style={styles.textInput}
                 returnKeyType="done"
               />
-              <Pressable onPress={handleAddDuring} style={styles.addButton}>
+              <Pressable accessibilityRole="button" onPress={handleAddDuring} style={styles.addButton}>
                 <Text style={styles.addButtonText}>+</Text>
               </Pressable>
             </View>
@@ -439,7 +441,7 @@ export default function RodizioScreen() {
             ) : null}
           </View>
 
-          <Pressable onPress={() => store.resetAll()} style={styles.resetButton}>
+          <Pressable accessibilityRole="button" onPress={() => store.resetAll()} style={styles.resetButton}>
             <Text style={styles.resetButtonText}>Resetar pelada</Text>
           </Pressable>
         </>
@@ -447,7 +449,8 @@ export default function RodizioScreen() {
 
       <SafeAd placement={AD_PLACEMENTS.TOOLS_AFTER_RESULT} hasContent={hasResult} />
 
-      <View style={styles.editorial}>
+      <View style={{ alignItems: 'flex-start' }}><AppButton variant="ghost" label={showHelp ? 'Fechar ajuda' : 'Como usar'} onPress={() => setShowHelp(!showHelp)} /></View>
+      {showHelp ? <View><View style={styles.editorial}>
         <Text style={styles.sectionTitle}>Como a lista da pelada funciona na prática</Text>
         <Text style={styles.editorialText}>
           Imagine 16 jogadores, 5 por time. Os primeiros 5 formam o Time A, os 5 seguintes o Time B.
@@ -468,6 +471,7 @@ export default function RodizioScreen() {
 
       <SafeAd placement={AD_PLACEMENTS.TOOLS_HUB_AFTER_CARDS} hasContent />
 
+      </View> : null}
       <View style={styles.relatedLinks}>
         <Text style={styles.sectionTitle}>Outras ferramentas</Text>
         <View style={styles.relatedRow}>
@@ -476,7 +480,7 @@ export default function RodizioScreen() {
             { label: 'Sorteador de Times', href: '/ferramentas/sorteador-de-times' },
             { label: 'Campeonato Rápido', href: '/ferramentas/campeonato-rapido' },
           ].map((link) => (
-            <Pressable
+            <Pressable accessibilityRole="button"
               key={link.href}
               onPress={() => router.push(link.href as never)}
               style={styles.relatedChip}>
@@ -493,14 +497,14 @@ const styles = StyleSheet.create({
   sessionBanner: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
   sessionBannerText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '600' },
   debugCard: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 6, backgroundColor: C.card, borderColor: C.border },
-  debugTitle: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800', color: C.text },
+  debugTitle: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '600', color: C.text },
   debugLine: { fontFamily: fonts.body, fontSize: 12, lineHeight: 18, color: C.textMuted },
   section: { gap: 12 },
   sectionLabel: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
-  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '800', color: C.text },
+  sectionTitle: { fontFamily: fonts.heading, fontSize: 20, fontWeight: '600', color: C.text },
   optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  optionChip: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 },
-  optionChipText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '800' },
+  optionChip: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10 },
+  optionChipText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '600' },
   inputRow: { flexDirection: 'row', gap: 10 },
   textInput: {
     flex: 1,
@@ -512,10 +516,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: C.text,
     backgroundColor: C.cardMuted,
-    borderColor: C.border,
+    borderColor: C.borderStrong,
   },
-  addButton: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#16A34A' },
-  addButtonText: { fontFamily: fonts.heading, fontSize: 24, fontWeight: '800', color: '#FFF' },
+  addButton: { minHeight: 44, width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent },
+  addButtonText: { fontFamily: fonts.heading, fontSize: 24, fontWeight: '600', color: C.background },
   playerList: { gap: 8 },
   playerRow: {
     flexDirection: 'row',
@@ -530,7 +534,7 @@ const styles = StyleSheet.create({
   },
   playerIndex: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '700', width: 20, color: C.textMuted },
   playerName: { flex: 1, fontFamily: fonts.body, fontSize: 14, color: C.text },
-  removeButton: { padding: 4 },
+  removeButton: { minHeight: 44, padding: 4 },
   removeButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '700', color: C.textMuted },
   warningBox: { borderWidth: 1, borderRadius: 12, padding: 12, backgroundColor: 'rgba(234,179,8,0.1)', borderColor: 'rgba(234,179,8,0.4)' },
   warningText: { fontFamily: fonts.body, fontSize: 13, lineHeight: 20, color: '#B45309' },
@@ -539,20 +543,20 @@ const styles = StyleSheet.create({
   setupSummary: { borderWidth: 1, borderRadius: 12, padding: 12, backgroundColor: C.card, borderColor: C.border },
   setupSummaryText: { fontFamily: fonts.body, fontSize: 13, color: C.textMuted },
   startButton: { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  startButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800' },
+  startButtonText: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '600' },
   matchBadge: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, alignSelf: 'flex-start', backgroundColor: 'rgba(22,163,74,0.1)', borderColor: 'rgba(22,163,74,0.3)' },
-  matchBadgeText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: '#16A34A' },
+  matchBadgeText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.accent },
   modal: { borderWidth: 1.5, borderRadius: 20, padding: 18, gap: 10, backgroundColor: C.card, borderColor: '#DC2626' },
-  modalTitle: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', marginBottom: 4, color: C.text },
+  modalTitle: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '600', marginBottom: 4, color: C.text },
   modalBtn: { borderRadius: 12, paddingVertical: 12, paddingHorizontal: 14, alignItems: 'center' },
   modalBtnText: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700' },
-  modalBtnTextWhite: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700', color: '#FFF', textAlign: 'center' },
-  matchCard: { borderWidth: 1.5, borderRadius: 24, padding: 20, gap: 16, backgroundColor: C.card, borderColor: '#16A34A' },
-  matchCardTitle: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '800', color: '#16A34A' },
+  modalBtnTextWhite: { fontFamily: fonts.heading, fontSize: 14, fontWeight: '700', color: C.background, textAlign: 'center' },
+  matchCard: { borderWidth: 1.5, borderRadius: 18, padding: 20, gap: 16, backgroundColor: C.card, borderColor: C.accent },
+  matchCardTitle: { fontFamily: fonts.heading, fontSize: 16, fontWeight: '600', color: C.accent },
   matchTeams: { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
   matchTeam: { flex: 1, gap: 10 },
   teamBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start' },
-  teamBadgeText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '800', color: '#FFF' },
+  teamBadgeText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '600', color: C.background },
   matchPlayerList: { gap: 4 },
   matchPlayerRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   matchPlayer: { flex: 1, fontFamily: fonts.body, fontSize: 14, lineHeight: 22, color: C.text },
@@ -567,8 +571,8 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   winButton: { borderRadius: 12, paddingVertical: 10, paddingHorizontal: 12, alignItems: 'center' },
-  winButtonText: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '800', color: '#FFF', textAlign: 'center' },
-  vs: { fontFamily: fonts.display, fontSize: 28, fontWeight: '900', marginTop: 30, color: C.textMuted },
+  winButtonText: { fontFamily: fonts.heading, fontSize: 12, fontWeight: '600', color: C.background, textAlign: 'center' },
+  vs: { fontFamily: fonts.display, fontSize: 28, fontWeight: '700', marginTop: 30, color: C.textMuted },
   timerLink: { borderWidth: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center', borderColor: C.border },
   timerLinkText: { fontFamily: fonts.heading, fontSize: 13, fontWeight: '700', color: C.textMuted },
   queueCard: { borderWidth: 1, borderRadius: 16, padding: 14, gap: 10, backgroundColor: C.card, borderColor: C.border },
@@ -592,7 +596,7 @@ const styles = StyleSheet.create({
   editorialText: { fontFamily: fonts.body, fontSize: 14, lineHeight: 22, color: C.textMuted },
   faqList: { gap: 12 },
   faqCard: { borderWidth: 1, borderRadius: 16, padding: 16, gap: 8, backgroundColor: C.card, borderColor: C.border },
-  faqQ: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '800', color: C.text },
+  faqQ: { fontFamily: fonts.heading, fontSize: 15, fontWeight: '600', color: C.text },
   faqA: { fontFamily: fonts.body, fontSize: 14, lineHeight: 21, color: C.textMuted },
   relatedLinks: { gap: 12 },
   relatedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },

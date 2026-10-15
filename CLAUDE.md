@@ -61,7 +61,7 @@ Ausência de dado é indistinguível de ausência de acesso. Quando algo aparece
 
 ```bash
 npm run typecheck    # tsc --noEmit
-npm run test         # 600 testes; runner próprio em tests/run-tests.ts
+npm run test         # 614 testes; runner próprio em tests/run-tests.ts
 npm run build:web    # expo export --platform web — antes de deploy
 ```
 
@@ -72,7 +72,10 @@ congelar invariantes ("tal variável não pode reaparecer"). Se um teste desses
 falhar, o alvo é a invariante, não o teste.
 
 O CI (`.github/workflows/ci.yml`) roda typecheck, test, build:web e
-`npm audit --omit=dev --audit-level=high` em PR e push na main.
+`npm run audit:security` em PR e push na main. Esse gate executa
+`npm audit --omit=dev --audit-level=high` e admite apenas as duas exceções
+temporárias aprovadas em `security/audit-exceptions.json`; consulte
+`docs/diagnostico-ci-auditoria-2026-10-13.md` para validade e riscos restantes.
 
 Os testes SQL em `supabase/tests/` não têm runner npm e não rodam no CI.
 

@@ -1,14 +1,12 @@
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router } from 'expo-router';
 import { z } from 'zod';
 
-import { Screen } from '@/components/ui/Screen';
+import { PublicPageShell } from '@/components/public/PublicPageShell';
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
-import { APP_NAME } from '@/constants/branding';
-import { fonts } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { useAppStore } from '@/store/app-store';
 
@@ -47,13 +45,7 @@ export default function ForgotPasswordScreen() {
   }
 
   return (
-    <Screen formMode contentContainerStyle={styles.screen}>
-      <View style={styles.hero}>
-        <Text style={[styles.title, { color: theme.colors.text }]}>Recuperar senha</Text>
-        <Text style={[styles.description, { color: theme.colors.textMuted }]}>
-          Informe o e-mail da sua conta no {APP_NAME} para receber o link de redefinição de senha.
-        </Text>
-      </View>
+    <PublicPageShell title="Recuperar senha" description="Informe seu e-mail para receber o link de redefinição.">
       <View
         style={[
           styles.card,
@@ -86,34 +78,17 @@ export default function ForgotPasswordScreen() {
         <AppButton
           label="Voltar ao login"
           variant="ghost"
-          onPress={() => router.back()}
+          onPress={() => router.replace('/login')}
         />
       </View>
-    </Screen>
+    </PublicPageShell>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
-  hero: {
-    gap: 8,
-  },
-  title: {
-    fontFamily: fonts.display,
-    fontSize: 34,
-    fontWeight: '900',
-  },
-  description: {
-    fontFamily: fonts.body,
-    fontSize: 15,
-    lineHeight: 22,
-  },
   card: {
     borderWidth: 1,
-    borderRadius: 28,
+    borderRadius: 14,
     padding: 20,
     gap: 14,
   },

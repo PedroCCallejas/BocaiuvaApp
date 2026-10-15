@@ -1,11 +1,13 @@
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 
 import { fonts } from '@/constants/theme';
+import { Ionicons } from '@expo/vector-icons';
+import type { ComponentProps } from 'react';
 
 import { TOOL_COLORS } from './tool-theme';
 
 interface ToolActionTileProps {
-  icon: string;
+  icon: ComponentProps<typeof Ionicons>['name'];
   title: string;
   description: string;
   onPress: () => void;
@@ -25,7 +27,7 @@ export function ToolActionTile({ icon, title, description, onPress, style }: Too
       {({ pressed }) => (
         <>
           <View style={[styles.iconBox, pressed && styles.iconBoxPressed]}>
-            <Text style={styles.icon}>{icon}</Text>
+            <Ionicons name={icon} size={24} color={TOOL_COLORS.accent} />
           </View>
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.description}>{description}</Text>
@@ -40,7 +42,7 @@ const styles = StyleSheet.create({
     backgroundColor: TOOL_COLORS.card,
     borderWidth: 1.5,
     borderColor: TOOL_COLORS.borderStrong,
-    borderRadius: 20,
+    borderRadius: 14,
     padding: 18,
     gap: 8,
     minHeight: 134,
@@ -68,7 +70,7 @@ const styles = StyleSheet.create({
   title: {
     fontFamily: fonts.display,
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: '700',
     lineHeight: 22,
     color: TOOL_COLORS.text,
   },

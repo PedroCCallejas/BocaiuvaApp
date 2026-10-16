@@ -7,6 +7,7 @@ import { z } from 'zod';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { MATCH_TYPE_LABELS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
@@ -143,7 +144,16 @@ export default function CreateMatchScreen() {
   }, [listPublicTeams]);
 
   if (!team || !canManage) {
-    return null;
+    return (
+      <Screen>
+        <EmptyState
+          title="Acesso restrito"
+          description="Somente a gestão do time pode criar partidas. Você pode consultar os jogos do seu elenco."
+          actionLabel="Ver partidas"
+          onAction={() => router.replace('/matches')}
+        />
+      </Screen>
+    );
   }
 
   const currentTeam = team;

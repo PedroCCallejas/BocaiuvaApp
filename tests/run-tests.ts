@@ -4646,7 +4646,7 @@ const testCases: TestCase[] = [
       assert.equal(
         canManage,
         false,
-        'jogador sem papel admin retorna canManage=false — create.tsx retorna null antes dos hooks dependentes de team',
+        'jogador sem papel admin continua sem permissão para criar partidas',
       );
     },
   },

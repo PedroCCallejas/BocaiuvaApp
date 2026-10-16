@@ -1,0 +1,7 @@
+1. **Sobrevive como condição para vender, não como impedimento à preparação.** O registro identifica os diferenciais Premium como futuros e não prometidos, e admite dois planos somente após diferenciação real; comparar essa hipótese com um plano completo é trabalho experimental autorizado, sem obrigação de construir o segundo nível.
+
+2. **Sobrevive quanto às definições pendentes; não demonstra contradição com os portões existentes.** O caso exige decidir edição, retenção e cancelamento antes de implementar, portanto fechar essa transição durante a preparação cumpre o desenho; o teste deve apresentar apenas capacidades existentes, sem anunciar diferenciais futuros como disponíveis.
+
+3. **Sobrevive como exigência de medição, mas não sustenta que toda a complexidade já foi escolhida.** Publicidade é eventual, depende de elegibilidade e medição de receita/impacto, e pode ser adiada ou descartada; custos e disposição a pagar desconhecidos justificam investigar alternativas antes de selecionar o pacote, não condenar sua investigação.
+
+**Ponto decisivo para o júri:** as condições já expressas tornam esta preparação suficientemente experimental, ou a tabela de ofertas ainda compromete o primeiro lançamento com dois níveis sem diferenciação? Pelo critério registrado, cabe NOT GUILTY se preparar significa validar e escolher entre hipóteses, preservando assinatura por time, teste e isenção do Bocaiúva; GUILTY exigiria demonstrar compromisso com o pacote antes dessas validações, algo que o registro explicitamente nega.

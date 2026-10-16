@@ -12,6 +12,7 @@
     "build:web": "expo export --platform web",
     "typecheck": "tsc --noEmit",
     "test": "node --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./tests/run-tests.ts",
+    "test:postgres": "node ./scripts/verify-postgres.mjs",
     "test:watch": "node --watch --no-warnings --experimental-strip-types --loader ./tests/alias-loader.mjs ./tests/run-tests.ts",
     "repair:players-linked-email:dry": "node --no-warnings --experimental-strip-types ./scripts/repair-players-linked-email.ts --dry-run",
     "repair:players-linked-email": "node --no-warnings --experimental-strip-types ./scripts/repair-players-linked-email.ts",

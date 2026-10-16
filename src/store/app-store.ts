@@ -15,6 +15,7 @@ import {
 import { TEAM_ACCESS_PERMISSION_MESSAGE } from '@/constants/access-notices';
 import { isTeamStorageCleanupWarning } from '@/lib/team-deletion';
 import { repository } from '@/services/repository';
+import { invalidarCacheDasFatias } from '@/services/repository/supabase/fatias';
 import { emptySnapshot } from '@/services/repository/types';
 import type {
   AppSnapshot,
@@ -214,6 +215,7 @@ function applySnapshot(
 }
 
 function resetSnapshot(set: StoreSet) {
+  invalidarCacheDasFatias();
   lastSnapshotKey = buildSnapshotKey(emptySnapshot);
   set({
     snapshot: emptySnapshot,
@@ -310,6 +312,7 @@ async function refreshSnapshot(
 
   try {
     const snapshot = await repository.getSnapshot();
+    if (resolveCurrentUserId(authService.getCurrentUser()) !== currentUserId) return;
     applySnapshot(set, get, snapshot, currentUserId);
   } catch (error) {
     if (recoverFromPermissionDenied(set, get, sessionUser, error, 'refresh')) {
@@ -613,7 +616,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const team = await repository.createTeam(input, userId);
-    await refreshCurrentSession(set, get);
+    await refreshCurrentSession(set, get, { showRefreshing: true });
     return team;
   },
 
@@ -641,11 +644,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       await repository.deleteTeamPermanently(teamId, userId);
-      await refreshCurrentSession(set, get);
+      await refreshCurrentSession(set, get, { showRefreshing: true });
       return { storageCleanupWarning: false };
     } catch (error) {
       if (isTeamStorageCleanupWarning(error)) {
-        await refreshCurrentSession(set, get);
+        await refreshCurrentSession(set, get, { showRefreshing: true });
         return { storageCleanupWarning: true };
       }
 
@@ -772,8 +775,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       throw new Error('Sessão expirada.');
     }
 
-    await repository.setActiveTeam(teamId, userId);
-    await refreshCurrentSession(set, get);
+    const usuario = await repository.setActiveTeam(teamId, userId);
+    if (get().currentUserId !== userId || resolveCurrentUserId(authService.getCurrentUser()) !== userId) return;
+    const anterior = get().snapshot;
+    applySnapshot(set, get, {
+      ...emptySnapshot,
+      users: [usuario],
+      teams: anterior.teams,
+      teamMembers: anterior.teamMembers,
+    }, userId);
+    await refreshCurrentSession(set, get, { showRefreshing: true });
   },
 
   async joinTeamWithInviteCode(inviteCode) {
@@ -783,7 +794,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const result = await repository.joinTeamWithInviteCode(inviteCode, userId);
-    await refreshCurrentSession(set, get);
+    await refreshCurrentSession(set, get, { showRefreshing: true });
     return {
       alreadyMember: result.alreadyMember,
       playerLink: result.playerLink,

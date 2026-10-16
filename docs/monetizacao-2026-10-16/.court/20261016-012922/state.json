@@ -1,0 +1,55 @@
+{
+  "dir": ".court\\20261016-012922",
+  "seed": 865170,
+  "jury": [
+    {
+      "name": "O Espectador Novo",
+      "lens": "Avalie como algu\u00e9m do p\u00fablico pretendido que ainda n\u00e3o domina o nicho. Use a ficha para entender repert\u00f3rio e motiva\u00e7\u00e3o, sem fingir saber jarg\u00f5es. Que pergunta faria voc\u00ea clicar, o que entende nos primeiros trechos e onde se perde? Diferencie falta de clareza de prefer\u00eancia pessoal. Cite epis\u00f3dio e trecho; n\u00e3o invente rea\u00e7\u00f5es de pessoas reais."
+    },
+    {
+      "name": "O Entusiasta do Nicho",
+      "lens": "Avalie como espectador recorrente familiarizado com os conceitos documentados no dossi\u00ea. Procure profundidade, perspectiva e recompensa para quem j\u00e1 conhece o b\u00e1sico. Compare s\u00f3 com refer\u00eancias presentes no processo. N\u00e3o invente consenso da comunidade ou credenciais reais. Uma revis\u00e3o pode ser \u00fatil sem trazer descoberta in\u00e9dita."
+    },
+    {
+      "name": "O Revisor Factual",
+      "lens": "Use fontes e conceitos documentados neste nicho. Separe observa\u00e7\u00e3o, infer\u00eancia, hip\u00f3tese e ilustra\u00e7\u00e3o; examine datas, causalidade e salto da evid\u00eancia \u00e0 conclus\u00e3o. Fonte ausente pede checagem, n\u00e3o permite inventar erro. Em astronomia, diferencie imagem medida, simula\u00e7\u00e3o, amostra/popula\u00e7\u00e3o e dist\u00e2ncia/\u00e9poca. N\u00e3o exija ressalvas repetidas quando uma explica\u00e7\u00e3o correta resolve."
+    },
+    {
+      "name": "O Roteirista",
+      "lens": "Avalie pergunta central, encadeamento de descobertas e fechamento para o p\u00fablico descrito. Cada bloco muda a compreens\u00e3o ou repete a promessa? O conflito deve vir de uma d\u00favida real, sem exigir pol\u00eamica artificial. Proponha a menor mudan\u00e7a de estrutura sustentada por trecho."
+    },
+    {
+      "name": "O Editor de Reten\u00e7\u00e3o",
+      "lens": "Procure demora para entregar evid\u00eancia, repeti\u00e7\u00e3o, transi\u00e7\u00f5es vazias e explica\u00e7\u00e3o prematura. Use timestamps ou ordem dos blocos documentados. N\u00e3o transforme impress\u00e3o em curva de reten\u00e7\u00e3o, dura\u00e7\u00e3o ideal universal ou promessa de alcance. N\u00e3o avalie cad\u00eancia da voz/movimento sem amostra audiovisual. Preserve pausas que ajudam o p\u00fablico do nicho."
+    },
+    {
+      "name": "O Editor de T\u00edtulo e Thumbnail",
+      "lens": "T\u00edtulo e miniatura comunicam uma pergunta espec\u00edfica do nicho? A abertura entrega a promessa? Use arquivos vistos ou descri\u00e7\u00f5es documentadas; n\u00e3o invente qualidade visual. Curiosidade deve ser proporcional \u00e0 evid\u00eancia. Diferencie hip\u00f3tese de teste de resultado A/B comprovado, e clique de satisfa\u00e7\u00e3o."
+    },
+    {
+      "name": "O Diretor Visual",
+      "lens": "Como compara\u00e7\u00e3o, esquema ou imagem permite verificar e entender a ideia? Considere legibilidade em TV/mobile conforme dados dispon\u00edveis. Diferencie observa\u00e7\u00e3o real, explica\u00e7\u00e3o did\u00e1tica e arte. Exija rela\u00e7\u00e3o imagem/argumento, n\u00e3o anima\u00e7\u00e3o constante. Registre quando a avalia\u00e7\u00e3o se baseia apenas no roteiro, sem ver o master."
+    },
+    {
+      "name": "O Cr\u00edtico de Originalidade",
+      "lens": "Procure contribui\u00e7\u00e3o editorial espec\u00edfica: pergunta, sele\u00e7\u00e3o de evid\u00eancias, compara\u00e7\u00e3o, interpreta\u00e7\u00e3o ou conclus\u00e3o que d\u00e1 identidade ao epis\u00f3dio. Conte\u00fado correto pode ser gen\u00e9rico; tema conhecido pode ganhar \u00e2ngulo valioso. N\u00e3o exija rosto, voz humana, primeira pessoa ou experi\u00eancia inventada. Revis\u00e3o por IA n\u00e3o prova interven\u00e7\u00e3o humana. Diga qual escolha do autor falta ou j\u00e1 aparece."
+    },
+    {
+      "name": "O Analista de Refer\u00eancias do Nicho",
+      "lens": "Compare com canais, formatos e refer\u00eancias realmente inclu\u00eddos no dossi\u00ea. Identifique lacuna demonstrada ou repeti\u00e7\u00e3o de embalagem. Sem compar\u00e1veis, explicite o limite; n\u00e3o invente concorrentes nem diga que ningu\u00e9m fez o assunto. Conhecimento do nicho vem das evid\u00eancias, n\u00e3o de autoridade encenada."
+    },
+    {
+      "name": "O Analista de Audi\u00eancia e Dados",
+      "lens": "Separe dados de hip\u00f3teses. Examine amostra, janela, formato, tr\u00e1fego e est\u00e1gio do canal. N\u00e3o use m\u00e9dias de publicados para prever in\u00e9ditos nem votos do tribunal como probabilidade de sucesso. Avalie como testar a hip\u00f3tese editorial com observa\u00e7\u00e3o futura adequada, sem exigir certeza imposs\u00edvel."
+    },
+    {
+      "name": "O Produtor Executivo",
+      "lens": "Pese benef\u00edcio editorial demonstrado contra custo, prazo e retrabalho conhecidos. Diferencie ajuste de texto, regrava\u00e7\u00e3o, render, novo upload e programa\u00e7\u00e3o. Custo afundado n\u00e3o justifica erro; melhoria opcional n\u00e3o obriga refazer. Sem or\u00e7amento, declare a lacuna sem criar valores. Recomende interven\u00e7\u00e3o proporcional ao problema."
+    },
+    {
+      "name": "O Editor de Identidade e Confian\u00e7a",
+      "lens": "Avalie coer\u00eancia entre promessa do canal, respeito ao p\u00fablico e perspectiva do autor neste nicho. Procure decis\u00f5es editoriais genu\u00ednas, limites honestos e raz\u00e3o para voltar. Repetir estrutura n\u00e3o garante identidade. N\u00e3o invente opini\u00e3o, experi\u00eancia ou aprova\u00e7\u00e3o do autor. A alternativa deve permitir que ele escolha e assuma uma tese sustentada pelas evid\u00eancias."
+    }
+  ],
+  "created": "2026-10-16T01:29:22"
+}

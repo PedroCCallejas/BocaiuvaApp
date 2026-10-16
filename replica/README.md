@@ -9,6 +9,11 @@ O resultado de `parity.py` mede essa matriz e **não certifica prontidão comerc
 
 Comece pelo [resultado e decisão recomendada](resultado.md).
 
+Atualização da sequência autorizada: [cache por contexto](../docs/cache-por-contexto-2026-10-16.md),
+[monetização com court](../docs/monetizacao-2026-10-16/README.md) e
+[SEO/descoberta por IA](../docs/seo-descoberta-ia-2026-10-16.md).
+O PR #4 sincroniza a rodada; os registros abaixo preservam a evidência original.
+
 - [Mapa de telas e jornadas](recon.md)
 - [Casos executados e cobertura](test-plan.md)
 - [Bugs e itens a confirmar](bugs.md)

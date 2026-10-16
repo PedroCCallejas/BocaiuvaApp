@@ -1,5 +1,10 @@
 # Operação, isolamento e recuperação — 16/10/2026
 
+**Atualização posterior:** [backup real dos registros criado e restaurado](../docs/backup-real-2026-10-16.md)
+(20 tabelas/4.041 registros) e [cache por contexto corrigido](../docs/cache-por-contexto-2026-10-16.md).
+Os blocos de pendências abaixo registram o diagnóstico anterior; mídia, identidade,
+chave portátil e cópia externa continuam pendentes conforme o relatório atual.
+
 ## AS-IS observado em consultas somente de leitura
 
 - Supabase `BocaApp`, região `sa-east-1`, estado `ACTIVE_HEALTHY`, PostgreSQL 17.
@@ -50,8 +55,10 @@ públicos sintéticos, RLS e policies. Os cinco testes passaram novamente na bas
 restaurada. Há casos de admin A versus B, jogador sem gestão, conta sem vínculo
 e visitante, além de convite idempotente e reentrada.
 
-O job `validar_postgres` foi adicionado ao workflow, **ainda sem execução remota
-nesta rodada**. Não houve commit/push/deploy.
+O job `validar_postgres` passou no GitHub Actions do [PR #4](https://github.com/PedroCCallejas/BocaiuvaApp/pull/4),
+[execução inicial 38855968273](https://github.com/PedroCCallejas/BocaiuvaApp/actions/runs/38855968273).
+O job web e o preview Vercel também passaram para `332f5c2`.
+Não houve merge ou deploy de produção nesta sequência.
 
 ## O que isso não prova
 

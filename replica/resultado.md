@@ -1,5 +1,13 @@
 # Resultado da rodada — 16/10/2026
 
+**Continuação autorizada:** [PR #4](https://github.com/PedroCCallejas/BocaiuvaApp/pull/4),
+CI do cache aprovado para `9f05b0c` ([execução](https://github.com/PedroCCallejas/BocaiuvaApp/actions/runs/38857660326)),
+618 testes locais e build web aprovados; [cópia real dos registros restaurada](../docs/backup-real-2026-10-16.md).
+[Monetização/court](../docs/monetizacao-2026-10-16/README.md) e
+[SEO/descoberta por IA](../docs/seo-descoberta-ia-2026-10-16.md) preparados.
+Cobrança continua desativada. Sem merge/deploy de produção nesta continuação.
+O restante deste documento preserva a primeira rodada e seus limites originais.
+
 **Avanço pelos quatro itens com evidência e limites; cobrança não ativada.**
 O produto publicado passou pelas jornadas saudáveis executadas. Há uma correção
 local revisável e novos testes de banco/recuperação, mas faltam condições para

@@ -72,3 +72,8 @@ europeu não valida preço brasileiro. [Relatos públicos analisados](feedback.m
 levantam atrito em notificações, papéis e cobrança; são hipóteses para o piloto,
 não depoimentos do Professô FC. O usuário possui um time com aproximadamente
 20 jogadores, sem outros organizadores entrevistados até aqui.
+## Atualização comercial — 16/10/2026
+
+O usuário definiu um mês gratuito e Bocaiúva Premium isento permanente, com cobrança
+desativada por enquanto. A [análise atual com court e matriz Pro/Premium](../docs/monetizacao-2026-10-16/README.md)
+complementa este rascunho; preços, dois níveis e anúncios continuam em análise.

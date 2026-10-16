@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 import { traduzirErroDoPostgres } from '@/services/repository/supabase/erros';
 import {
   criarFatia,
   limparFatias,
   registrarEmissao,
+  aplicarTodasAsFatias,
+  definirContextoDasFatias,
+  invalidarCacheDasFatias,
+  recarregarTodasAsFatias,
 } from '@/services/repository/supabase/fatias';
 import type { AppSnapshot } from '@/services/repository/types';
 
@@ -71,6 +76,90 @@ function apenasCodigoTs(fonte: string) {
 }
 
 export const supabaseFinanceiroTestCases: TestCase[] = [
+  {
+    name: 'composicao Supabase isola cache e preserva onboarding sem time',
+    run() {
+      const result = spawnSync(process.execPath, ['--no-warnings', '--experimental-strip-types', './tests/supabase-cache-composition.mjs'], {
+        encoding: 'utf8', timeout: 20000,
+      });
+      assert.equal(result.status, 0, result.stderr || result.error?.message || result.stdout);
+    },
+  },
+  {
+    name: 'cache preserva falha no mesmo time, mas nao reutiliza dados em outra conta ou time',
+    async run() {
+      limparFatias();
+      let valor = ['time A'];
+      let falhar = false;
+      const fatia = criarFatia({
+        nome: 'contexto', vazio: [] as string[],
+        ler: async () => { if (falhar) throw new Error('sem rede'); return valor; },
+        aplicar: (snapshot, dados) => ({ ...snapshot, lista: dados }),
+      });
+      definirContextoDasFatias('conta A', 'time A');
+      await fatia.obter();
+      falhar = true;
+      await fatia.recarregar();
+      assert.deepEqual(lista(aplicarTodasAsFatias(base({ lista: [] }))), ['time A']);
+      definirContextoDasFatias('conta A', 'time B');
+      await assert.rejects(recarregarTodasAsFatias(), /sem rede/);
+      assert.deepEqual(lista(aplicarTodasAsFatias(base({ lista: [] }))), []);
+      falhar = false;
+      valor = ['time B'];
+      await fatia.recarregar();
+      definirContextoDasFatias('conta B', 'time B');
+      assert.equal(fatia.estaVazia(), true, 'mesmo ID de time nao compartilha cache entre contas');
+      assert.deepEqual(lista(fatia.aplicar(base({ lista: [] }))), []);
+      limparFatias();
+    },
+  },
+  {
+    name: 'resposta antiga e emissor anterior sao descartados apos troca de contexto',
+    async run() {
+      limparFatias();
+      let concluir!: (valor: string[]) => void;
+      let leituras = 0;
+      const emitidos: AppSnapshot[] = [];
+      const fatia = criarFatia({
+        nome: 'lenta', vazio: [] as string[],
+        ler: () => ++leituras === 1 ? new Promise<string[]>((resolve) => { concluir = resolve; }) : Promise.resolve(['B']),
+        aplicar: (snapshot, dados) => ({ ...snapshot, lista: dados }),
+      });
+      definirContextoDasFatias('pessoa', 'A');
+      registrarEmissao(base({ lista: ['A'] }), (snapshot) => emitidos.push(snapshot));
+      const antiga = fatia.obter();
+      const rejeitada = assert.rejects(antiga, /contexto mudou/);
+      definirContextoDasFatias('pessoa', 'B');
+      await fatia.obter();
+      concluir(['A atrasado']);
+      await rejeitada;
+      assert.deepEqual(lista(fatia.aplicar(base({ lista: [] }))), ['B']);
+      await fatia.recarregar();
+      assert.deepEqual(emitidos, [], 'nao reemite sobre a base do contexto anterior');
+      limparFatias();
+    },
+  },
+  {
+    name: 'logout invalida leitura em voo e novo carregamento permanece independente',
+    async run() {
+      limparFatias();
+      let concluir!: (valor: string[]) => void;
+      let leituras = 0;
+      const fatia = criarFatia({
+        nome: 'sessao', vazio: [] as string[],
+        ler: () => ++leituras === 1 ? new Promise<string[]>((resolve) => { concluir = resolve; }) : Promise.resolve(['nova sessao']),
+        aplicar: (snapshot, dados) => ({ ...snapshot, lista: dados }),
+      });
+      const anterior = fatia.recarregar();
+      const rejeitada = assert.rejects(anterior, /contexto mudou/);
+      invalidarCacheDasFatias();
+      await fatia.obter();
+      concluir(['sessao encerrada']);
+      await rejeitada;
+      assert.deepEqual(await fatia.obter(), ['nova sessao']);
+      limparFatias();
+    },
+  },
   {
     name: 'violacao de RLS vira mensagem de permissao, nao codigo cru',
     run() {
@@ -672,13 +761,15 @@ export const supabaseFinanceiroTestCases: TestCase[] = [
           !soRecusa(bloco) &&
           !/return await this\.[a-zA-Z]+\(/.test(bloco.slice(0, 400)),
       );
-      const semRecarga = gravam.filter((bloco) => !bloco.includes('.recarregar()'));
+      const semRecarga = gravam.filter((bloco) =>
+        !bloco.includes('.recarregar()') && !bloco.includes('invalidarCacheDasFatias()'),
+      );
 
       assert.equal(gravam.length > 0, true, 'nenhuma escrita encontrada');
       assert.deepEqual(
         semRecarga.map((bloco) => bloco.slice(0, bloco.indexOf('('))),
         [],
-        'toda escrita precisa recarregar a fatia',
+        'toda escrita precisa recarregar ou invalidar as fatias',
       );
     },
   },

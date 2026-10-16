@@ -36,8 +36,10 @@ export const webSupabaseTestCases: TestCase[] = [
         'utf8',
       );
 
-      assert.match(source, /if \(!session\) return await base\.getInitialSnapshot\(\)/);
-      assert.match(source, /if \(!session\) return await base\.getSnapshot\(\)/);
+      assert.match(source, /if \(!session\) return await lerBase\(\)/);
+      assert.ok(source.indexOf('if (!session) return await lerBase()') < source.indexOf('const teamId = await buscarTimeAtivo()'));
+      assert.match(source, /comporSobre\(\(\) => base\.getInitialSnapshot\(\)\)/);
+      assert.match(source, /comporSobre\(\(\) => base\.getSnapshot\(\), true\)/);
     },
   },
   {

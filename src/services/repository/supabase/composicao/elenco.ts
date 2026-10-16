@@ -32,7 +32,7 @@ import {
   reativarJogador,
 } from '@/services/repository/supabase/elenco';
 import { criarErroDoRepositorio } from '@/services/repository/supabase/erros';
-import { criarFatia } from '@/services/repository/supabase/fatias';
+import { criarFatia, invalidarCacheDasFatias } from '@/services/repository/supabase/fatias';
 import type { AppRepository } from '@/services/repository/types';
 import {
   TEAM_STORAGE_CLEANUP_WARNING_CODE,
@@ -130,6 +130,7 @@ export function comElenco(base: AppRepository): AppRepository {
 
     async createTeam(input) {
       const time = await criarTime(input);
+      invalidarCacheDasFatias();
 
       // Os critérios padrão entram aqui, depois da RPC, porque agora o vínculo
       // de admin já existe e a policy `rating_criteria_write` deixa inserir.
@@ -152,6 +153,7 @@ export function comElenco(base: AppRepository): AppRepository {
 
     async deleteTeamPermanently(teamId) {
       const result = await apagarTimeDeVez(teamId);
+      invalidarCacheDasFatias();
 
       if (result.storageCleanupWarning) {
         const warning = new Error(TEAM_STORAGE_CLEANUP_WARNING_MESSAGE) as Error & {
@@ -236,10 +238,9 @@ export function comElenco(base: AppRepository): AppRepository {
 
     async setActiveTeam(teamId) {
       const usuario = await definirTimeAtivo(teamId);
+      invalidarCacheDasFatias();
 
-      // Trocar de time muda tudo que a tela mostra: o elenco é de outro time,
-      // e as demais fatias precisam ser relidas junto.
-      await fatiaDoElenco.recarregar();
+      // O store pede um snapshot completo antes de abrir o novo time.
       return usuario;
     },
 
@@ -249,6 +250,7 @@ export function comElenco(base: AppRepository): AppRepository {
       // Vale tambem para quem esta reativando um vinculo antigo. Condicionar
       // esta troca a um membro novo deixava o retorno preso no time anterior.
       await definirTimeAtivo(vinculo.teamId);
+      invalidarCacheDasFatias();
 
       const contexto = await fatiaDoElenco.recarregar();
       const team = contexto.teams.find((item) => item.id === vinculo.teamId);

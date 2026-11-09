@@ -39,4 +39,3 @@ export const imageSharingTestCases = [
     assert.doesNotMatch(actions, /wa.me|window.open/);
   }},
 ];
-

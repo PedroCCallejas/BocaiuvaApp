@@ -27,4 +27,3 @@ export function pngDataUrlToFile(dataUrl: string, filename: string) {
   const binary = atob(dataUrl.split(',')[1]);
   return new File([Uint8Array.from(binary, (character) => character.charCodeAt(0))], filename, { type: 'image/png' });
 }
-

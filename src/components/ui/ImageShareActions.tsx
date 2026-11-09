@@ -33,4 +33,3 @@ export function ImageShareActions({ file, title, disabled = false }: { file: Fil
     }} />
   </View>;
 }
-

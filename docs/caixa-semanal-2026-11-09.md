@@ -1,3 +1,5 @@
+> Atualizacao final: migration do caixa aplicada e verificada no BocaApp em 09/11/2026, versao remota 20261109135601. Nome local alinhado sem alterar SQL. As referencias anteriores a aplicacao pendente descrevem o estado antes desta etapa. Login Firebase externo e publicacao continuam pendentes.
+
 # Caixa semanal
 Status: implementação local; migration preparada, não aplicada em produção.
 
@@ -17,7 +19,7 @@ Foi preservado sem alteração. Não representa o caixa simples solicitado.
 - Sem postagem, notificações ou publicação automática.
 
 ## Arquivos e verificação
-Migration: supabase/migrations/20261109120000_caixa_semanal.sql.
+Migration: supabase/migrations/20261109135601_caixa_semanal.sql.
 Casos unitários: tests/team-cash-cases.ts, registrados no runner.
 Casos RLS: supabase/tests/team_cash.sql, incluídos pelo runner test:postgres.
 Executar typecheck, test, build:web e test:postgres antes da publicação.

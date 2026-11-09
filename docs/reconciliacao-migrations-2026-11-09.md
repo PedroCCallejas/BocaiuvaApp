@@ -1,3 +1,5 @@
+> Atualizacao final: migration do caixa aplicada e verificada no BocaApp em 09/11/2026, versao remota 20261109135601. Nome local alinhado sem alterar SQL. As referencias anteriores a aplicacao pendente descrevem o estado antes desta etapa. Login Firebase externo e publicacao continuam pendentes.
+
 # Reconciliacao do historico Supabase - 09/11/2026
 
 ## Base e resultado
@@ -39,7 +41,7 @@ Referencia: https://supabase.com/docs/guides/database/database-linter?lint=0029_
 ## Proxima etapa e limites
 
 1. Publicacao do codigo continua separada e nao foi realizada.
-2. Para tornar o caixa operacional, aplicar em etapa explicitamente autorizada a migration 20261109120000_caixa_semanal.sql no BocaApp: cria tabela, RPC e RLS; leitura a membros do proprio time e escrita a administracao. Nao inclui dados reais de teste, grants adicionais, outra migration ou deploy.
+2. Para tornar o caixa operacional, aplicar em etapa explicitamente autorizada a migration 20261109135601_caixa_semanal.sql no BocaApp: cria tabela, RPC e RLS; leitura a membros do proprio time e escrita a administracao. Nao inclui dados reais de teste, grants adicionais, outra migration ou deploy.
 3. Validar o login Firebase externo com uma sessao/conta de teste autorizada no ambiente de destino, sem criar credenciais persistentes ou gravar registros reais para teste. O ensaio anterior com Supabase Auth local nao confirma esse provedor.
 4. A CLI Supabase v3 mudou para alvo local por padrao e confirmacao explicita para hosted. Consultar --help da versao instalada antes de comandos; nao assumir que comandos historicos vao ao mesmo ambiente.
 
@@ -48,3 +50,21 @@ Fontes: consultas read-only de supabase_migrations.schema_migrations e pg_proc, 
 ## Fechamento da sequencia isolada
 
 A arvore versionada c35e250 acrescida apenas da migration historica reconciliada passou: 29 migrations, 6 suites SQL, dump/restore com fingerprint preservado e repeticao das 6 suites. Nenhuma dependencia dos arquivos preexistentes de runner/grants foi necessaria para esse resultado. O conjunto completo com testes adicionais anteriores tambem passou, conforme acima.
+
+## Aplicacao remota autorizada e verificada
+
+A migration foi aplicada uma unica vez pelo conector ao projeto BocaApp xepbopkhsprfemqjzrkm, com nome caixa_semanal. O servidor registrou versao 20261109135601; o arquivo planejado 20261109120000 foi renomeado localmente para coincidir, sem mudar o SQL. SHA256 local/remoto: e925648dd05b5175a82d776c449d0ff882ebaae07c70da467fc9025ccd09667b.
+
+Preflight imediato confirmou tabela/RPC inexistentes e helpers de permissao presentes. Como a alteracao e aditiva, sem dados anteriores no objeto novo, nao foi exportado backup de dados pessoais; a transacao protegeu contra aplicacao parcial. Nenhum dado de negocio foi inserido, alterado ou apagado para teste. Nao houve criacao de conta, token, credencial ou configuracao de autenticacao.
+
+Verificacao posterior:
+- Historico remoto tem 29 migrations, sem reaplicar grants de outubro.
+- team_cash_entries existe com RLS e as 3 policies esperadas.
+- authenticated tem SELECT/INSERT/UPDATE, sem DELETE; anon e service_role sem grants diretos na nova tabela.
+- listar_caixa_do_time(text) e SECURITY INVOKER, search_path fixo; anon sem EXECUTE e authenticated com EXECUTE.
+- Fingerprint de ACL/RLS das relacoes anteriores permaneceu a1455c8cb9d3d8abf91688a8cf44ea16, excluindo apenas a nova tabela e seus indices.
+- Policies anteriores: f199ab68cbe208a83eba2c5be8d4f7f5, sem mudanca.
+- Default ACL: 9276163d4c35cfd16ddba13c288d0004, sem mudanca.
+- Advisor repetido mostrou somente os mesmos 3 avisos preexistentes, nenhum novo.
+
+Nao foi feito push, deploy ou teste com dados reais. A preparacao do banco esta concluida; falta validar a integracao do Firebase externo e a publicacao em etapa separada. Nao executar a migration novamente.

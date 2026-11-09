@@ -1,3 +1,5 @@
+> Atualizacao final: migration do caixa aplicada e verificada no BocaApp em 09/11/2026, versao remota 20261109135601. Nome local alinhado sem alterar SQL. As referencias anteriores a aplicacao pendente descrevem o estado antes desta etapa. Login Firebase externo e publicacao continuam pendentes.
+
 # Entrega local para revisao e publicacao - 09/11/2026
 
 ## Incluido
@@ -25,7 +27,7 @@ A arvore selecionada foi exportada para outra pasta, sem .env, e validada sem os
 ## Ordem antes de producao
 
 1. Revisar este commit e o trabalho anterior separadamente. Conferir o historico do banco alvo: a migration 20261020162856_grants_explicitos_service_role.sql consta localmente como trabalho anterior e seu documento registra aplicacao remota. Reconciliar/versionar esse historico em etapa propria antes de usar comandos de migrations; nao reaplicar cegamente nem ignorar divergencias.
-2. Em ambiente autorizado equivalente, aplicar e verificar a nova 20261109120000_caixa_semanal.sql antes de liberar o cliente. Ela cria tabela/RPC/RLS do caixa; nao publica o frontend.
+2. Em ambiente autorizado equivalente, aplicar e verificar a nova 20261109135601_caixa_semanal.sql antes de liberar o cliente. Ela cria tabela/RPC/RLS do caixa; nao publica o frontend.
 3. Validar Firebase JWT real, leitura/escrita administrativa, bloqueio de outros times e login/logout/troca de time no ambiente alvo. Revisar tambem modal/download da arte com escudos reais e CORS.
 4. Publicar a branch somente com autorizacao, executar CI do SHA exato e conferir preview. Nenhum push, merge, CI remoto, migration de producao ou deploy foi executado nesta preparacao.
 5. Depois da aprovacao de publicacao e dos checks, fazer deploy com Node 24 atualizado e smoke test. Nao declarar producao funcional apenas pelo build local.

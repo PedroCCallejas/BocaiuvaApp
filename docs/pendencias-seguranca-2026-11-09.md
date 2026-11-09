@@ -1,3 +1,5 @@
+> Atualizacao final: migration do caixa aplicada e verificada no BocaApp em 09/11/2026, versao remota 20261109135601. Nome local alinhado sem alterar SQL. As referencias anteriores a aplicacao pendente descrevem o estado antes desta etapa. Login Firebase externo e publicacao continuam pendentes.
+
 # Migracao Expo 58 e seguranca - 09/11/2026
 
 ## Autorizacao e escopo
@@ -76,7 +78,7 @@ Apos corrigir o RPC do caixa e mover a copia de QA para fora do repositorio:
 ### Antes de subir/deploy
 
 1. Revisar os arquivos locais e selecionar explicitamente a entrega: nao usar git add indiscriminado. Alteracoes preexistentes preservadas: docs/backup-real-2026-10-16.md, docs/monetizacao-2026-10-16/README.md, scripts/verify-postgres.mjs, tests/postgres/bootstrap.sql, tests/postgres/fingerprint.sql; arquivos preexistentes nao rastreados: docs/grants-explicitos.md, docs/plano-pro-premium-infraestrutura-2026-10-16.md, supabase/migrations/20261020162856_grants_explicitos_service_role.sql, supabase/tests/explicit_grants.sql, tests/postgres/before-explicit-grants.sql.
-2. Conferir historico/grants do Supabase alvo e revisar/aplicar a nova migration 20261109120000_caixa_semanal.sql em etapa autorizada. Nao reaplicar cegamente a migration de grants antiga (documento registra aplicacao remota em outubro). Sem a nova migration, o caixa nao fica operacional.
+2. Conferir historico/grants do Supabase alvo e revisar/aplicar a nova migration 20261109135601_caixa_semanal.sql em etapa autorizada. Nao reaplicar cegamente a migration de grants antiga (documento registra aplicacao remota em outubro). Sem a nova migration, o caixa nao fica operacional.
 3. Validar em ambiente equivalente autorizado os fluxos autenticados, permissao admin/membro, troca de time, escudos reais/CORS e abrir/fechar/reabrir/download da arte. QA com fixtures e PostgreSQL isolado nao substitui integracao Firebase-JWT/PostgREST real.
 4. Depois do commit/push autorizado, conferir CI do SHA exato e revisar preview antes de deploy. Esta tarefa nao fez commit, push, merge, aplicacao remota ou deploy.
 5. Usar Node 24 atualizado no build. Engines agora rejeita Node 22 anterior a 22.13 e Node 24 anterior a 24.3, alem de manter fora as majors 23, 25 e 26.

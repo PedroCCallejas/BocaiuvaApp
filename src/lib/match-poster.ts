@@ -11,9 +11,21 @@ export type MatchPosterData = {
   venue: string;
   headline: string;
   filename: string;
+  hashtag: string;
 };
 
-export function buildMatchPosterData(team: Team, match: Match): MatchPosterData {
+// Match dates are calendar dates in the club's timezone, never the browser's timezone.
+export function matchPosterLocalDate(now: Date): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Cuiaba', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(now);
+  const value = (type: string) => parts.find((part) => part.type === type)?.value;
+  return `${value('year')}-${value('month')}-${value('day')}`;
+}
+
+export function buildMatchPosterData(team: Team, match: Match, now: Date = new Date()): MatchPosterData {
+  const isMatchDay = (match.status === 'scheduled' || match.status === 'confirmed')
+    && match.date === matchPosterLocalDate(now);
   const opponentName = match.opponentName.trim() || match.opponentTeamName?.trim() || 'Adversário';
   const labels: Record<Match['status'], string> = {
     scheduled: 'JOGO AGENDADO',
@@ -32,7 +44,8 @@ export function buildMatchPosterData(team: Team, match: Match): MatchPosterData 
     date: formatDateBR(match.date),
     time: match.time?.trim() || 'A definir',
     venue: match.venue?.trim() || 'Local a definir',
-    headline: labels[match.status],
+    headline: isMatchDay ? 'DIA DE JOGO' : labels[match.status],
+    hashtag: isMatchDay ? '#matchDay' : '#UpComingGame',
     filename: `jogo-${slug || 'partida'}.png`,
   };
 }
@@ -119,7 +132,15 @@ export async function renderMatchPoster(data: MatchPosterData) {
     crest(teamLogo,data.teamName,94,673,280,326);
   }
   // Keep the supplied title untouched for a confirmed match. Other statuses must not lie.
-  if (data.headline !== 'JOGO CONFIRMADO') {
+  if (data.headline === 'DIA DE JOGO') {
+    // Remove both original title lines and the old hashtag, keeping stars and rules.
+    patch(325,15,290,28,287,104,366,114);
+    patch(325,15,290,28,65,218,820,121);
+    patch(325,15,290,28,220,347,500,55);
+    fit('DIA DE',470,207,360,107,'#FFFFFF',true);
+    fit('JOGO',470,326,800,133,'#FFDA00',true);
+    fit(data.hashtag,470,392,490,49,'#FFFFFF',true,'Arial');
+  } else if (data.headline !== 'JOGO CONFIRMADO') {
     patch(325,15,290,28,65,218,820,121);
     fit(data.headline.replace(/^JOGO\s+/, '')+'!',470,326,800,111,'#FFDA00',true);
   }

@@ -22,6 +22,7 @@ import {
   getFormationPresets,
   sanitizeLineupLayoutState,
 } from '@/lib/lineup';
+import { canEditMatchLineup, getPublishedLineup, canSharePublishedLineup, getLineupPresentation } from '@/lib/lineup-sharing';
 import { useAppStore } from '@/store/app-store';
 import {
   findLineupByMatchId,
@@ -29,6 +30,7 @@ import {
   selectCanManageTeam,
   selectCurrentTeam,
   selectTeamPlayers,
+  selectTeamHistoricalPlayers,
 } from '@/store/selectors';
 import type { LineupNode } from '@/types/domain';
 
@@ -52,6 +54,7 @@ export default function LineupScreen() {
   const snapshot = useAppStore((state) => state.snapshot);
   const team = useAppStore(selectCurrentTeam);
   const players = useAppStore(selectTeamPlayers);
+  const historicalPlayers = useAppStore(selectTeamHistoricalPlayers);
   const canManage = useAppStore(selectCanManageTeam);
   const saveLineup = useAppStore((state) => state.saveLineup);
 
@@ -65,7 +68,8 @@ export default function LineupScreen() {
     findLineupByMatchId(state, resolvedMatchId),
   );
 
-  const isReadOnly = !canManage;
+  const canEdit = canEditMatchLineup(canManage, currentMatch?.status);
+  const isReadOnly = !canEdit;
   const starterLimit = currentMatch ? currentMatch.linePlayersCount + 1 : 0;
 
   const presets = useMemo(
@@ -111,8 +115,8 @@ export default function LineupScreen() {
 
   const publishedPlayers = useMemo(
     () =>
-      players.filter((player) => publishedPlayerIdSet.has(player.id)),
-    [players, publishedPlayerIdSet],
+      historicalPlayers.filter((player) => publishedPlayerIdSet.has(player.id)),
+    [historicalPlayers, publishedPlayerIdSet],
   );
 
   const confirmedPlayersKey = useMemo(
@@ -170,29 +174,7 @@ export default function LineupScreen() {
     });
   }, [confirmedPlayers, editablePreset, existingLineup]);
 
-  const readOnlyLineup = useMemo<LocalLineupState | null>(() => {
-    if (!existingLineup || !currentMatch || !fallbackPreset) {
-      return null;
-    }
-
-    const preset = getFormationPresetByKey(
-      currentMatch.matchType,
-      currentMatch.linePlayersCount,
-      existingLineup.formationKey ?? fallbackPreset.key,
-    );
-
-    return buildLineupStateFromSource({
-      existingLineup,
-      preset,
-      players: publishedPlayers,
-    });
-  }, [
-    currentMatch?.linePlayersCount,
-    currentMatch?.matchType,
-    existingLineup,
-    fallbackPreset,
-    publishedPlayers,
-  ]);
+  const readOnlyLineup = useMemo(() => getPublishedLineup(existingLineup), [existingLineup]);
 
   const initialDraft = useMemo<LocalLineupState>(
     () =>
@@ -261,8 +243,8 @@ export default function LineupScreen() {
       const draftChanged = !areLineupStatesEqual(previous, normalized);
       const wasDirty = isDirtyRef.current;
       const nextDirty =
-        !existingLineup ||
-        !areLineupStatesEqual(normalized, sourceDraftRef.current);
+        !readOnlyLineup ||
+        !areLineupStatesEqual(normalized, readOnlyLineup);
 
       draftRef.current = normalized;
       setDraft(normalized);
@@ -284,7 +266,7 @@ export default function LineupScreen() {
       setSavePhase(nextDirty ? 'dirty' : 'clean');
       return normalized;
     },
-    [existingLineup, normalizeDraft, setSavePhase],
+    [readOnlyLineup, normalizeDraft, setSavePhase],
   );
 
   useEffect(() => {
@@ -345,19 +327,24 @@ export default function LineupScreen() {
     setSavePhase,
   ]);
 
-  const lineupState = canManage ? draft : readOnlyLineup;
-  const lineupPlayers = canManage ? confirmedPlayers : publishedPlayers;
   const hasUnsavedChanges =
-    canManage && (saveStatus === 'dirty' || saveStatus === 'saving');
-  const hasSavedLineup = Boolean(existingLineup) || saveStatus === 'saved';
-  const canExportLineup =
-    canManage &&
-    hasSavedLineup &&
-    !hasUnsavedChanges &&
-    Boolean(lineupState?.starters.length) &&
-    shareCardReady;
-
-  const exportKey = JSON.stringify([currentMatch, team, lineupState, lineupPlayers, canExportLineup]);
+    canEdit && (!existingLineup || saveStatus === 'dirty' || saveStatus === 'saving');
+  // Editing uses current attendance; reading and exporting use only saved data.
+  const { lineup: lineupState, players: lineupPlayers, editing } = getLineupPresentation({
+    canEdit, hasUnsavedChanges, draft, published: readOnlyLineup, confirmedPlayers, publishedPlayers,
+  });
+  const handleBeginEditing = useCallback(() => {
+    if (!canEdit || !editableSourceLineup) return;
+    // Rebuild from the latest attendance so newly confirmed players enter the bench.
+    draftRef.current = editableSourceLineup;
+    setDraft(editableSourceLineup);
+    isDirtyRef.current = true;
+    setSavePhase('dirty');
+  }, [canEdit, editableSourceLineup, setSavePhase]);
+  const canExportLineup = canSharePublishedLineup({
+    lineup: readOnlyLineup, players: publishedPlayers, hasUnsavedChanges, ready: shareCardReady,
+  });
+  const exportKey = JSON.stringify([currentMatch, team, readOnlyLineup, publishedPlayers, canExportLineup]);
   const latestExportKey = useRef(exportKey);
   latestExportKey.current = exportKey;
   useEffect(() => { setPreparedImage(null); }, [exportKey]);
@@ -379,7 +366,7 @@ export default function LineupScreen() {
 
   const handleDraftChange = useCallback(
     (next: { starters: LineupNode[]; benchPlayerIds: string[] }) => {
-      if (!canManage) {
+      if (!canEdit) {
         return;
       }
 
@@ -389,12 +376,12 @@ export default function LineupScreen() {
         benchPlayerIds: next.benchPlayerIds,
       });
     },
-    [applyDraft, canManage, fallbackPreset?.key],
+    [applyDraft, canEdit, fallbackPreset?.key],
   );
 
   const handleAutoArrange = useCallback(
     (nextPresetKey?: string) => {
-      if (!canManage || !fallbackPreset || !currentMatch) {
+      if (!canEdit || !fallbackPreset || !currentMatch) {
         return;
       }
 
@@ -411,11 +398,11 @@ export default function LineupScreen() {
         benchPlayerIds: autoLineup.benchPlayerIds,
       });
     },
-    [applyDraft, canManage, confirmedPlayers, currentMatch, fallbackPreset],
+    [applyDraft, canEdit, confirmedPlayers, currentMatch, fallbackPreset],
   );
 
   const handleClearLineup = useCallback(() => {
-    if (!canManage || !fallbackPreset) {
+    if (!canEdit || !fallbackPreset) {
       return;
     }
 
@@ -424,10 +411,10 @@ export default function LineupScreen() {
       starters: [],
       benchPlayerIds: confirmedPlayers.map((player) => player.id),
     });
-  }, [applyDraft, canManage, confirmedPlayers, fallbackPreset]);
+  }, [applyDraft, canEdit, confirmedPlayers, fallbackPreset]);
 
   const handleSave = useCallback(async () => {
-    if (!canManage || !currentMatch || !fallbackPreset) {
+    if (!canEdit || !currentMatch || !fallbackPreset) {
       return;
     }
 
@@ -538,7 +525,7 @@ export default function LineupScreen() {
         errorCode ? `${errorMessage}\n(${errorCode})` : errorMessage,
       );
     }
-  }, [canManage, confirmedPlayers, currentMatch, editablePreset, fallbackPreset, normalizeDraft, saveLineup, setSavePhase]);
+  }, [canEdit, confirmedPlayers, currentMatch, editablePreset, fallbackPreset, normalizeDraft, saveLineup, setSavePhase]);
 
   const handlePrepareImage = useCallback(
     async () => {
@@ -600,6 +587,7 @@ export default function LineupScreen() {
           const naturalWidth = domElement.offsetWidth || 360;
           const scale = Math.max(2, Math.ceil(EXPORT_WIDTH / naturalWidth));
 
+          await document.fonts.ready;
           const html2canvas = (await import('html2canvas')).default;
           const rawCanvas = await html2canvas(domElement, {
             useCORS: true,
@@ -707,21 +695,7 @@ export default function LineupScreen() {
     );
   }
 
-  if (
-    canManage &&
-    (currentMatch.status === 'finished' || currentMatch.status === 'canceled')
-  ) {
-    return (
-      <Screen>
-        <EmptyState
-          title="Escalação bloqueada"
-          description="A escalação pode ser ajustada apenas antes do encerramento da partida."
-        />
-      </Screen>
-    );
-  }
-
-  if (canManage && confirmedPlayers.length === 0) {
+  if (canEdit && !existingLineup && confirmedPlayers.length === 0) {
     return (
       <Screen>
         <EmptyState
@@ -751,10 +725,16 @@ export default function LineupScreen() {
       />
 
       <Text style={[styles.helper, { color: theme.colors.textMuted }]}>
-        {canManage
+        {editing
           ? 'Toque num jogador para ver opções, trocar ou mover para o banco. Arraste para reposicionar no campo.'
-          : 'Somente visualização. Apenas administradores podem alterar a escalação.'}
+          : 'Somente visualização. A escalação salva continua disponível para compartilhar.'}
       </Text>
+
+      {!existingLineup ? (
+        <Text style={[styles.helper, { color: theme.colors.textMuted }]}>
+          Escalação ainda não publicada. Esta montagem é um rascunho; salve para liberar a arte.
+        </Text>
+      ) : null}
 
       <View style={styles.metricsRow}>
         <MetricCard
@@ -766,7 +746,7 @@ export default function LineupScreen() {
           label="Banco "
           value={String(lineupState.benchPlayerIds.length)}
           helper={
-            canManage
+            canEdit
               ? `${confirmedPlayers.length} confirmados`
               : `${lineupPlayers.length} na escalação`
           }
@@ -784,7 +764,7 @@ export default function LineupScreen() {
           {
             backgroundColor: theme.colors.surface,
             borderColor:
-              !canManage
+              !canEdit
                 ? theme.colors.border
                 : saveStatus === 'saved'
                   ? theme.colors.success
@@ -795,7 +775,7 @@ export default function LineupScreen() {
         ]}
       >
         <Text style={[styles.statusTitle, { color: theme.colors.text }]}>
-          {!canManage
+          {!canEdit
             ? 'Somente visualização'
             : saveStatus === 'saving'
               ? 'Salvando...'
@@ -807,19 +787,19 @@ export default function LineupScreen() {
         </Text>
 
         <Text style={[styles.statusText, { color: theme.colors.textMuted }]}>
-          {!canManage
-            ? 'Apenas administradores podem organizar, limpar ou salvar a escalação.'
+          {!canEdit
+            ? 'A escalação salva pode ser compartilhada. Alterações são permitidas apenas a administradores antes do encerramento.'
             : saveStatus === 'saving'
               ? 'Persistindo a distribuição atual no time.'
               : saveStatus === 'saved'
                 ? 'As coordenadas atuais já estão sincronizadas.'
                 : saveStatus === 'dirty'
                   ? 'Você tem alterações pendentes. Só enviamos para o banco ao tocar em salvar.'
-                  : 'Mova jogadores livremente e salve apenas quando terminar.'}
+                  : 'Esta é a versão salva. Toque em Editar escalação para usar os jogadores confirmados atuais.'}
         </Text>
       </View>
 
-      {canManage ? (
+      {editing ? (
         <View style={styles.formationRow}>
           {presets.map((preset) => {
             const selected = draft.formationKey === preset.key;
@@ -851,6 +831,10 @@ export default function LineupScreen() {
         </View>
       ) : null}
 
+      {canEdit && !editing ? (
+        <AppButton label="Editar escalação" variant="secondary" onPress={handleBeginEditing} />
+      ) : null}
+
       <LineupField
         starters={lineupState.starters}
         benchPlayerIds={lineupState.benchPlayerIds}
@@ -858,12 +842,12 @@ export default function LineupScreen() {
         starterLimit={starterLimit}
         teamName={team.name}
         teamLogoUrl={team.logoUrl ?? null}
-        editable={canManage}
+        editable={editing}
         onDragStateChange={handleDragStateChange}
         onChange={handleDraftChange}
       />
 
-      {canManage ? (
+      {editing ? (
         <View style={styles.actionRow}>
           <AppButton
             label="Organizar automaticamente"
@@ -884,14 +868,18 @@ export default function LineupScreen() {
         </View>
       ) : null}
 
-      {canManage ? (
+      {readOnlyLineup ? (
         <View style={styles.shareSection}>
           <SectionHeader
             title="Arte para compartilhar"
             subtitle={
               hasUnsavedChanges
                 ? 'Salve a versão atual antes de compartilhar ou baixar a imagem.'
-                : 'Arte da escalação para compartilhar — separada dos botões de edição.'
+                : readOnlyLineup.starters.length === 0
+                  ? 'A escalação salva está sem titulares. Não há arte disponível para compartilhar.'
+                  : publishedPlayers.length < publishedPlayerIdSet.size
+                    ? 'Não foi possível carregar todos os jogadores da escalação salva. Aguarde ou recarregue a página.'
+                    : 'Arte da escalação salva, pronta para compartilhar.'
             }
           />
 
@@ -906,9 +894,9 @@ export default function LineupScreen() {
               teamLogoUrl={team.logoUrl ?? null}
               opponentName={currentMatch.opponentName}
               matchLabel={buildMatchShareLabel(currentMatch)}
-              starters={lineupState.starters}
-              benchPlayerIds={lineupState.benchPlayerIds}
-              players={lineupPlayers}
+              starters={readOnlyLineup.starters}
+              benchPlayerIds={readOnlyLineup.benchPlayerIds}
+              players={publishedPlayers}
               colors={{
                 primary: team.primaryColor,
                 secondary: team.secondaryColor,

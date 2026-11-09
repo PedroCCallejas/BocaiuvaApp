@@ -31,6 +31,7 @@ interface UploadImageInput {
   asset: SelectedImageAsset;
   storagePath: string;
   maxDimension?: number;
+  format?: 'jpeg' | 'png';
   compress?: number;
   cacheBustKey?: string | number | null;
   onProgress?: (progress: number) => void;
@@ -152,7 +153,8 @@ async function prepareImage(
   {
     maxDimension = DEFAULT_MAX_DIMENSION,
     compress = DEFAULT_COMPRESSION,
-  }: Pick<UploadImageInput, 'maxDimension' | 'compress'>,
+    format = 'jpeg',
+  }: Pick<UploadImageInput, 'maxDimension' | 'compress' | 'format'>,
 ) {
   const largestSide = Math.max(asset.width || 0, asset.height || 0);
   const shouldResize = largestSide > maxDimension;
@@ -164,7 +166,7 @@ async function prepareImage(
 
   return manipulateAsync(asset.uri, resizeAction, {
     compress,
-    format: SaveFormat.JPEG,
+    format: format === 'png' ? SaveFormat.PNG : SaveFormat.JPEG,
   });
 }
 
@@ -299,6 +301,7 @@ export async function uploadImage({
   storagePath,
   maxDimension,
   compress,
+  format = 'jpeg',
   cacheBustKey,
   onProgress,
 }: UploadImageInput): Promise<UploadImageResult> {
@@ -317,6 +320,7 @@ export async function uploadImage({
     const preparedImage = await prepareImage(asset, {
       maxDimension,
       compress,
+      format,
     });
     onProgress?.(0.35);
 
@@ -330,7 +334,7 @@ export async function uploadImage({
     }
 
     const { bucket, objectPath } = splitStoragePath(storagePath);
-    const contentType = getResolvedUploadContentType();
+    const contentType = format === 'png' ? 'image/png' : getResolvedUploadContentType();
 
     logUploadDebug('[upload-image] upload-start', {
       bucket,

@@ -142,7 +142,7 @@ export function LineupShareCard({
             vs {opponentName}
           </Text>
           {matchLabel ? (
-            <Text numberOfLines={1} style={styles.matchLabel}>
+            <Text style={styles.matchLabel}>
               {matchLabel}
             </Text>
           ) : null}

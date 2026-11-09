@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, Modal, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AppButton } from '@/components/ui/AppButton';
 import { useAppTheme } from '@/hooks/use-app-theme';
-import { buildMatchPosterData, renderMatchPoster } from '@/lib/match-poster';
+import { buildMatchPosterData, matchPosterLocalDate, renderMatchPoster } from '@/lib/match-poster';
 import type { Match, Team } from '@/types/domain';
 
 export function MatchPoster({ team, match }: { team: Team; match: Match }) {
@@ -14,7 +14,30 @@ export function MatchPoster({ team, match }: { team: Team; match: Match }) {
   const [result, setResult] = useState<{ dataUrl: string; missingLogos: string[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  const data = useMemo(() => buildMatchPosterData(team, match), [team, match]);
+  const [now, setNow] = useState(() => new Date());
+  const refreshDate = () => setNow((previous) => {
+    const current = new Date();
+    return matchPosterLocalDate(previous) === matchPosterLocalDate(current) ? previous : current;
+  });
+  const data = useMemo(() => buildMatchPosterData(team, match, now), [team, match, now]);
+
+  useEffect(() => {
+    if (!visible || Platform.OS !== 'web') return;
+    // Check at minute boundaries only while open; regenerate only when the local day changes.
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      refreshDate();
+      timer = setTimeout(tick, 60000 - Date.now() % 60000 + 20);
+    };
+    tick();
+    window.addEventListener('focus', refreshDate);
+    document.addEventListener('visibilitychange', refreshDate);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('focus', refreshDate);
+      document.removeEventListener('visibilitychange', refreshDate);
+    };
+  }, [visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -32,7 +55,7 @@ export function MatchPoster({ team, match }: { team: Team; match: Match }) {
 
   return (
     <>
-      <AppButton label="Arte da partida" variant="secondary" onPress={() => setVisible(true)} />
+      <AppButton label="Arte da partida" variant="secondary" onPress={() => { refreshDate(); setVisible(true); }} />
       <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
         <View style={styles.overlay}>
           <View style={[styles.panel, { backgroundColor: theme.colors.surface }]}>

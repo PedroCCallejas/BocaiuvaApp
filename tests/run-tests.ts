@@ -1,3 +1,5 @@
+import { opponentLogoTestCases } from './opponent-logo-cases';
+import { lineupPublicationTestCases } from './lineup-publication-cases';
 import { vercelRoutingTestCases } from './vercel-routing-cases';
 import { imageSharingTestCases } from './image-sharing-cases';
 import { matchPosterTestCases } from './match-poster.test';
@@ -165,6 +167,8 @@ const testCases: TestCase[] = [
   ...matchPosterTestCases,
   ...vercelRoutingTestCases,
   ...imageSharingTestCases,
+  ...lineupPublicationTestCases,
+  ...opponentLogoTestCases,
   ...teamCashTestCases,
   ...experienceNavigationTestCases,
   ...securityAuditTestCases,

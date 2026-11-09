@@ -56,7 +56,17 @@ try {
   sql('/fixtures/bootstrap.sql');
   const migrations = fs.readdirSync(path.join(root, 'supabase/migrations')).filter(name => name.endsWith('.sql')).sort();
   const tests = fs.readdirSync(path.join(root, 'supabase/tests')).filter(name => name.endsWith('.sql')).sort();
-  for (const name of migrations) sql(`/migrations/${name}`);
+  const correction = migrations.find(name => name.endsWith('_grants_explicitos_service_role.sql'));
+  assert.ok(correction, 'Migration de grants ausente.');
+  for (const name of migrations) {
+    if (name === correction) sql('/fixtures/before-explicit-grants.sql');
+    sql(`/migrations/${name}`);
+  }
+  // Reexecucao deve preservar ACL, policies e comportamento.
+  const aclBeforeReplay = sql('/fixtures/fingerprint.sql');
+  sql(`/migrations/${correction}`);
+  assert.equal(sql('/fixtures/fingerprint.sql'), aclBeforeReplay);
+  console.log('PASS: regressao anterior reproduzida; migration reexecutavel.');
   console.log(`PASS: ${migrations.length} migrations reconstruídas.`);
   for (const name of tests) {
     sql(`/tests/${name}`);
@@ -70,7 +80,7 @@ try {
   docker(['exec', container, 'createdb', '-U', 'postgres', '-T', 'template0', 'appboca_restore']);
   docker(['exec', container, 'pg_restore', '-U', 'postgres', '--exit-on-error', '--no-owner', '-d', 'appboca_restore', '/tmp/qa.dump']);
   const after = sql('/fixtures/fingerprint.sql', 'appboca_restore');
-  assert.equal(after, before, 'Restauração alterou dados, policies ou RLS.');
+  assert.equal(after, before, 'Restauracao alterou dados, policies, RLS ou grants.');
   for (const name of tests) sql(`/tests/${name}`, 'appboca_restore');
   console.log('PASS: pg_dump/pg_restore; dados, RLS e policies iguais; testes repetidos no banco restaurado.');
 

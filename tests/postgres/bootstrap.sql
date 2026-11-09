@@ -2,6 +2,11 @@
 create role anon nologin;
 create role authenticated nologin;
 create role service_role nologin bypassrls;
+-- Simula explicitamente a ausencia de grants automaticos ANTES das migrations.
+alter default privileges for role postgres in schema public
+  revoke all on tables from anon, authenticated, service_role;
+alter default privileges for role postgres in schema public
+  revoke all on sequences from anon, authenticated, service_role;
 create schema auth;
 create schema storage;
 create function auth.jwt() returns jsonb language sql stable as $$

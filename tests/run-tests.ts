@@ -1,3 +1,4 @@
+import { vercelRoutingTestCases } from './vercel-routing-cases';
 import { imageSharingTestCases } from './image-sharing-cases';
 import { matchPosterTestCases } from './match-poster.test';
 import { teamCashTestCases } from './team-cash-cases';
@@ -162,6 +163,7 @@ type TestCase = {
 
 const testCases: TestCase[] = [
   ...matchPosterTestCases,
+  ...vercelRoutingTestCases,
   ...imageSharingTestCases,
   ...teamCashTestCases,
   ...experienceNavigationTestCases,

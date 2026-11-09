@@ -169,11 +169,11 @@ export function LineupShareCard({
           colors={['rgba(11,94,45,0.95)', 'rgba(7,62,30,0.98)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
 
         {/* Decorações do campo */}
-        <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
           <View style={styles.pitchStripeLeft} />
           <View style={styles.pitchStripeRight} />
           <View style={styles.centerLine} />
@@ -223,7 +223,7 @@ export function LineupShareCard({
                   colors={[colors.primary, mixColor(colors.primary, colors.secondary, 0.6)]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFillObject}
+                  style={StyleSheet.absoluteFill}
                 />
               )}
 
@@ -231,7 +231,7 @@ export function LineupShareCard({
                 colors={['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)']}
                 start={{ x: 0.5, y: 0 }}
                 end={{ x: 0.5, y: 1 }}
-                style={StyleSheet.absoluteFillObject}
+                style={StyleSheet.absoluteFill}
               />
 
               {!hasPhoto ? (
@@ -301,7 +301,7 @@ export function LineupShareCard({
                           ]}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 1 }}
-                          style={StyleSheet.absoluteFillObject}
+                          style={StyleSheet.absoluteFill}
                         />
                       )}
                       {!hasPhoto ? (
@@ -541,12 +541,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   tokenPhoto: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     width: undefined,
     height: undefined,
   },
   tokenInitialsWrap: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     paddingBottom: 14,

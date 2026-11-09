@@ -1,3 +1,4 @@
+import { TeamCashCard } from '@/components/finance/TeamCashCard';
 import { useMemo } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
@@ -144,6 +145,7 @@ export default function HomeScreen() {
   return (
     <Screen onRefresh={() => void refreshData()} refreshing={refreshing} ambient>
       {width < 768 ? <AppNavigation /> : null}
+      <TeamCashCard key={currentUser.id + team.id} teamId={team.id} userId={currentUser.id} />
       <TeamHeroCard
         team={team}
         modeLabel={canManageTeam ? 'Comando do time' : 'Vestiário do elenco'}

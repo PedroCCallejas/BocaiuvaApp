@@ -357,7 +357,7 @@ export default function RegisterLegacyMatchScreen() {
 
       <AppButton
         label="Salvar jogo antigo"
-        onPress={handleSubmit(onSubmit)}
+        onPress={() => void handleSubmit(onSubmit)()}
         loading={isSubmitting}
         fullWidth
       />

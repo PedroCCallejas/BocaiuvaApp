@@ -465,7 +465,7 @@ export default function TeamAccessScreen() {
         />
         <AppButton
           label="Entrar no time"
-          onPress={handleSubmit(handleJoin)}
+          onPress={() => void handleSubmit(handleJoin)()}
           loading={submittingJoin}
           fullWidth
         />

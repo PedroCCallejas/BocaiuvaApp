@@ -13,6 +13,7 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 
 import { MatchCard } from '@/components/cards/MatchCard';
+import { MatchPoster } from '@/components/matches/MatchPoster';
 import { MatchDiaryEntryCard } from '@/components/matches/MatchDiaryEntryCard';
 import { RankingList } from '@/components/stats/RankingList';
 import { AppButton } from '@/components/ui/AppButton';
@@ -766,6 +767,8 @@ export default function MatchDetailsScreen() {
       </View>
 
       <MatchCard match={currentMatch} attendance={attendanceSummary} />
+
+      {currentTeam ? <MatchPoster key={currentMatch.id} team={currentTeam} match={currentMatch} /> : null}
 
       <View style={styles.section}>
         <SectionHeader

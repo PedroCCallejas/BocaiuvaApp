@@ -1,3 +1,4 @@
+import { getScreenBackFallback, navigateScreenBack } from '@/lib/screen-back-navigation';
 import assert from 'node:assert/strict';
 import { getSafeReturnPath } from '@/lib/navigation';
 import { createSingleFlight } from '@/lib/single-flight';
@@ -7,6 +8,31 @@ import { mockRepository, resetMockRepositoryState } from '@/services/repository/
 import { selectCurrentTeam, selectCurrentMembership, selectTeamPlayers, selectTeamMatches, selectActiveTeamRatingCriteria } from '@/store/selectors';
 
 export const experienceNavigationTestCases = [
+  { name: 'voltar fica oculto nas raizes e mantem destinos seguros em links diretos', run() {
+    for (const path of ['/', '/home', '/players', '/matches', '/stats', '/rankings', '/financeiro', '/profile', '/team-access', '/login']) {
+      assert.equal(getScreenBackFallback(path, true), null, path);
+    }
+    for (const [path, expected] of [
+      ['/players/create', '/players'], ['/players/p1/edit', '/players/p1'],
+      ['/matches/create', '/matches'], ['/matches/import', '/matches'],
+      ['/matches/register-legacy', '/matches'], ['/matches/m1', '/matches'],
+      ['/matches/m1/finish', '/matches/m1'], ['/matches/m1/ratings', '/matches/m1'],
+      ['/lineup/m1', '/matches/m1'], ['/team-invite', '/team-settings'],
+      ['/team-rating-criteria', '/team-settings'], ['/team-setup', '/team-access'],
+      ['/caixa', '/home'], ['/account', '/home'], ['/teams/t1/public', '/teams-gallery'],
+    ]) assert.equal(getScreenBackFallback(path, true), expected, path);
+    assert.equal(getScreenBackFallback('/account', false), '/team-access');
+    assert.equal(getScreenBackFallback('/teams-gallery', false), '/');
+  } },
+  { name: 'voltar usa historico interno ou substitui link direto sem empilhar telas', run() {
+    const actions: string[] = [];
+    const navigation = { canGoBack: () => true, back: () => { actions.push('back'); }, replace: (href: never) => { actions.push(href); } };
+    navigateScreenBack(navigation, '/matches');
+    assert.deepEqual(actions, ['back']);
+    navigation.canGoBack = () => false;
+    navigateScreenBack(navigation, '/matches');
+    assert.deepEqual(actions, ['back', '/matches']);
+  } },
   { name: 'troca de time A para B e volta preserva contexto, elenco, partidas e criterios corretos', async run() {
     resetMockRepositoryState();
     try {

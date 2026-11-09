@@ -71,7 +71,7 @@ export default function ForgotPasswordScreen() {
         />
         <AppButton
           label="Enviar link"
-          onPress={handleSubmit(onSubmit)}
+          onPress={() => void handleSubmit(onSubmit)()}
           loading={isSubmitting}
           fullWidth
         />

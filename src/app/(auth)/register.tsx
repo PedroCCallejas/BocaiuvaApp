@@ -108,7 +108,7 @@ export default function RegisterScreen() {
         />
         <AppButton
           label="Criar conta"
-          onPress={handleSubmit(onSubmit)}
+          onPress={() => void handleSubmit(onSubmit)()}
           loading={isSubmitting}
           fullWidth
         />

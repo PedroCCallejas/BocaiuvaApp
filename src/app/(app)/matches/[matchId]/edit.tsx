@@ -360,7 +360,7 @@ export default function EditMatchScreen() {
         ) : null}
         <AppButton
           label="Salvar alterações"
-          onPress={handleSubmit(onSubmit)}
+          onPress={() => void handleSubmit(onSubmit)()}
           loading={isSubmitting}
           fullWidth
         />

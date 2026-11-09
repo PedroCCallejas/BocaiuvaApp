@@ -423,7 +423,7 @@ export default function CreateMatchScreen() {
         />
         <AppButton
           label="Salvar partida"
-          onPress={handleSubmit(onSubmit)}
+          onPress={() => void handleSubmit(onSubmit)()}
           loading={isSubmitting}
           fullWidth
         />

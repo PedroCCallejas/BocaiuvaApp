@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
-import { useNavigation, usePreventRemove } from '@react-navigation/native';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { usePreventRemove } from 'expo-router/react-navigation';
 
 import { MetricCard } from '@/components/cards/MetricCard';
 import { LineupField } from '@/components/lineup/LineupField';

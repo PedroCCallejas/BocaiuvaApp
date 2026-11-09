@@ -20,7 +20,7 @@ export const teamCashTestCases = [
     }))), 30003);
   }},
   { name: 'caixa congela RLS, paginação e isolamento por time', run() {
-    const sql = fs.readFileSync('supabase/migrations/20261109120000_caixa_semanal.sql', 'utf8');
+    const sql = fs.readFileSync('supabase/migrations/20261109135601_caixa_semanal.sql', 'utf8');
     assert.match(sql, /enable row level security/);
     assert.match(sql, /from public, anon, authenticated/);
     assert.match(sql, /unique \(team_id, week_start\)/);

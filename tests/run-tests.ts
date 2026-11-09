@@ -1,3 +1,4 @@
+import { imageSharingTestCases } from './image-sharing-cases';
 import { matchPosterTestCases } from './match-poster.test';
 import { teamCashTestCases } from './team-cash-cases';
 import assert from 'node:assert/strict';
@@ -161,6 +162,7 @@ type TestCase = {
 
 const testCases: TestCase[] = [
   ...matchPosterTestCases,
+  ...imageSharingTestCases,
   ...teamCashTestCases,
   ...experienceNavigationTestCases,
   ...securityAuditTestCases,

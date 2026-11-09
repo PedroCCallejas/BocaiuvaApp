@@ -1,3 +1,4 @@
+import { ImageShareActions } from '@/components/ui/ImageShareActions';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
@@ -38,7 +39,7 @@ interface LocalLineupState {
 }
 
 type SaveStatus = 'clean' | 'dirty' | 'saving' | 'saved';
-type ShareAction = 'idle' | 'sharing' | 'downloading';
+type ShareAction = 'idle' | 'preparing';
 
 const EXPORT_WIDTH = 1080;
 const EXPORT_HEIGHT = 1350;
@@ -207,6 +208,8 @@ export default function LineupScreen() {
   const [isDragging, setIsDragging] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('clean');
   const [shareAction, setShareAction] = useState<ShareAction>('idle');
+  const [preparedImage, setPreparedImage] = useState<{ file: File; key: string } | null>(null);
+  const preparingRef = useRef(false);
   const [shareCardReady, setShareCardReady] = useState(false);
 
   const draftRef = useRef<LocalLineupState>(initialDraft);
@@ -353,6 +356,11 @@ export default function LineupScreen() {
     !hasUnsavedChanges &&
     Boolean(lineupState?.starters.length) &&
     shareCardReady;
+
+  const exportKey = JSON.stringify([currentMatch, team, lineupState, lineupPlayers, canExportLineup]);
+  const latestExportKey = useRef(exportKey);
+  latestExportKey.current = exportKey;
+  useEffect(() => { setPreparedImage(null); }, [exportKey]);
 
   usePreventRemove(hasUnsavedChanges, (event) => {
     Alert.alert(
@@ -532,16 +540,9 @@ export default function LineupScreen() {
     }
   }, [canManage, confirmedPlayers, currentMatch, editablePreset, fallbackPreset, normalizeDraft, saveLineup, setSavePhase]);
 
-  const handleShareOrDownload = useCallback(
-    async (mode: 'share' | 'download') => {
-      if (__DEV__) {
-        const label =
-          mode === 'download' ? '[lineup-share] download pressed' : '[lineup-share] button pressed';
-        console.log(label, {
-          canExport: canExportLineup,
-        });
-      }
-
+  const handlePrepareImage = useCallback(
+    async () => {
+      if (preparingRef.current) return;
       if (!currentMatch || !team || !lineupState) {
         return;
       }
@@ -566,10 +567,11 @@ export default function LineupScreen() {
         currentMatch.opponentName,
         currentMatch.date,
       );
-      const action = mode === 'share' ? 'sharing' : 'downloading';
+      const captureKey = exportKey;
+      preparingRef.current = true;
 
       try {
-        setShareAction(action);
+        setShareAction('preparing');
 
         // html2canvas captura diretamente o elemento DOM no navegador.
           const domElement = document.getElementById('lineup-export-card');
@@ -588,7 +590,7 @@ export default function LineupScreen() {
 
           if (__DEV__) {
             console.log('[lineup-share] capture start', {
-              mode,
+
               width: domElement.offsetWidth,
               height: domElement.offsetHeight,
             });
@@ -646,50 +648,14 @@ export default function LineupScreen() {
             );
           });
 
-          const webDownload = () => {
-            const url = URL.createObjectURL(blob);
-            const anchor = document.createElement('a');
-            anchor.href = url;
-            anchor.download = fileName;
-            document.body.appendChild(anchor);
-            anchor.click();
-            document.body.removeChild(anchor);
-            setTimeout(() => URL.revokeObjectURL(url), 2000);
-            if (__DEV__) console.log('[lineup-share] download triggered');
-          };
-
-          if (mode === 'download') {
-            webDownload();
-            return;
-          }
-
-          // Compartilhar no web: tentar Web Share API com arquivo, senão baixar
-          try {
-            const file = new File([blob], fileName, { type: 'image/png' });
-            if (
-              typeof navigator !== 'undefined' &&
-              typeof navigator.share === 'function' &&
-              navigator.canShare?.({ files: [file] })
-            ) {
-              await navigator.share({ files: [file], title: 'Escalação — Professô FC' });
-              if (__DEV__) console.log('[lineup-share] shared via Web Share API');
-            } else {
-              if (__DEV__) console.log('[lineup-share] share unavailable — fallback download');
-              Alert.alert(
-                'Compartilhamento indisponível',
-                'Compartilhamento de arquivo não disponível neste navegador. Baixando PNG...',
-              );
-              webDownload();
-            }
-          } catch {
-            if (__DEV__) console.log('[lineup-share] share failed — fallback download');
-            webDownload();
+          if (latestExportKey.current === captureKey) {
+            setPreparedImage({ file: new File([blob], fileName, { type: 'image/png' }), key: captureKey });
           }
           return;
       } catch (error) {
         if (__DEV__) {
           console.log('[lineup-share] failed', {
-            mode,
+
             name: error instanceof Error ? error.name : 'unknown',
             message: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack?.substring(0, 400) : undefined,
@@ -701,10 +667,11 @@ export default function LineupScreen() {
           error instanceof Error ? error.message : 'Tente novamente.',
         );
       } finally {
+        preparingRef.current = false;
         setShareAction('idle');
       }
     },
-    [canExportLineup, currentMatch, hasUnsavedChanges, lineupState, team],
+    [canExportLineup, currentMatch, hasUnsavedChanges, lineupState, team, exportKey],
   );
 
   if (!currentMatch || !team) {
@@ -951,26 +918,18 @@ export default function LineupScreen() {
           </View>
 
           <Text style={[styles.shareHint, { color: theme.colors.textMuted }]}>
-            No navegador compatível você pode compartilhar ou baixar a imagem PNG.
+            Prepare o PNG primeiro. Depois escolha Instagram, WhatsApp ou baixe para anexar manualmente.
           </Text>
-
-          <View style={styles.actionRow}>
-            <AppButton
-              label="Compartilhar escalação"
-              variant="secondary"
-              disabled={!canExportLineup || shareAction !== 'idle'}
-              loading={shareAction === 'sharing'}
-              onPress={() => void handleShareOrDownload('share')}
-            />
-
-            <AppButton
-              label="Baixar imagem PNG"
-              variant="ghost"
-              disabled={!canExportLineup || shareAction !== 'idle'}
-              loading={shareAction === 'downloading'}
-              onPress={() => void handleShareOrDownload('download')}
-            />
-          </View>
+          <AppButton
+            label={preparedImage?.key === exportKey ? "Atualizar imagem PNG" : "Preparar imagem PNG"}
+            variant="secondary"
+            disabled={!canExportLineup || shareAction !== 'idle'}
+            loading={shareAction === 'preparing'}
+            onPress={() => void handlePrepareImage()}
+          />
+          {preparedImage?.key === exportKey && canExportLineup ? (
+            <ImageShareActions key={exportKey} file={preparedImage.file} title="Escalação" disabled={shareAction !== 'idle'} />
+          ) : null}
         </View>
       ) : null}
     </Screen>

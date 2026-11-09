@@ -23,27 +23,36 @@ export const matchPosterTestCases: Array<{ name: string; run: () => void | Promi
     },
   },
   {
-    name: 'arte da partida gera PNG 1080x1350 com dados e iniciais quando faltam escudos',
+    name: 'arte da partida gera PNG 941x1672 com dados e iniciais quando faltam escudos',
     async run() {
       const drawn: string[] = [];
       let font = '';
       const context = new Proxy({
         get font() { return font; }, set font(value: string) { font = value; },
         createLinearGradient: () => ({ addColorStop() {} }),
+        createRadialGradient: () => ({ addColorStop() {} }),
+        getImageData: (_x: number, _y: number, w: number, h: number) => ({ data: new Uint8ClampedArray(w*h*4) }),
         measureText: (s: string) => ({ width: s.length * Number(font.match(/(\d+)px/)?.[1] ?? 20) * 0.6 }),
         fillText: (s: string) => drawn.push(s),
       }, { get: (target, key) => key in target ? target[key as keyof typeof target] : () => {} });
       const canvas = { width: 0, height: 0, getContext: () => context, toDataURL: () => 'data:image/png;base64,test' };
       const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+      const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+      Object.defineProperty(globalThis, 'window', { configurable:true, value:{ Image: class {
+        naturalWidth=941; naturalHeight=1672; onload: (()=>void) | null=null; onerror=null;
+        set src(_value: string) { queueMicrotask(()=>this.onload?.()); }
+      } } });
       try {
       Object.defineProperty(globalThis, 'document', { configurable: true, value: { createElement: () => canvas } });
       const poster = await renderMatchPoster({ ...data, teamLogoUrl: null, opponentLogoUrl: null });
-      assert.equal(canvas.width, 1080); assert.equal(canvas.height, 1350);
-      assert.deepEqual(poster.missingLogos, ['Bocaiúva', 'São José']);
-      assert.ok(drawn.includes('B'));
+      assert.equal(canvas.width, 941); assert.equal(canvas.height, 1672);
+      assert.deepEqual(poster.missingLogos, ['São José']);
+      assert.ok(!drawn.includes('B'), 'escudo original do Bocaiuva deve ser preservado');
       assert.ok(drawn.includes('SJ')); assert.ok(drawn.includes('15/11/2026'));
       assert.ok(drawn.includes('09:30')); assert.ok(drawn.includes('Estádio Municipal'));
       } finally {
+        if (originalWindow) Object.defineProperty(globalThis,'window',originalWindow);
+        else delete (globalThis as {window?:unknown}).window;
         if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
         else delete (globalThis as { document?: unknown }).document;
       }

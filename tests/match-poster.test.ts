@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { buildMatchPosterData, renderMatchPoster } from '@/lib/match-poster';
+import { buildMatchPosterData, defaultPosterSettings, effectivePosterSettings, renderMatchPoster } from '@/lib/match-poster';
+import { removeBorderWhite } from '@/lib/poster-background';
 import type { Match, Team } from '@/types/domain';
 
 const team = { name: 'Bocaiúva', logoUrl: 'https://example.com/boca.png' } as Team;
@@ -74,10 +75,8 @@ export const matchPosterTestCases: Array<{ name: string; run: () => void | Promi
       await renderMatchPoster({ ...matchDay, opponentLogoUrl: null });
       assert.ok(drawn.includes('DIA DE')); assert.ok(drawn.includes('JOGO'));
       assert.ok(drawn.includes('#matchDay'));
+      assert.ok(!patches.some((p) => p.length === 8), 'base limpa do Bocaiuva não usa recortes sobre os textos');
       assert.ok(!drawn.includes('CONFIRMADO!')); assert.ok(!drawn.includes('DIA DE JOGO!'));
-      assert.ok(patches.some((p) => p[4] === 287 && p[5] === 104), 'apaga JOGO original');
-      assert.ok(patches.some((p) => p[4] === 65 && p[5] === 218), 'apaga status original');
-      assert.ok(patches.some((p) => p[4] === 220 && p[5] === 347), 'apaga hashtag original');
       assert.equal(canvas.width, 941); assert.equal(canvas.height, 1672);
       assert.ok(drawn.includes('09:30')); assert.ok(drawn.includes('Estádio Municipal'));
       } finally {
@@ -89,3 +88,31 @@ export const matchPosterTestCases: Array<{ name: string; run: () => void | Promi
     },
   },
 ];
+
+matchPosterTestCases.push({
+  name: 'ajuste de arte invalida ao trocar escudo e preserva parametros somente da mesma imagem',
+  run() {
+    const defaults = defaultPosterSettings('https://example.com/a.png');
+    const edited = { ...defaults, x: 25, y: -30, scale: 1.4, removeBackground: true };
+    assert.deepEqual(effectivePosterSettings(edited, defaults.logoUrl), edited);
+    assert.deepEqual(effectivePosterSettings(edited, 'https://example.com/b.png'), defaultPosterSettings('https://example.com/b.png'));
+    assert.deepEqual(effectivePosterSettings({ ...edited, scale: Infinity }, defaults.logoUrl), defaults);
+  },
+}, {
+  name: 'remocao local preserva branco interno, cores e imagem original',
+  run() {
+    const bytes = new Uint8ClampedArray(5 * 5 * 4).fill(255);
+    // A closed dark ring encloses a white center pixel.
+    for (let y = 1; y <= 3; y++) for (let x = 1; x <= 3; x++) {
+      if (x === 2 && y === 2) continue;
+      const i = (y * 5 + x) * 4; bytes[i] = 10; bytes[i + 1] = 30; bytes[i + 2] = 60;
+    }
+    const output = removeBorderWhite(bytes, 5, 5);
+    assert.equal(output[3], 0); assert.equal(bytes[3], 255);
+    assert.equal(output[(2 * 5 + 2) * 4 + 3], 255);
+    assert.equal(output[(1 * 5 + 1) * 4 + 3], 255);
+    assert.deepEqual(removeBorderWhite(bytes, 0, 0), bytes);
+    const transparent = new Uint8ClampedArray([0,0,0,0,255,255,255,255]);
+    assert.equal(removeBorderWhite(transparent,2,1)[7],0);
+  },
+});

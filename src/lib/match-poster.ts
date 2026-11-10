@@ -1,3 +1,6 @@
+import type { MatchPosterSettings } from '@/types/domain';
+import { parseMatchPosterSettings } from '@/lib/match-poster-settings';
+import { removeBorderWhite } from '@/lib/poster-background';
 import type { Match, Team } from '@/types/domain';
 import { formatDateBR } from '@/lib/date';
 
@@ -55,32 +58,72 @@ function initials(name: string) {
 }
 
 
-// The supplied PNG is the actual background, not a visual recreation.
-// Coordinates are in the original 941 x 1672 image, so its artwork is not distorted.
-export async function renderMatchPoster(data: MatchPosterData) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 941;
-  canvas.height = 1672;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Este navegador não conseguiu criar a arte. Tente outro navegador.');
-  const loadImage = (url: string | null): Promise<HTMLImageElement | null> => new Promise((resolve) => {
-    if (!url || !/^(https?:|data:image\/|blob:|\/)/i.test(url)) { resolve(null); return; }
+
+export const POSTER_WIDTH = 941;
+export const POSTER_HEIGHT = 1672;
+export const POSTER_CREST = { x: 592, y: 711, width: 227, height: 282 };
+
+export function defaultPosterSettings(logoUrl: string | null): MatchPosterSettings {
+  return { version: 1, logoUrl, x: 0, y: 0, scale: 1, removeBackground: false };
+}
+export function effectivePosterSettings(settings: MatchPosterSettings | null | undefined, logoUrl: string | null): MatchPosterSettings {
+  const parsed = parseMatchPosterSettings(settings);
+  return parsed && parsed.logoUrl === logoUrl ? parsed : defaultPosterSettings(logoUrl);
+}
+
+// Cache source images, not generated posters. Dragging never triggers an upload or repeated downloads.
+const sourceImages = new Map<string, Promise<HTMLImageElement | null>>();
+function loadPosterImage(url: string | null): Promise<HTMLImageElement | null> {
+  if (!url || !/^(https?:|data:image\/|blob:|\/)/i.test(url)) return Promise.resolve(null);
+  const cached = sourceImages.get(url);
+  if (cached) return cached;
+  const promise = new Promise<HTMLImageElement | null>((resolve) => {
     const image = new window.Image();
     image.crossOrigin = 'anonymous';
-    const timer = setTimeout(() => { image.onload = null; image.onerror = null; resolve(null); }, 10000);
+    const timer = setTimeout(() => { image.onload = null; image.onerror = null; sourceImages.delete(url); resolve(null); }, 10000);
     image.onload = () => { clearTimeout(timer); resolve(image.naturalWidth ? image : null); };
-    image.onerror = () => { clearTimeout(timer); resolve(null); };
+    image.onerror = () => { clearTimeout(timer); sourceImages.delete(url); resolve(null); };
     image.src = url;
   });
+  if (sourceImages.size >= 12) sourceImages.delete(sourceImages.keys().next().value!);
+  sourceImages.set(url, promise);
+  return promise;
+}
+const transparentLogos = new WeakMap<HTMLImageElement, HTMLCanvasElement>();
+function withoutBorderWhite(image: HTMLImageElement): HTMLCanvasElement {
+  const cached = transparentLogos.get(image);
+  if (cached) return cached;
+  const canvas = document.createElement('canvas');
+  const ratio = Math.min(1, 1024 / Math.max(image.naturalWidth, image.naturalHeight));
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Não foi possível preparar o escudo sem fundo.');
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  pixels.data.set(removeBorderWhite(pixels.data, canvas.width, canvas.height));
+  ctx.putImageData(pixels, 0, 0);
+  transparentLogos.set(image, canvas);
+  return canvas;
+}
+
+// All editable text is drawn on a clean background, never patched over existing text.
+export async function renderMatchPoster(data: MatchPosterData, requestedSettings?: MatchPosterSettings | null) {
+  const canvas = document.createElement('canvas');
+  canvas.width = POSTER_WIDTH;
+  canvas.height = POSTER_HEIGHT;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Este navegador não conseguiu criar a arte. Tente outro navegador.');
   const isBocaiuva = /bocaiuva/.test(data.teamName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase());
   const [template, opponentLogo, teamLogo] = await Promise.all([
-    loadImage('/artes/bocaiuva-template-original.png'),
-    loadImage(data.opponentLogoUrl),
-    isBocaiuva ? Promise.resolve(null) : loadImage(data.teamLogoUrl),
+    loadPosterImage('/artes/bocaiuva-template-clean.png'),
+    loadPosterImage(data.opponentLogoUrl),
+    isBocaiuva ? Promise.resolve(null) : loadPosterImage(data.teamLogoUrl),
   ]);
-  if (!template) throw new Error('Não foi possível carregar o modelo original da arte. Tente novamente.');
-  ctx.drawImage(template, 0, 0, 941, 1672);
+  if (!template) throw new Error('Não foi possível carregar o modelo da arte. Tente novamente.');
+  ctx.drawImage(template, 0, 0, POSTER_WIDTH, POSTER_HEIGHT);
   const missingLogos = [!isBocaiuva && !teamLogo ? data.teamName : '', !opponentLogo ? data.opponentName : ''].filter(Boolean);
+  const settings = effectivePosterSettings(requestedSettings, data.opponentLogoUrl);
   const navy = '#041F65';
   const fit = (value: string, x: number, y: number, width: number, size: number, color: string, italic = false, family = 'Impact') => {
     do {
@@ -90,68 +133,44 @@ export async function renderMatchPoster(data: MatchPosterData) {
     } while (size > 11);
     ctx.textAlign = 'center'; ctx.fillStyle = color; ctx.fillText(value, x, y);
   };
-  // Reuse clean texture from this very image to cover only editable placeholders.
-  const patch = (sx: number, sy: number, sw: number, sh: number, x: number, y: number, w: number, h: number) => {
-    for (let dx = 0; dx < w; dx += sw) for (let dy = 0; dy < h; dy += sh) {
-      const width = Math.min(sw, w-dx); const height = Math.min(sh, h-dy);
-      ctx.drawImage(template, sx, sy, width, height, x+dx, y+dy, width, height);
-    }
-  };
-  const eraseText = (x: number, y: number, width: number, height: number, sourceX: number, dark: boolean) => {
-    const area = ctx.getImageData(x,y,width,height);
-    const clean = ctx.getImageData(dark ? 400 : sourceX, dark ? 550 : y, 130, dark ? 45 : height);
-    for(let py=0;py<height;py++) for(let px=0;px<width;px++) {
-      const i=(py*width+px)*4;
-      const j=((dark ? py%45 : py)*130+px%130)*4;
-      const alpha=Math.min(1,Math.min(px,py,width-1-px,height-1-py)/7);
-      for(let c=0;c<3;c++) area.data[i+c]=Math.round(area.data[i+c]*(1-alpha)+clean.data[j+c]*alpha);
-    }
-    ctx.putImageData(area,x,y);
-  };
-  eraseText(550,520,338,83,5,true);
   fit(data.opponentName.toUpperCase(), 720, 589, 315, 55, navy);
-  // Clear the icon/text inside the opponent's existing shield, keeping its outline.
-  ctx.save();
-  ctx.beginPath(); ctx.moveTo(566,714); ctx.quadraticCurveTo(648,705,705,664);
-  ctx.quadraticCurveTo(771,705,846,714); ctx.quadraticCurveTo(849,908,705,1011);
-  ctx.quadraticCurveTo(565,918,566,714); ctx.closePath(); ctx.clip();
-  patch(395,650,140,100,558,655,300,367);
-  ctx.restore();
-  const crest = (logo: HTMLImageElement | null, name: string, x: number, y: number, w: number, h: number) => {
+  const crest = (logo: HTMLImageElement | HTMLCanvasElement | null, name: string, x: number, y: number, w: number, h: number) => {
     if (logo) {
-      const scale = Math.min(w / logo.naturalWidth, h / logo.naturalHeight);
-      const width = logo.naturalWidth * scale; const height = logo.naturalHeight * scale;
-      ctx.drawImage(logo, x + (w-width)/2, y + (h-height)/2, width, height);
-    } else fit(initials(name), x+w/2, y+h/2+27, w-25, 88, navy);
+      const sourceWidth = 'naturalWidth' in logo ? logo.naturalWidth : logo.width;
+      const sourceHeight = 'naturalHeight' in logo ? logo.naturalHeight : logo.height;
+      const scale = Math.min(w / sourceWidth, h / sourceHeight);
+      const width = sourceWidth * scale; const height = sourceHeight * scale;
+      ctx.drawImage(logo, x + (w - width) / 2, y + (h - height) / 2, width, height);
+    } else fit(initials(name), x + w / 2, y + h / 2 + 27, w - 25, 88, navy);
   };
-  crest(opponentLogo, data.opponentName, 592, 731, 227, 242);
+  const box = POSTER_CREST;
+  const width = box.width * settings.scale, height = box.height * settings.scale;
+  const logo = opponentLogo && settings.removeBackground ? withoutBorderWhite(opponentLogo) : opponentLogo;
+  crest(logo, data.opponentName, box.x + settings.x + (box.width - width) / 2,
+    box.y + settings.y + (box.height - height) / 2, width, height);
   if (!isBocaiuva) {
+    // Preserve the existing fallback for other clubs; this artwork change targets Bocaiúva.
+    const patch = (sx: number, sy: number, sw: number, sh: number, x: number, y: number, w: number, h: number) => {
+      for (let dx = 0; dx < w; dx += sw) for (let dy = 0; dy < h; dy += sh) {
+        const width = Math.min(sw, w - dx), height = Math.min(sh, h - dy);
+        ctx.drawImage(template, sx, sy, width, height, x + dx, y + dy, width, height);
+      }
+    };
     patch(410,535,110,65,67,532,343,69);
-    fit(data.teamName.toUpperCase(),238,589,330,55,navy);
     patch(395,650,140,100,76,625,320,413);
-    crest(teamLogo,data.teamName,94,673,280,326);
+    fit(data.teamName.toUpperCase(), 238, 589, 330, 55, navy);
+    crest(teamLogo, data.teamName, 94, 673, 280, 326);
   }
-  // Keep the supplied title untouched for a confirmed match. Other statuses must not lie.
   if (data.headline === 'DIA DE JOGO') {
-    // Remove both original title lines and the old hashtag, keeping stars and rules.
-    patch(325,15,290,28,287,104,366,114);
-    patch(325,15,290,28,65,218,820,121);
-    patch(325,15,290,28,220,347,500,55);
-    fit('DIA DE',470,207,360,107,'#FFFFFF',true);
-    fit('JOGO',470,326,800,133,'#FFDA00',true);
-    fit(data.hashtag,470,392,490,49,'#FFFFFF',true,'Arial');
-  } else if (data.headline !== 'JOGO CONFIRMADO') {
-    patch(325,15,290,28,65,218,820,121);
-    fit(data.headline.replace(/^JOGO\s+/, '')+'!',470,326,800,111,'#FFDA00',true);
+    fit('DIA DE', 470, 207, 360, 107, '#FFFFFF', true);
+    fit('JOGO', 470, 326, 800, 133, '#FFDA00', true);
+  } else {
+    fit('JOGO', 470, 207, 360, 107, '#FFFFFF', true);
+    fit(data.headline.replace(/^JOGO\s+/, '') + '!', 470, 326, 800, 111, '#FFDA00', true);
   }
-  const fields = [
-    { value:data.date, top:1173, baseline:1226, size:48 },
-    { value:data.time, top:1294, baseline:1347, size:48 },
-    { value:data.venue, top:1414, baseline:1466, size:42 },
-  ];
-  fields.forEach(({ value, top, baseline, size }) => {
-    eraseText(348,top,436,67,655,false);
-    fit(value,565,baseline,416,size,'#FFFFFF',false,'Arial');
-  });
-  return { dataUrl:canvas.toDataURL('image/png'), missingLogos };
+  fit(data.hashtag, 470, 392, 490, 49, '#FFFFFF', true, 'Arial');
+  fit(data.date, 565, 1226, 416, 48, '#FFFFFF', false, 'Arial');
+  fit(data.time, 565, 1347, 416, 48, '#FFFFFF', false, 'Arial');
+  fit(data.venue, 565, 1466, 416, 42, '#FFFFFF', false, 'Arial');
+  return { dataUrl: canvas.toDataURL('image/png'), missingLogos };
 }

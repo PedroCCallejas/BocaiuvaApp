@@ -1,3 +1,4 @@
+import { validateMatchPosterSettings } from '@/lib/match-poster-settings';
 /**
  * Partidas, presença, escalação e estatística no Postgres.
  *
@@ -31,6 +32,7 @@ import type {
   AttendanceRecord,
   Lineup,
   Match,
+  MatchPosterSettings,
   MatchStat,
 } from '@/types/domain';
 
@@ -576,4 +578,14 @@ export async function apagarEstatistica(matchId: string, playerId: string): Prom
   if (error) {
     throw traduzirErroDoPostgres(error, 'Não foi possível remover a estatística agora.');
   }
+}
+
+/** Writes only artwork settings; RLS is the authority and zero updated rows is an error. */
+export async function salvarAjusteDaArte(matchId: string, settings: MatchPosterSettings | null): Promise<Match> {
+  const validated = validateMatchPosterSettings(settings);
+  const { error } = await cliente().from('matches')
+    .update({ poster_settings: validated, updated_at: agora() })
+    .eq('id', matchId).select('id').single();
+  if (error) throw traduzirErroDoPostgres(error, 'Não foi possível salvar o ajuste da arte.');
+  return await buscarPartidaPorId(matchId);
 }

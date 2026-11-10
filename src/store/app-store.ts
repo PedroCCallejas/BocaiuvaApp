@@ -55,6 +55,7 @@ import type {
 } from '@/types/match-import';
 import type {
   AttendanceRecord,
+  MatchPosterSettings,
   AttendanceStatus,
   PublicTeamProfile,
   PublicTeamSummary,
@@ -124,6 +125,7 @@ export interface AppState {
   deletePlayerPermanently: (playerId: string) => Promise<void>;
   reactivatePlayer: (playerId: string) => Promise<void>;
   createMatch: (input: CreateMatchInput) => Promise<string>;
+  saveMatchPosterSettings: (matchId: string, settings: MatchPosterSettings | null) => Promise<void>;
   updateMatch: (matchId: string, input: UpdateMatchInput) => Promise<void>;
   updateMatchMetadata: (matchId: string, input: UpdateMatchMetadataInput) => Promise<void>;
   updateMatchFieldPayment: (
@@ -891,6 +893,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const match = await repository.createMatch(input, userId);
     await refreshCurrentSession(set, get);
     return match.id;
+  },
+
+  async saveMatchPosterSettings(matchId, settings) {
+    const userId = get().currentUserId;
+    if (!userId) throw new Error('Sessão expirada.');
+    await repository.saveMatchPosterSettings(matchId, settings, userId);
+    await refreshCurrentSession(set, get);
   },
 
   async updateMatch(matchId, input) {

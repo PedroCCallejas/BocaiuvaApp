@@ -90,6 +90,7 @@ export default function MatchDetailsScreen() {
   const canManage = useAppStore(selectCanManageTeam);
   const setAttendance = useAppStore((state) => state.setAttendance);
   const updateMatch = useAppStore((state) => state.updateMatch);
+  const saveMatchPosterSettings = useAppStore((state) => state.saveMatchPosterSettings);
   const updateMatchMetadata = useAppStore((state) => state.updateMatchMetadata);
   const updateMatchFieldPayment = useAppStore((state) => state.updateMatchFieldPayment);
   const deleteMatchDiaryEntry = useAppStore((state) => state.deleteMatchDiaryEntry);
@@ -768,7 +769,7 @@ export default function MatchDetailsScreen() {
 
       <MatchCard match={currentMatch} attendance={attendanceSummary} />
 
-      {currentTeam ? <MatchPoster key={currentMatch.id} team={currentTeam} match={currentMatch} /> : null}
+      {currentTeam ? <MatchPoster key={`${currentUser?.id}:${currentTeam.id}:${currentMatch.id}`} team={currentTeam} match={currentMatch} canAdjust={canManage} draftOwnerId={currentUser?.id} onSaveSettings={(settings) => saveMatchPosterSettings(currentMatch.id, settings)} /> : null}
 
       <View style={styles.section}>
         <SectionHeader

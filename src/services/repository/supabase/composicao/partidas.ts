@@ -50,6 +50,7 @@ import {
   limparCustoDoCampo,
   salvarCustoDoCampo,
   salvarEscalacao,
+  salvarAjusteDaArte,
   salvarEstatistica,
   PARTIDAS_VAZIAS,
 } from '@/services/repository/supabase/partidas';
@@ -382,6 +383,12 @@ export function comPartidas(base: AppRepository): AppRepository {
         event: 'match-created',
       });
 
+      return partida;
+    },
+
+    async saveMatchPosterSettings(matchId, settings) {
+      const partida = await salvarAjusteDaArte(matchId, settings);
+      await fatiaDePartidas.recarregar();
       return partida;
     },
 

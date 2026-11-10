@@ -17,6 +17,7 @@ export interface Fatia<T> {
   aplicar: (snapshot: AppSnapshot) => AppSnapshot;
   /** Se ainda não buscou nada. */
   estaVazia: () => boolean;
+  invalidar: () => void;
 }
 
 /** Último snapshot base e para onde reemitir. */
@@ -24,6 +25,29 @@ let ultimoSnapshotBase: AppSnapshot | null = null;
 let emitirParaOApp: ((snapshot: AppSnapshot) => void) | null = null;
 
 const fatiasRegistradas: Fatia<unknown>[] = [];
+let contaAtual: string | null = null;
+let timeAtual: string | null = null;
+let geracao = 0;
+
+export function obterGeracaoDasFatias() {
+  return geracao;
+}
+
+export function invalidarCacheDasFatias() {
+  geracao += 1;
+  ultimoSnapshotBase = null;
+  emitirParaOApp = null;
+  fatiasRegistradas.forEach((fatia) => fatia.invalidar());
+}
+
+/** Sem time informado, verifica apenas a conta antes de consultar o banco. */
+export function definirContextoDasFatias(conta: string | null, time?: string | null) {
+  const proximoTime = time === undefined && conta === contaAtual ? timeAtual : time ?? null;
+  if (conta === contaAtual && proximoTime === timeAtual) return;
+  contaAtual = conta;
+  timeAtual = proximoTime;
+  invalidarCacheDasFatias();
+}
 
 /** Registra o último snapshot emitido para atualizações após uma escrita. */
 export function registrarEmissao(
@@ -53,7 +77,9 @@ export function fatiasPendentes() {
 
 /** Relê todas as partes do snapshot quando a pessoa pede atualização manual. */
 export async function recarregarTodasAsFatias() {
-  await Promise.all(fatiasRegistradas.map((fatia) => fatia.recarregar()));
+  await Promise.all(fatiasRegistradas.map((fatia) =>
+    fatia.estaVazia() ? fatia.obter() : fatia.recarregar(),
+  ));
 }
 
 export function criarFatia<T>(input: {
@@ -69,7 +95,8 @@ export function criarFatia<T>(input: {
   let ultimaFalha = 0;
   let ultimoErro: unknown = null;
   let tentativasSeguidas = 0;
-  let retentativaAgendada = false;
+  let retentativaAgendada: ReturnType<typeof setTimeout> | null = null;
+  let leituraMaisRecente = 0;
 
   /** Espera entre tentativas depois de uma falha, para não martelar o servidor. */
   const PAUSA_APOS_FALHA = 5000;
@@ -92,13 +119,18 @@ export function criarFatia<T>(input: {
    * Firestore continua valendo e a próxima emissão tenta de novo.
    */
   async function lerComSeguranca(propagarSemCache = false): Promise<T | null> {
+    const geracaoDaLeitura = geracao;
+    const numeroDaLeitura = ++leituraMaisRecente;
+    const aindaAtual = () => geracaoDaLeitura === geracao && numeroDaLeitura === leituraMaisRecente;
     try {
       const valor = await input.ler();
+      if (!aindaAtual()) throw new Error('O contexto mudou durante o carregamento. Tente novamente.');
       ultimaFalha = 0;
       ultimoErro = null;
       tentativasSeguidas = 0;
       return valor;
     } catch (erro) {
+      if (!aindaAtual()) throw erro;
       ultimaFalha = Date.now();
       ultimoErro = erro;
       tentativasSeguidas += 1;
@@ -129,20 +161,18 @@ export function criarFatia<T>(input: {
       return;
     }
 
-    retentativaAgendada = true;
-
-    setTimeout(() => {
-      retentativaAgendada = false;
+    retentativaAgendada = setTimeout(() => {
+      retentativaAgendada = null;
 
       if (cache === null) {
-        void fatia.recarregar();
+        void fatia.recarregar().catch(() => {});
       }
     }, PAUSA_APOS_FALHA);
   }
 
   const fatia: Fatia<T> = {
     async obter() {
-      if (cache) {
+      if (cache !== null) {
         return cache;
       }
 
@@ -157,8 +187,10 @@ export function criarFatia<T>(input: {
       }
 
       // Emissões em sequência não podem virar várias requisições iguais.
-      leituraEmVoo ??= lerComSeguranca(true)
+      const geracaoDaLeitura = geracao;
+      const tentativa = leituraEmVoo ?? lerComSeguranca(true)
         .then((valor) => {
+          if (geracaoDaLeitura !== geracao) throw new Error('O contexto mudou durante o carregamento. Tente novamente.');
           if (valor !== null) {
             cache = valor;
           }
@@ -166,15 +198,19 @@ export function criarFatia<T>(input: {
           return valor;
         })
         .finally(() => {
-          leituraEmVoo = null;
+          if (leituraEmVoo === tentativa) leituraEmVoo = null;
         });
-
-      return (await leituraEmVoo) ?? cache ?? input.vazio;
+      leituraEmVoo = tentativa;
+      const valor = await tentativa;
+      if (geracaoDaLeitura !== geracao) throw new Error('O contexto mudou durante o carregamento. Tente novamente.');
+      return valor ?? cache ?? input.vazio;
     },
 
     async recarregar() {
+      const geracaoDaLeitura = geracao;
       leituraEmVoo = null;
       const valor = await lerComSeguranca();
+      if (geracaoDaLeitura !== geracao) throw new Error('O contexto mudou durante o carregamento. Tente novamente.');
 
       // Falha na releitura mantém o que já estava em cache. Zerar aqui faria a
       // tela esvaziar logo depois de uma escrita que deu certo — exatamente o
@@ -196,6 +232,17 @@ export function criarFatia<T>(input: {
     estaVazia() {
       return cache === null;
     },
+
+    invalidar() {
+      cache = null;
+      leituraEmVoo = null;
+      leituraMaisRecente += 1;
+      ultimaFalha = 0;
+      ultimoErro = null;
+      tentativasSeguidas = 0;
+      if (retentativaAgendada !== null) clearTimeout(retentativaAgendada);
+      retentativaAgendada = null;
+    },
   };
 
   fatiasRegistradas.push(fatia as Fatia<unknown>);
@@ -204,7 +251,8 @@ export function criarFatia<T>(input: {
 
 /** Só para teste: devolve o módulo ao estado inicial entre casos. */
 export function limparFatias() {
-  ultimoSnapshotBase = null;
-  emitirParaOApp = null;
+  invalidarCacheDasFatias();
+  contaAtual = null;
+  timeAtual = null;
   fatiasRegistradas.length = 0;
 }

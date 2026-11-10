@@ -22,7 +22,7 @@ export function installWebAlert() {
   }
 
   Alert.alert = (title, message, buttons) => {
-    const text = message ? `${title}\n\n${message}` : title;
+    const text = message ? `${title ?? ''}\n\n${message}` : title ?? '';
 
     if (!buttons || buttons.length === 0) {
       window.alert(text);

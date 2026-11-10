@@ -1,0 +1,60 @@
+{
+  "request_patterns": [
+    "minimum attendance",
+    "exportar"
+  ],
+  "themes": [
+    {
+      "id": "notifications",
+      "label": "Excesso de avisos",
+      "kind": "complaint",
+      "patterns": [
+        "notifications",
+        "emails"
+      ]
+    },
+    {
+      "id": "clarity",
+      "label": "Clareza de presença e papéis",
+      "kind": "complaint",
+      "patterns": [
+        "confusing",
+        "parent"
+      ]
+    },
+    {
+      "id": "pricing",
+      "label": "Cobrança e perda de acesso",
+      "kind": "complaint",
+      "patterns": [
+        "fee",
+        "estatísticas"
+      ]
+    },
+    {
+      "id": "support",
+      "label": "Suporte",
+      "kind": "complaint",
+      "patterns": [
+        "Apoio cliente"
+      ]
+    },
+    {
+      "id": "portability",
+      "label": "Exportação e autonomia da conta",
+      "kind": "request",
+      "patterns": [
+        "exportar",
+        "delete an account"
+      ]
+    },
+    {
+      "id": "attendance",
+      "label": "Quórum mínimo",
+      "kind": "request",
+      "patterns": [
+        "minimum attendance"
+      ]
+    }
+  ]
+}

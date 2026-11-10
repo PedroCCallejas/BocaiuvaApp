@@ -13,6 +13,7 @@ import {
 import { useLocalSearchParams, router } from 'expo-router';
 
 import { MatchCard } from '@/components/cards/MatchCard';
+import { MatchPoster } from '@/components/matches/MatchPoster';
 import { MatchDiaryEntryCard } from '@/components/matches/MatchDiaryEntryCard';
 import { RankingList } from '@/components/stats/RankingList';
 import { AppButton } from '@/components/ui/AppButton';
@@ -89,6 +90,7 @@ export default function MatchDetailsScreen() {
   const canManage = useAppStore(selectCanManageTeam);
   const setAttendance = useAppStore((state) => state.setAttendance);
   const updateMatch = useAppStore((state) => state.updateMatch);
+  const saveMatchPosterSettings = useAppStore((state) => state.saveMatchPosterSettings);
   const updateMatchMetadata = useAppStore((state) => state.updateMatchMetadata);
   const updateMatchFieldPayment = useAppStore((state) => state.updateMatchFieldPayment);
   const deleteMatchDiaryEntry = useAppStore((state) => state.deleteMatchDiaryEntry);
@@ -766,6 +768,8 @@ export default function MatchDetailsScreen() {
       </View>
 
       <MatchCard match={currentMatch} attendance={attendanceSummary} />
+
+      {currentTeam ? <MatchPoster key={`${currentUser?.id}:${currentTeam.id}:${currentMatch.id}`} team={currentTeam} match={currentMatch} canAdjust={canManage} draftOwnerId={currentUser?.id} onSaveSettings={(settings) => saveMatchPosterSettings(currentMatch.id, settings)} /> : null}
 
       <View style={styles.section}>
         <SectionHeader

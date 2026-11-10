@@ -264,7 +264,7 @@ export default function TeamSetupScreen() {
         </View>
         <AppButton
           label="Criar time e entrar"
-          onPress={handleSubmit(onSubmit)}
+          onPress={() => void handleSubmit(onSubmit)()}
           disabled={!canCreateTeam}
           loading={isSubmitting}
           fullWidth

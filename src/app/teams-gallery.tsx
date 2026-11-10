@@ -395,14 +395,14 @@ const styles = StyleSheet.create({
     padding: 18,
   },
   banner: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     opacity: 0.86,
   },
   bannerGradient: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   bannerOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   bannerTag: {
     color: '#FFFFFF',

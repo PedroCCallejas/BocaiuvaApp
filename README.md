@@ -47,6 +47,7 @@ escritas no Firestore.
 npm install
 npm run typecheck
 npm run test
+npm run test:postgres  # Docker: migrations, isolamento e restauração sintética
 npm run build:web
 ```
 
@@ -55,6 +56,13 @@ quando houver necessidade de teste visual interativo.
 
 O pipeline em `.github/workflows/ci.yml` executa instalação reproduzível,
 typecheck, testes, build web e auditoria de dependências de produção.
+
+O job `validar_postgres` reconstrói as migrations em PostgreSQL 17 descartável,
+executa `supabase/tests/` e repete os testes após um `pg_dump/pg_restore` sintético.
+O contêiner não tem rede, não publica portas e recebe somente mounts de leitura;
+o script não lê `.env` nem conecta à produção. Requer Docker local disponível.
+O bootstrap mínimo em `tests/postgres/` não substitui testes dos serviços
+Supabase Auth, Storage ou Realtime, nem comprova backup dos dados reais.
 
 ## Supabase
 
@@ -70,6 +78,9 @@ publicar uma versão que dependa de migration ou Edge Function nova:
 7. Validar login, criação de time, convite, upload, Web Push e exclusões.
 
 Nenhuma migration ou função é publicada automaticamente pelo build da Vercel.
+
+O [relatório de validação e gaps](replica/README.md) separa a cobertura desta
+rodada das pendências para recuperação real, piloto e cobrança por time.
 
 ## Mídias e privacidade
 

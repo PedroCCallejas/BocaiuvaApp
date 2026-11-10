@@ -1,3 +1,5 @@
+import { ImageUploadField } from '@/components/forms/ImageUploadField';
+import { useOpponentLogo } from '@/hooks/use-opponent-logo';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
@@ -66,6 +68,7 @@ export default function EditMatchScreen() {
   const resolvedMatchId =
     typeof rawMatchId === 'string' ? rawMatchId : rawMatchId?.[0] ?? '';
   const match = useAppStore((state) => findMatchById(state, resolvedMatchId));
+  const opponentLogo = useOpponentLogo(resolvedMatchId);
   const updateMatch = useAppStore((state) => state.updateMatch);
   const [saveError, setSaveError] = useState<string | null>(null);
   const {
@@ -174,6 +177,7 @@ export default function EditMatchScreen() {
         currentMatch.opponentSource === 'public_team' &&
         values.opponentName.trim() === (currentMatch.opponentTeamName ?? currentMatch.opponentName);
 
+      const opponentLogoUrl = await opponentLogo.resolve(currentMatch.teamId, currentMatch.opponentLogoUrl ?? currentMatch.opponentTeamLogoUrl ?? null);
       await updateMatch(currentMatch.id, {
         seasonId: currentMatch.seasonId ?? null,
         date: parseDateBRToISO(values.date) ?? values.date,
@@ -181,7 +185,7 @@ export default function EditMatchScreen() {
         venue: values.venue,
         locationUrl: values.locationUrl?.trim() || null,
         opponentName: values.opponentName,
-        opponentLogoUrl: currentMatch.opponentLogoUrl ?? null,
+        opponentLogoUrl,
         opponentTeamId: keepsPublicOpponent ? currentMatch.opponentTeamId ?? null : null,
         opponentTeamName: keepsPublicOpponent ? currentMatch.opponentTeamName ?? null : null,
         opponentTeamLogoUrl:
@@ -242,6 +246,20 @@ export default function EditMatchScreen() {
             />
           )}
         />
+        <ImageUploadField
+          label="Escudo do adversário"
+          hint="PNG, JPEG ou WebP até 5 MB. A imagem será pública e usada nas artes da partida. O envio acontece ao salvar."
+          imageUrl={currentMatch.opponentLogoUrl ?? currentMatch.opponentTeamLogoUrl}
+          pendingImage={opponentLogo.pending}
+          resizeMode="contain"
+          onPickFromLibrary={() => void opponentLogo.pick('library')}
+          onPickFromCamera={() => void opponentLogo.pick('camera')}
+          onClear={opponentLogo.pending ? opponentLogo.cancel : undefined}
+          clearLabel="Cancelar troca"
+          progress={opponentLogo.progress}
+          disabled={isSubmitting || opponentLogo.picking}
+        />
+
         <Controller
           control={control}
           name="venue"
@@ -360,8 +378,9 @@ export default function EditMatchScreen() {
         ) : null}
         <AppButton
           label="Salvar alterações"
-          onPress={handleSubmit(onSubmit)}
+          onPress={() => void handleSubmit(onSubmit)()}
           loading={isSubmitting}
+          disabled={opponentLogo.picking}
           fullWidth
         />
       </View>

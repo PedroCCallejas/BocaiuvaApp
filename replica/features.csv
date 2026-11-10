@@ -1,0 +1,28 @@
+feature,area,priority,original,clone,notes
+Restaurar sessão ao recarregar,entrada,must,yes,yes,Produção: sessão existente restaurada; não fecha navegador inteiro.
+Entrar automaticamente pelo endereço inicial,entrada,must,yes,yes,Produção: / redirecionou a /home com loading.
+Uso em celular físico Android e iOS,experiência,must,yes,partial,Edge com viewport 390x844; aparelho físico ainda não exercitado.
+Navegar painel/elenco/estatísticas/rankings sem overflow,experiência,must,yes,yes,"Produção: viewport 390, scrollWidth=390 nas telas verificadas."
+Organizador sem time consegue criar,entrada,must,yes,yes,Demonstração: gestor criou QA Gaps 16-10; sem escrita real.
+Convite valida entrada e não duplica membership,entrada,must,yes,yes,UI vazio/erro; SQL local válido/idempotente/reentrada. Fluxo UI válido ainda não concluído.
+Alternar time e papel e restaurar contexto,isolamento,must,yes,yes,"Produção A→B→A com papel jogador/admin e dados próprios, sem falha injetada."
+Isolamento sob falha de rede/cache e respostas atrasadas,isolamento,must,yes,partial,Cache anterior preservado na reprodução; contexto cruzado na UI não comprovado.
+RLS bloqueia leitura de outro time,isolamento,must,yes,yes,Teste SQL sintético e RLS ativo na metadata remota; não é pentest remoto.
+RLS bloqueia escrita cruzada e jogador sem gestão,isolamento,must,yes,yes,"SQL local: criar jogador B, alterar B e criar partida sem papel negados."
+Mídia pessoal privada e views com invoker,isolamento,must,yes,yes,"Metadata remota: buckets privados, duas views invoker; download real não exercitado."
+Voltar da ferramenta ao painel,experiência,must,yes,yes,Cronômetro real → Início; título de aba permanece incorreto.
+Cobertura automatizada das migrations/SQL no CI,operação,must,yes,partial,Runner local passou; workflow adicionado sem execução remota.
+Ensaio de dump e restauração sintética,operação,must,yes,yes,27 migrations; 5 testes antes e depois; fingerprint idêntico.
+Backup externo de produção e restauração comprovados,operação,must,yes,no,Supabase Free; nenhuma cópia externa/restauração real comprovada.
+Diagnóstico e alerta de erros de produção,operação,must,yes,partial,Fallbacks/avisos no app; captura/alerta de cliente não comprovados.
+Resolver dependências com exceção antes da validade,operação,must,yes,partial,"Auditoria aprovada, riscos continuam; prazo 12/11/2026."
+Piloto observado com jogadores reais,produto,must,yes,partial,"Um time com ~20 jogadores informado; roteiro pronto, sessões não realizadas."
+Entrevistas com compradores de outros times,produto,must,yes,no,Sem outros organizadores disponíveis até esta rodada.
+Proposta de assinatura por time,comercial,must,yes,partial,Proposta escrita; preço e detalhes comerciais ainda não aprovados.
+Checkout/webhooks e direitos no servidor,comercial,must,yes,no,Fase futura; não implementado nem ativado.
+Título da aba acompanha tela interna,experiência,should,yes,no,B01 reproduzido: Cronômetro permanece em /home e /team-access.
+Documentação consistente com runtime,operação,should,yes,partial,"Divergências Firestore e comentário das camadas relatadas, sem emenda."
+Domínio próprio e plano comercial compatível,comercial,should,yes,partial,"Fora dos itens 1–4 desta rodada; domínio não configurado, plano Vercel não consultado."
+Eventos recorrentes e quórum mínimo,evolução,could,no,no,"Hipótese de pesquisa, não requisito obrigatório nem funcionalidade construída."
+App nativo distribuído em lojas,evolução,could,no,skip,Produto atual é web; fora do recorte.
+Jogador recebe explicação e retorno ao abrir criar partida,experiência,must,yes,yes,"B03 corrigido e verificado na prévia: admin mantém formulário, jogador usa Ver partidas. Não publicado."

@@ -1,0 +1,92 @@
+{
+  "verdict": "NOT GUILTY",
+  "guilty": 0,
+  "not_guilty": 12,
+  "no_vote": 0,
+  "jurors": [
+    {
+      "juror": "O Espectador Novo",
+      "vote": "NOT GUILTY",
+      "reason": "Como organizador novo, entendo quem paga e o que o teste oferece, e a diferen\u00e7a ainda pouco clara entre Pro e Premium pode ser investigada nesta prepara\u00e7\u00e3o sem virar promessa de venda.",
+      "fact": "Na se\u00e7\u00e3o \u201cDecis\u00e3o em julgamento\u201d, o caso declara que \u201cDois planos e an\u00fancios s\u00e3o hip\u00f3teses para este julgamento, n\u00e3o decis\u00f5es j\u00e1 tomadas\u201d.",
+      "flip": "O primeiro lan\u00e7amento passasse a exigir dois n\u00edveis pagos antes de existir uma diferen\u00e7a de benef\u00edcio que um organizador novo consiga compreender e experimentar."
+    },
+    {
+      "juror": "O Entusiasta do Nicho",
+      "vote": "NOT GUILTY",
+      "reason": "Como usu\u00e1rio recorrente que j\u00e1 conhece a rotina de gest\u00e3o, preciso de uma recompensa concreta para pagar pelo Premium, mas a prepara\u00e7\u00e3o descrita permite testar essa diferen\u00e7a e escolher um plano \u00fanico antes de vender.",
+      "fact": "O processo declara que dois planos e an\u00fancios s\u00e3o hip\u00f3teses n\u00e3o decididas e admite dois n\u00edveis somente ap\u00f3s diferencia\u00e7\u00e3o real.",
+      "flip": "O primeiro lan\u00e7amento ficasse comprometido com Pro e Premium enquanto os benef\u00edcios adicionais do Premium continuassem inexistentes ou sem demonstra\u00e7\u00e3o de valor para o organizador."
+    },
+    {
+      "juror": "O Revisor Factual",
+      "vote": "NOT GUILTY",
+      "reason": "Os autos autorizam validar e escolher hip\u00f3teses antes de cobrar, e a falta de diferenciais Premium sustenta adiar esse n\u00edvel, sem demonstrar que a prepara\u00e7\u00e3o exige mudan\u00e7a material.",
+      "fact": "O caso declara expressamente que dois planos e an\u00fancios s\u00e3o hip\u00f3teses, n\u00e3o decis\u00f5es tomadas, e admite um plano \u00fanico e publicidade adiada ou descartada.",
+      "flip": "O primeiro lan\u00e7amento fosse comprometido com dois n\u00edveis pagos antes de existir diferencia\u00e7\u00e3o Premium demonstr\u00e1vel."
+    },
+    {
+      "juror": "O Roteirista",
+      "vote": "NOT GUILTY",
+      "reason": "A prepara\u00e7\u00e3o tem uma d\u00favida real \u2014 qual oferta vale para o organizador \u2014 e pode avan\u00e7ar; a menor melhoria de estrutura \u00e9 apresentar as valida\u00e7\u00f5es antes da tabela, conduzindo de rotina observada a benef\u00edcio demonstr\u00e1vel e decis\u00e3o de oferta.",
+      "fact": "O caso afirma que dois planos e an\u00fancios s\u00e3o hip\u00f3teses e admite um \u00fanico plano completo inicialmente, permitindo que a investiga\u00e7\u00e3o mude o fechamento sem prometer diferenciais futuros ao organizador.",
+      "flip": "A tabela Pro/Premium passasse a determinar o primeiro lan\u00e7amento antes de existir diferencia\u00e7\u00e3o demonstr\u00e1vel, transformando a descoberta de valor em justificativa para uma conclus\u00e3o j\u00e1 escolhida."
+    },
+    {
+      "juror": "O Editor de Reten\u00e7\u00e3o",
+      "vote": "NOT GUILTY",
+      "reason": "Pela clareza da oferta, a diferencia\u00e7\u00e3o Premium precisa ser demonstrada antes de ser apresentada ao organizador, mas os autos autorizam investigar alternativas sem comprometer o lan\u00e7amento com essa promessa.",
+      "fact": "O caso declara que dois planos e an\u00fancios s\u00e3o hip\u00f3teses para julgamento, n\u00e3o decis\u00f5es j\u00e1 tomadas.",
+      "flip": "O plano exigisse apresentar dois n\u00edveis pagos ao organizador antes de demonstrar benef\u00edcios Premium existentes e distintos do Pro."
+    },
+    {
+      "juror": "O Editor de T\u00edtulo e Thumbnail",
+      "vote": "NOT GUILTY",
+      "reason": "A oferta pode avan\u00e7ar como hip\u00f3tese de prepara\u00e7\u00e3o porque o registro distingue capacidades atuais de diferenciais futuros e exige validar a promessa antes de vend\u00ea-la, preservando assinatura por time, teste sem cart\u00e3o e isen\u00e7\u00e3o do Bocai\u00fava.",
+      "fact": "O caso declara que Pro/Premium e an\u00fancios n\u00e3o s\u00e3o decis\u00f5es tomadas e admite dois planos somente ap\u00f3s diferencia\u00e7\u00e3o real.",
+      "flip": "A comunica\u00e7\u00e3o do primeiro lan\u00e7amento prometesse no teste Premium os relat\u00f3rios ou a personaliza\u00e7\u00e3o ainda inexistentes como benef\u00edcios j\u00e1 dispon\u00edveis."
+    },
+    {
+      "juror": "O Diretor Visual",
+      "vote": "NOT GUILTY",
+      "reason": "Avaliando somente o quadro escrito, a compara\u00e7\u00e3o distingue recursos existentes de hip\u00f3teses futuras e permite preparar uma oferta compreens\u00edvel por time, com teste e isen\u00e7\u00e3o do Bocai\u00fava, embora faltem telas para avaliar legibilidade em mobile.",
+      "fact": "O caso declara expressamente que dois planos e an\u00fancios s\u00e3o hip\u00f3teses, admite um plano completo inicial e condiciona dois n\u00edveis \u00e0 diferencia\u00e7\u00e3o real.",
+      "flip": "A prepara\u00e7\u00e3o passasse a exigir uma tabela comercial Pro/Premium para o lan\u00e7amento sem diferen\u00e7as dispon\u00edveis e demonstr\u00e1veis ao organizador."
+    },
+    {
+      "juror": "O Cr\u00edtico de Originalidade",
+      "vote": "NOT GUILTY",
+      "reason": "A proposta j\u00e1 tem escolhas pr\u00f3prias de oferta e uma compara\u00e7\u00e3o expl\u00edcita entre alternativas, suficientes para orientar a prepara\u00e7\u00e3o experimental sem tratar o Premium futuro como benef\u00edcio dispon\u00edvel.",
+      "fact": "O caso admite um \u00fanico plano completo inicialmente e condiciona dois planos \u00e0 diferencia\u00e7\u00e3o real, permitindo que a investiga\u00e7\u00e3o determine a oferta do lan\u00e7amento.",
+      "flip": "O primeiro lan\u00e7amento fosse comprometido com Pro e Premium antes de existir um benef\u00edcio adicional demonstr\u00e1vel para o organizador."
+    },
+    {
+      "juror": "O Analista de Refer\u00eancias do Nicho",
+      "vote": "NOT GUILTY",
+      "reason": "O compar\u00e1vel sustenta investigar assinatura por time e teste, enquanto a falta de refer\u00eancias que justifiquem dois n\u00edveis pagos limita a oferta futura sem invalidar uma prepara\u00e7\u00e3o que permite descart\u00e1-los.",
+      "fact": "O SportEasy oferece Premium por equipe e um m\u00eas gratuito, mas o registro n\u00e3o apresenta compar\u00e1vel que valide dois n\u00edveis pagos nem disposi\u00e7\u00e3o a pagar no Brasil.",
+      "flip": "O primeiro lan\u00e7amento fosse comprometido com Pro/Premium antes de demonstrar diferenciais dispon\u00edveis e valorizados pelos organizadores."
+    },
+    {
+      "juror": "O Analista de Audi\u00eancia e Dados",
+      "vote": "NOT GUILTY",
+      "reason": "O \u00fanico piloto pr\u00f3prio e as nove reviews explorat\u00f3rias n\u00e3o estimam demanda ou convers\u00e3o, mas permitem preparar um teste com organizadores externos, observando uso durante os 30 dias, ades\u00e3o posterior e custo por time antes de escolher a oferta.",
+      "fact": "O caso declara expressamente que dois planos e an\u00fancios s\u00e3o hip\u00f3teses ainda n\u00e3o decididas e admite avan\u00e7ar com um plano \u00fanico e publicidade descartada.",
+      "flip": "A prepara\u00e7\u00e3o passasse a comprometer o lan\u00e7amento com dois n\u00edveis pagos e receita publicit\u00e1ria sem validar a diferencia\u00e7\u00e3o com organizadores externos nem medir tr\u00e1fego, custos e impacto dos an\u00fancios."
+    },
+    {
+      "juror": "O Produtor Executivo",
+      "vote": "NOT GUILTY",
+      "reason": "A prepara\u00e7\u00e3o pode avan\u00e7ar proporcionalmente como defini\u00e7\u00e3o e valida\u00e7\u00e3o da oferta, pois n\u00e3o h\u00e1 compromisso de construir dois n\u00edveis ou publicidade, e a aus\u00eancia de or\u00e7amento impede estimar custos, mas n\u00e3o demonstra retrabalho obrigat\u00f3rio.",
+      "fact": "O registro declara que dois planos e an\u00fancios s\u00e3o hip\u00f3teses ainda n\u00e3o decididas e admite um \u00fanico plano completo inicialmente, sem ativar cobran\u00e7a agora.",
+      "flip": "A prepara\u00e7\u00e3o passasse a exigir construir e lan\u00e7ar Pro/Premium antes de demonstrar uma diferen\u00e7a \u00fatil entre eles."
+    },
+    {
+      "juror": "O Editor de Identidade e Confian\u00e7a",
+      "vote": "NOT GUILTY",
+      "reason": "A prepara\u00e7\u00e3o respeita a confian\u00e7a do organizador porque explicita seus limites e deixa ao propriet\u00e1rio escolher uma oferta sustentada pela valida\u00e7\u00e3o, sem assumir aprova\u00e7\u00e3o de dois planos ou prometer recursos futuros como dispon\u00edveis.",
+      "fact": "O caso declara que dois planos e an\u00fancios s\u00e3o hip\u00f3teses ainda n\u00e3o decididas e admite um \u00fanico plano completo inicialmente, com dois n\u00edveis somente ap\u00f3s diferencia\u00e7\u00e3o real.",
+      "flip": "O lan\u00e7amento passasse a exigir Pro e Premium antes de existir uma diferen\u00e7a demonstr\u00e1vel entre eles, apresentando funcionalidades futuras como benef\u00edcio dispon\u00edvel no teste."
+    }
+  ]
+}

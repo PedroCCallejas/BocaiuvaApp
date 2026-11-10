@@ -3,8 +3,9 @@
 import type { ModuloMigravel } from '@/services/repository/modulos';
 import { supabase } from '@/config/supabase/client';
 import { authService } from '@/services/auth';
+import { buscarTimeAtivo } from '@/services/repository/supabase/composicao/comum';
 import { comAvaliacoes } from '@/services/repository/supabase/composicao/avaliacoes';
-import { comElenco } from '@/services/repository/supabase/composicao/elenco';
+import { comElenco, fatiaDoElenco } from '@/services/repository/supabase/composicao/elenco';
 import { comFinanceiro } from '@/services/repository/supabase/composicao/financeiro';
 import { comNotificacoes } from '@/services/repository/supabase/composicao/notificacoes';
 import { comPartidas } from '@/services/repository/supabase/composicao/partidas';
@@ -14,6 +15,8 @@ import {
   fatiasPendentes,
   recarregarTodasAsFatias,
   registrarEmissao,
+  definirContextoDasFatias,
+  obterGeracaoDasFatias,
 } from '@/services/repository/supabase/fatias';
 import type { AppRepository, AppSnapshot } from '@/services/repository/types';
 
@@ -40,12 +43,40 @@ export function criarRepositorioSupabase(base: AppRepository): AppRepository {
   );
 
   /** Carrega as fatias do Postgres e monta o snapshot único usado pela UI. */
-  const comporSobre = async (lerBase: () => Promise<AppSnapshot>) => {
+  const comporSobre = async (lerBase: () => Promise<AppSnapshot>, recarregar = false) => {
+    const session = authService.getCurrentUser() ?? (await authService.restoreSession());
+    if (session?.authId !== authService.getCurrentUser()?.authId) {
+      throw new Error('A conta mudou durante o carregamento. Tente novamente.');
+    }
+    definirContextoDasFatias(session?.authId ?? null);
+    if (!session) return await lerBase();
+
+    const geracaoAntesDoTime = obterGeracaoDasFatias();
+    const teamId = await buscarTimeAtivo();
+    if (authService.getCurrentUser()?.authId !== session.authId || geracaoAntesDoTime !== obterGeracaoDasFatias()) {
+      throw new Error('O contexto mudou durante o carregamento. Tente novamente.');
+    }
+    definirContextoDasFatias(session.authId, teamId);
+    const geracaoDaLeitura = obterGeracaoDasFatias();
     const [snapshot] = await Promise.all([
       lerBase(),
-      Promise.all(fatiasPendentes().map((fatia) => fatia.obter())),
+      teamId === null
+        ? recarregar && !fatiaDoElenco.estaVazia()
+          ? fatiaDoElenco.recarregar()
+          : fatiaDoElenco.obter()
+        : recarregar
+          ? recarregarTodasAsFatias()
+          : Promise.all(fatiasPendentes().map((fatia) => fatia.obter())),
     ]);
 
+    const timeAposLeitura = await buscarTimeAtivo();
+    if (geracaoDaLeitura !== obterGeracaoDasFatias() || authService.getCurrentUser()?.authId !== session.authId) {
+      throw new Error('O contexto mudou durante o carregamento. Tente novamente.');
+    }
+    if (timeAposLeitura !== teamId) {
+      definirContextoDasFatias(session.authId, timeAposLeitura);
+      throw new Error('O time ativo mudou durante o carregamento. Tente novamente.');
+    }
     return aplicarTodasAsFatias(snapshot);
   };
 
@@ -53,18 +84,11 @@ export function criarRepositorioSupabase(base: AppRepository): AppRepository {
     ...composto,
 
     async getInitialSnapshot() {
-      const session = authService.getCurrentUser() ?? (await authService.restoreSession());
-      if (!session) return await base.getInitialSnapshot();
-
       return await comporSobre(() => base.getInitialSnapshot());
     },
 
     async getSnapshot() {
-      const session = authService.getCurrentUser() ?? (await authService.restoreSession());
-      if (!session) return await base.getSnapshot();
-
-      await recarregarTodasAsFatias();
-      return aplicarTodasAsFatias(await base.getSnapshot());
+      return await comporSobre(() => base.getSnapshot(), true);
     },
   };
 

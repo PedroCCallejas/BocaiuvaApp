@@ -308,7 +308,17 @@ export interface Expense extends BaseEntity {
   deletedAt?: string | null;
 }
 
+export interface MatchPosterSettings {
+  version: 1;
+  logoUrl: string | null;
+  x: number;
+  y: number;
+  scale: number;
+  removeBackground: boolean;
+}
+
 export interface Match extends BaseEntity {
+  posterSettings?: MatchPosterSettings | null;
   teamId: string;
   seasonId?: string | null;
   date: string;

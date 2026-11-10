@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npx expo export -p web",
+  "buildCommand": "npm run build:web",
   "outputDirectory": "dist",
   "cleanUrls": true,
   "trailingSlash": false,
@@ -23,6 +23,9 @@
     }
   ],
   "rewrites": [
-    { "source": "/:path*", "destination": "/index.html" }
+    { "source": "/matches/:path*", "destination": "/" },
+    { "source": "/lineup/:path*", "destination": "/" },
+    { "source": "/players/:path*", "destination": "/" },
+    { "source": "/teams/:path*", "destination": "/" }
   ]
 }

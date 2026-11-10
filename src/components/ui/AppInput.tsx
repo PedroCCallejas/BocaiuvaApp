@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState, type ComponentRef } from 'react';
 import type { TextInputProps } from 'react-native';
 import {
   Platform,
@@ -31,7 +31,7 @@ export function AppInput({
 }: AppInputProps) {
   const theme = useAppTheme();
   const keyboardContext = useContext(ScreenKeyboardContext);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
   const [focused, setFocused] = useState(false);
   const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

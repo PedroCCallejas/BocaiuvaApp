@@ -1057,7 +1057,7 @@ export default function TeamSettingsScreen() {
 
         <AppButton
           label="Salvar alterações"
-          onPress={handleSubmit(onSubmit)}
+          onPress={() => void handleSubmit(onSubmit)()}
           loading={isSubmitting}
           fullWidth
         />

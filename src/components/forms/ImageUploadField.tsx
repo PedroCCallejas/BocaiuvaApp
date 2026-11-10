@@ -15,6 +15,7 @@ interface ImageUploadFieldProps {
   clearLabel?: string;
   emptyLabel?: string;
   shape?: 'circle' | 'rounded';
+  resizeMode?: 'cover' | 'contain';
   progress?: number | null;
   disabled?: boolean;
 }
@@ -30,6 +31,7 @@ export function ImageUploadField({
   clearLabel,
   emptyLabel = 'Nenhuma imagem selecionada',
   shape = 'rounded',
+  resizeMode = 'cover',
   progress,
   disabled,
 }: ImageUploadFieldProps) {
@@ -64,7 +66,7 @@ export function ImageUploadField({
             {previewUri ? (
               <Image
                 source={{ uri: previewUri }}
-                resizeMode="cover"
+                resizeMode={resizeMode}
                 style={[
                   styles.previewImage,
                   {

@@ -1,3 +1,10 @@
+import { matchPosterSettingsTestCases } from './match-poster-settings-cases';
+import { opponentLogoTestCases } from './opponent-logo-cases';
+import { lineupPublicationTestCases } from './lineup-publication-cases';
+import { vercelRoutingTestCases } from './vercel-routing-cases';
+import { imageSharingTestCases } from './image-sharing-cases';
+import { matchPosterTestCases } from './match-poster.test';
+import { teamCashTestCases } from './team-cash-cases';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -158,6 +165,13 @@ type TestCase = {
 };
 
 const testCases: TestCase[] = [
+  ...matchPosterTestCases,
+  ...matchPosterSettingsTestCases,
+  ...vercelRoutingTestCases,
+  ...imageSharingTestCases,
+  ...lineupPublicationTestCases,
+  ...opponentLogoTestCases,
+  ...teamCashTestCases,
   ...experienceNavigationTestCases,
   ...securityAuditTestCases,
   ...accessibilityHardeningTestCases,
@@ -4646,7 +4660,7 @@ const testCases: TestCase[] = [
       assert.equal(
         canManage,
         false,
-        'jogador sem papel admin retorna canManage=false — create.tsx retorna null antes dos hooks dependentes de team',
+        'jogador sem papel admin continua sem permissão para criar partidas',
       );
     },
   },

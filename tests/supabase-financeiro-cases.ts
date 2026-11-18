@@ -77,6 +77,75 @@ function apenasCodigoTs(fonte: string) {
 
 export const supabaseFinanceiroTestCases: TestCase[] = [
   {
+    name: 'refresh de presenca e realtime no mesmo contexto nao se invalidam',
+    async run() {
+      limparFatias();
+      const resolver: Array<(valor: string[]) => void> = [];
+      const fatia = criarFatia({
+        nome: 'presenca concorrente', vazio: [] as string[],
+        ler: () => new Promise<string[]>((resolve) => resolver.push(resolve)),
+        aplicar: (snapshot, dados) => ({ ...snapshot, lista: dados }),
+      });
+      definirContextoDasFatias('pessoa', 'time');
+      const primeira = fatia.recarregar();
+      const segunda = fatia.recarregar();
+      const resultados = Promise.all([primeira, segunda]);
+      assert.equal(resolver.length, 1, 'releituras devem ser serializadas');
+      resolver[0](['antes']);
+      await primeira;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      assert.equal(resolver.length, 2, 'escrita exige leitura nova, nao cache anterior');
+      resolver[1](['confirmado']);
+      await resultados;
+      assert.deepEqual(await fatia.obter(), ['confirmado']);
+      limparFatias();
+    },
+  },
+  {
+    name: 'recarregar aguarda leitura inicial sem invalidar sua resposta',
+    async run() {
+      limparFatias();
+      let concluir!: (valor: string[]) => void;
+      let leituras = 0;
+      const fatia = criarFatia({
+        nome: 'inicial concorrente', vazio: [] as string[],
+        ler: () => ++leituras === 1 ? new Promise<string[]>((r) => { concluir = r; }) : Promise.resolve(['novo']),
+        aplicar: (snapshot, dados) => ({ ...snapshot, lista: dados }),
+      });
+      const inicial = fatia.obter();
+      const atualizacao = fatia.recarregar();
+      concluir(['antigo']);
+      assert.deepEqual(await inicial, ['antigo']);
+      assert.deepEqual(await atualizacao, ['novo']);
+      assert.deepEqual(await fatia.obter(), ['novo']);
+      limparFatias();
+    },
+  },
+  {
+    name: 'troca de contexto cancela tambem refresh enfileirado sem ler outro time',
+    async run() {
+      limparFatias();
+      let concluir!: (valor: string[]) => void;
+      let leituras = 0;
+      const fatia = criarFatia({
+        nome: 'fila isolada', vazio: [] as string[],
+        ler: () => ++leituras === 1 ? new Promise<string[]>((r) => { concluir = r; }) : Promise.resolve(['B']),
+        aplicar: (snapshot, dados) => ({ ...snapshot, lista: dados }),
+      });
+      definirContextoDasFatias('pessoa', 'A');
+      const primeira = fatia.recarregar();
+      const segunda = fatia.recarregar();
+      const rejeitadas = Promise.all([assert.rejects(primeira, /contexto mudou/), assert.rejects(segunda, /contexto mudou/)]);
+      definirContextoDasFatias('pessoa', 'B');
+      assert.deepEqual(await fatia.obter(), ['B']);
+      concluir(['A']);
+      await rejeitadas;
+      assert.equal(leituras, 2);
+      assert.deepEqual(await fatia.obter(), ['B']);
+      limparFatias();
+    },
+  },
+  {
     name: 'composicao Supabase isola cache e preserva onboarding sem time',
     run() {
       const result = spawnSync(process.execPath, ['--no-warnings', '--experimental-strip-types', './tests/supabase-cache-composition.mjs'], {

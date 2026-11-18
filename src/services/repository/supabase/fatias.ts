@@ -208,19 +208,29 @@ export function criarFatia<T>(input: {
 
     async recarregar() {
       const geracaoDaLeitura = geracao;
-      leituraEmVoo = null;
-      const valor = await lerComSeguranca();
-      if (geracaoDaLeitura !== geracao) throw new Error('O contexto mudou durante o carregamento. Tente novamente.');
+      const anterior = leituraEmVoo;
+      // Realtime e a releitura apos uma escrita podem coincidir. Serializar
+      // preserva ambas: uma atualizacao do mesmo time nao e troca de contexto.
+      // Sempre lemos de novo depois da anterior para observar a escrita recente.
+      const tentativa = (async () => {
+        if (anterior) await anterior.catch(() => {});
+        if (geracaoDaLeitura !== geracao) {
+          throw new Error('O contexto mudou durante o carregamento. Tente novamente.');
+        }
+        const valor = await lerComSeguranca();
+        if (geracaoDaLeitura !== geracao) {
+          throw new Error('O contexto mudou durante o carregamento. Tente novamente.');
+        }
 
-      // Falha na releitura mantém o que já estava em cache. Zerar aqui faria a
-      // tela esvaziar logo depois de uma escrita que deu certo — exatamente o
-      // momento em que a pessoa está olhando para confirmar que funcionou.
-      if (valor !== null) {
-        cache = valor;
-      }
-
-      reemitir();
-      return cache ?? input.vazio;
+        // Falha na releitura preserva o ultimo cache valido do mesmo contexto.
+        if (valor !== null) cache = valor;
+        reemitir();
+        return cache ?? input.vazio;
+      })().finally(() => {
+        if (leituraEmVoo === tentativa) leituraEmVoo = null;
+      });
+      leituraEmVoo = tentativa;
+      return await tentativa;
     },
 
     aplicar(snapshot) {

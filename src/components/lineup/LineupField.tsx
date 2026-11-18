@@ -383,7 +383,7 @@ export function LineupField({
         ) : null}
 
         {/* Decorações estáticas do campo */}
-        <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
           <View style={[styles.stripe, styles.stripeLeft, { backgroundColor: 'rgba(255,255,255,0.04)' }]} />
           <View style={[styles.stripe, styles.stripeRight, { backgroundColor: 'rgba(255,255,255,0.05)' }]} />
           <View style={[styles.centerLine, { backgroundColor: `${theme.colors.secondary}55` }]} />
@@ -693,7 +693,7 @@ function FieldToken({
           colors={[theme.colors.primary, theme.colors.secondary]}
           start={{ x: 0.1, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
       )}
 
@@ -705,7 +705,7 @@ function FieldToken({
         }
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
       />
 
       {!hasPhoto ? (
@@ -912,7 +912,7 @@ function DraggableToken({
           colors={[theme.colors.primary, theme.colors.secondary]}
           start={{ x: 0.1, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
         />
       )}
 
@@ -924,7 +924,7 @@ function DraggableToken({
         }
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
       />
 
       {!hasPhoto ? (
@@ -994,7 +994,7 @@ function BenchCard({
         colors={[`${theme.colors.primary}1F`, `${theme.colors.secondary}12`, 'transparent']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
       />
 
       <View
@@ -1198,12 +1198,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   tokenPhoto: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     width: undefined,
     height: undefined,
   },
   tokenFallback: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     paddingBottom: 18,

@@ -15,6 +15,7 @@ import type {
   Lineup,
   LineupNode,
   Match,
+  MatchPosterSettings,
   MatchFieldCost,
   MatchFieldPayment,
   MatchDiaryEntry,
@@ -478,6 +479,7 @@ export interface AppRepository {
   deletePlayerPermanently(playerId: string, actorUserId: string): Promise<void>;
   reactivatePlayer(playerId: string, actorUserId: string): Promise<Player>;
   createMatch(input: CreateMatchInput, creatorUserId: string): Promise<Match>;
+  saveMatchPosterSettings(matchId: string, settings: MatchPosterSettings | null, actorUserId: string): Promise<Match>;
   updateMatch(matchId: string, input: UpdateMatchInput, actorUserId: string): Promise<Match>;
   updateMatchMetadata(matchId: string, input: UpdateMatchMetadataInput, actorUserId: string): Promise<void>;
   updateMatchFieldPayment(

@@ -1,3 +1,4 @@
+import { parseMatchPosterSettings } from '@/lib/match-poster-settings';
 /**
  * Conversão linha do Postgres → objeto do domínio.
  *
@@ -324,6 +325,7 @@ export function paraPartida(
     locationUrl: textoOuNulo(linha.location_url),
     opponentName: texto(linha.opponent_name),
     opponentLogoUrl: textoOuNulo(linha.opponent_logo_url),
+    posterSettings: parseMatchPosterSettings(linha.poster_settings),
     opponentTeamId: textoOuNulo(linha.opponent_team_id),
     opponentTeamName: textoOuNulo(linha.opponent_team_name),
     opponentTeamLogoUrl: textoOuNulo(linha.opponent_team_logo_url),

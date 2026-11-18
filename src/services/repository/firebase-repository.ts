@@ -6771,6 +6771,10 @@ export const firebaseRepository: AppRepository = {
     }
   },
 
+  async saveMatchPosterSettings(): Promise<Match> {
+    throw createRepositoryError('Ajustes de arte estão disponíveis apenas no banco atual.', 'failed-precondition');
+  },
+
   async updateMatch(matchId: string, input: UpdateMatchInput, actorUserId: string) {
     try {
       const firestore = requireFirestore();

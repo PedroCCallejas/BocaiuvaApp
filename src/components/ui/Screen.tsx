@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   type PropsWithChildren,
+  type ComponentRef,
 } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import {
@@ -72,7 +73,7 @@ export function Screen({
   const theme = useAppTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const keyboardAvoidanceEnabled = keyboardAware && Platform.OS === 'ios';
   const isWideWeb = Platform.OS === 'web' && width >= 768;
   // A barra de abas flutua sobre o conteudo, entao o fim da lista precisa de
@@ -136,6 +137,9 @@ export function Screen({
         keyboardVerticalOffset={keyboardVerticalOffset}
         style={styles.flex}>
         {isWideWeb && !hideWebHeader ? <WebScreenHeader /> : null}
+        {Platform.OS === 'web' && (!isWideWeb || hideWebHeader) ? (
+          <WebScreenHeader compact />
+        ) : null}
         <ScreenKeyboardContext.Provider value={keyboardContextValue}>
           {scroll ? (
             <ScrollView

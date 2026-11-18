@@ -1,3 +1,4 @@
+import { validateMatchPosterSettings } from '@/lib/match-poster-settings';
 import { calculateMatchResult, getConfirmedPlayerIds, getMvpSummary } from '@/lib/match';
 import {
   buildMatchFieldCost,
@@ -95,6 +96,7 @@ import type {
   Expense,
   ExpenseCategory,
   Match,
+  MatchPosterSettings,
   MatchDiaryEntry,
   MatchType,
   MatchStat,
@@ -3181,6 +3183,15 @@ export const mockRepository: AppRepository = {
       }),
     );
 
+    return clone(match);
+  },
+
+  async saveMatchPosterSettings(matchId: string, settings: MatchPosterSettings | null, actorUserId: string) {
+    const { activeTeamId } = ensureActiveTeamContext(actorUserId);
+    const match = findMatchForTeam(activeTeamId, matchId);
+    requireTeamAdmin(actorUserId, match.teamId);
+    match.posterSettings = validateMatchPosterSettings(settings);
+    match.updatedAt = nowIso();
     return clone(match);
   },
 

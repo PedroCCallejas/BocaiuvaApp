@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
     minHeight: 300,
   },
   banner: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     opacity: 0.94,
   },
   watermark: {
@@ -167,7 +167,7 @@ const styles = StyleSheet.create({
     opacity: 0.14,
   },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   lightOrb: {
     position: 'absolute',

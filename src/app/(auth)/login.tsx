@@ -210,7 +210,7 @@ export default function LoginScreen() {
         />
         <AppButton
           label="Entrar com Senha"
-          onPress={handleSubmit(onSubmit)}
+          onPress={() => void handleSubmit(onSubmit)()}
           loading={isSubmitting}
           fullWidth
         />

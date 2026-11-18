@@ -36,7 +36,7 @@ Function `enviar-push`), não `expo-notifications`.
 |---|---|
 | Quem decide acesso, mapa de domínio, ordem das camadas, fatias | [`docs/arquitetura-dados.md`](docs/arquitetura-dados.md) |
 | Arquitetura, privacidade de mídia, Storage, procedimento de release | [`README.md`](README.md) |
-| Schema vivo do banco | `supabase/migrations/` (26 arquivos, ordem cronológica) |
+| Schema vivo do banco | `supabase/migrations/` (27 arquivos, ordem cronológica) |
 | Permissões | RLS e helpers `app.*` nas migrations — não no cliente ([autoridade](docs/arquitetura-dados.md)) |
 | Regras de domínio | `src/lib/` (limites, cálculo, elegibilidade) |
 | Telas e rotas | `src/app/` (Expo Router; `.native.tsx` vence no mobile) |
@@ -77,7 +77,10 @@ O CI (`.github/workflows/ci.yml`) roda typecheck, test, build:web e
 temporárias aprovadas em `security/audit-exceptions.json`; consulte
 `docs/diagnostico-ci-auditoria-2026-10-13.md` para validade e riscos restantes.
 
-Os testes SQL em `supabase/tests/` não têm runner npm e não rodam no CI.
+Os testes SQL em `supabase/tests/` rodam com `npm run test:postgres` e no job
+`validar_postgres` do CI. O runner exige Docker e reconstrói as migrations em
+PostgreSQL 17 isolado, testa RLS com fixtures e repete os testes após restauração
+sintética. Não conecta à produção nem substitui teste dos serviços Supabase.
 
 ## Operações perigosas
 

@@ -1,3 +1,5 @@
+import { ImageUploadField } from '@/components/forms/ImageUploadField';
+import { useOpponentLogo } from '@/hooks/use-opponent-logo';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
@@ -7,6 +9,7 @@ import { z } from 'zod';
 
 import { AppButton } from '@/components/ui/AppButton';
 import { AppInput } from '@/components/ui/AppInput';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { MATCH_TYPE_LABELS } from '@/constants/options';
 import { fonts } from '@/constants/theme';
@@ -54,6 +57,7 @@ export default function CreateMatchScreen() {
   const theme = useAppTheme();
   const canManage = useAppStore(selectCanManageTeam);
   const team = useAppStore(selectCurrentTeam);
+  const opponentLogo = useOpponentLogo(team?.id ?? '');
   const createMatch = useAppStore((state) => state.createMatch);
   const listPublicTeams = useAppStore((state) => state.listPublicTeams);
   const initializedDefaultsTeamId = useRef<string | null>(null);
@@ -143,7 +147,16 @@ export default function CreateMatchScreen() {
   }, [listPublicTeams]);
 
   if (!team || !canManage) {
-    return null;
+    return (
+      <Screen>
+        <EmptyState
+          title="Acesso restrito"
+          description="Somente a gestão do time pode criar partidas. Você pode consultar os jogos do seu elenco."
+          actionLabel="Ver partidas"
+          onAction={() => router.replace('/matches')}
+        />
+      </Screen>
+    );
   }
 
   const currentTeam = team;
@@ -151,17 +164,19 @@ export default function CreateMatchScreen() {
     publicTeams.find((item) => item.id === selectedPublicTeamId) ?? null;
 
   function handleSelectPublicTeam(publicTeam: PublicTeamSummary) {
+    opponentLogo.cancel();
     setSelectedPublicTeamId(publicTeam.id);
     setValue('opponentName', publicTeam.name, { shouldDirty: true });
   }
 
   async function onSubmit(values: MatchValues) {
     try {
+      const opponentLogoUrl = await opponentLogo.resolve(currentTeam.id, selectedPublicTeam?.logoUrl ?? null);
       const matchId = await createMatch({
         ...values,
         date: parseDateBRToISO(values.date) ?? values.date,
         locationUrl: values.locationUrl?.trim() || null,
-        opponentLogoUrl: selectedPublicTeam?.logoUrl ?? null,
+        opponentLogoUrl,
         opponentTeamId: selectedPublicTeam?.id ?? null,
         opponentTeamName: selectedPublicTeam?.name ?? null,
         opponentTeamLogoUrl: selectedPublicTeam?.logoUrl ?? null,
@@ -299,6 +314,20 @@ export default function CreateMatchScreen() {
           </View>
         </View>
 
+        <ImageUploadField
+          label="Escudo do adversário"
+          hint="PNG, JPEG ou WebP até 5 MB. A imagem será pública e usada nas artes da partida. O envio acontece ao salvar."
+          imageUrl={selectedPublicTeam?.logoUrl}
+          pendingImage={opponentLogo.pending}
+          resizeMode="contain"
+          onPickFromLibrary={() => void opponentLogo.pick('library')}
+          onPickFromCamera={() => void opponentLogo.pick('camera')}
+          onClear={opponentLogo.pending ? opponentLogo.cancel : undefined}
+          clearLabel="Cancelar troca"
+          progress={opponentLogo.progress}
+          disabled={isSubmitting || opponentLogo.picking}
+        />
+
         <Controller
           control={control}
           name="venue"
@@ -413,8 +442,9 @@ export default function CreateMatchScreen() {
         />
         <AppButton
           label="Salvar partida"
-          onPress={handleSubmit(onSubmit)}
+          onPress={() => void handleSubmit(onSubmit)()}
           loading={isSubmitting}
+          disabled={opponentLogo.picking}
           fullWidth
         />
       </View>

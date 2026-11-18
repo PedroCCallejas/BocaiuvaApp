@@ -1,3 +1,4 @@
+import { getScreenBackFallback, navigateScreenBack } from '@/lib/screen-back-navigation';
 import { Ionicons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -45,7 +46,7 @@ function buildHomeCrumb() {
   return { label: 'Início', href: '/home' } satisfies HeaderBreadcrumb;
 }
 
-export function WebScreenHeader() {
+export function WebScreenHeader({ compact = false }: { compact?: boolean }) {
   const pathname = usePathname();
   const theme = useAppTheme();
   const snapshot = useAppStore((state) => state.snapshot);
@@ -70,6 +71,34 @@ export function WebScreenHeader() {
     return null;
   }
 
+  const backHref = getScreenBackFallback(pathname, Boolean(currentTeam));
+  const backButton = backHref ? (
+    <Pressable
+      accessibilityLabel="Voltar"
+      accessibilityHint="Retorna à tela anterior ou à seção de origem"
+      accessibilityRole="button"
+      onPress={() => navigateScreenBack(router, backHref)}
+      style={({ pressed }) => [
+        styles.backChip,
+        {
+          backgroundColor: theme.colors.backgroundElevated,
+          borderColor: theme.colors.border,
+          opacity: pressed ? 0.65 : 1,
+        },
+      ]}>
+      <Ionicons name="arrow-back" size={18} color={theme.colors.text} />
+      <Text style={[styles.backText, { color: theme.colors.text }]}>Voltar</Text>
+    </Pressable>
+  ) : null;
+
+  if (compact) {
+    return backButton ? (
+      <View style={[styles.compact, { backgroundColor: theme.colors.background }]}>
+        {backButton}
+      </View>
+    ) : null;
+  }
+
   return (
     <View
       style={[
@@ -83,26 +112,7 @@ export function WebScreenHeader() {
         <AppNavigation />
         <View style={styles.topRow}>
           <View style={styles.breadcrumbRow}>
-            {meta.backHref ? (
-              <Pressable
-                accessibilityLabel="Voltar"
-                accessibilityRole="button"
-                onPress={() => router.push(meta.backHref! as never)}
-                style={[
-                  styles.backChip,
-                  {
-                    backgroundColor: theme.colors.backgroundElevated,
-                    borderColor: theme.colors.border,
-                  },
-                ]}>
-                <Ionicons
-                  name="arrow-back"
-                  size={14}
-                  color={theme.colors.text}
-                />
-                <Text style={[styles.backText, { color: theme.colors.text }]}>Voltar</Text>
-              </Pressable>
-            ) : null}
+            {backButton}
 
             <View style={styles.breadcrumbWrap}>
               {meta.breadcrumbs.map((item, index) => (
@@ -461,6 +471,13 @@ function resolveWebRouteMeta(input: {
         backHref: '/home',
         action: { label: 'Ver estatísticas', href: '/stats' },
       };
+    case 'caixa':
+      return {
+        title: 'Caixa do time',
+        breadcrumbs: [homeCrumb, { label: 'Caixa' }],
+        backHref: '/home',
+      };
+    case 'account':
     case 'profile':
       return {
         title: 'Minha conta',
@@ -579,7 +596,15 @@ const styles = StyleSheet.create({
     gap: 10,
     flex: 1,
   },
+  compact: {
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 4,
+    alignItems: 'flex-start',
+  },
   backChip: {
+    minHeight: 44,
+    minWidth: 44,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,

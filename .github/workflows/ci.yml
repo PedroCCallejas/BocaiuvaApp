@@ -29,3 +29,14 @@ jobs:
         run: npm run build:web
       - name: Auditar segurança e exceções aprovadas
         run: npm run audit:security
+
+  validar_postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Reconstruir banco, testar isolamento e ensaiar restauração
+        run: npm run test:postgres

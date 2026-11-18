@@ -71,21 +71,21 @@ export default function TabsLayout() {
         name="home"
         options={{
           title: 'Início',
-          tabBarIcon: ({ color }) => <Ionicons name="home" color={color} size={iconSize} />,
+          tabBarIcon: ({ focused }) => <Ionicons name="home" color={focused ? theme.colors.action : theme.colors.textMuted} size={iconSize} />,
         }}
       />
       <Tabs.Screen
         name="players"
         options={{
           title: isCompact ? 'Elenco' : 'Jogadores',
-          tabBarIcon: ({ color }) => <Ionicons name="people" color={color} size={iconSize} />,
+          tabBarIcon: ({ focused }) => <Ionicons name="people" color={focused ? theme.colors.action : theme.colors.textMuted} size={iconSize} />,
         }}
       />
       <Tabs.Screen
         name="matches"
         options={{
           title: isCompact ? 'Jogos' : 'Partidas',
-          tabBarIcon: ({ color }) => <Ionicons name="calendar" color={color} size={iconSize} />,
+          tabBarIcon: ({ focused }) => <Ionicons name="calendar" color={focused ? theme.colors.action : theme.colors.textMuted} size={iconSize} />,
         }}
       />
       <Tabs.Screen
@@ -93,8 +93,8 @@ export default function TabsLayout() {
         options={{
           // "Estatísticas" nao cabe em tela estreita e era cortado no meio.
           title: isCompact ? 'Stats' : 'Estatísticas',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="stats-chart" color={color} size={iconSize} />
+          tabBarIcon: ({ focused }) => (
+            <Ionicons name="stats-chart" color={focused ? theme.colors.action : theme.colors.textMuted} size={iconSize} />
           ),
         }}
       />
@@ -102,7 +102,7 @@ export default function TabsLayout() {
         name="rankings"
         options={{
           title: isCompact ? 'Ranking' : 'Rankings',
-          tabBarIcon: ({ color }) => <Ionicons name="trophy" color={color} size={iconSize} />,
+          tabBarIcon: ({ focused }) => <Ionicons name="trophy" color={focused ? theme.colors.action : theme.colors.textMuted} size={iconSize} />,
         }}
       />
       <Tabs.Screen
@@ -112,14 +112,14 @@ export default function TabsLayout() {
           // `href: null` remove a aba da barra para quem não administra o time.
           // A própria tela já redireciona quem não tem permissão.
           href: canManageTeam ? undefined : null,
-          tabBarIcon: ({ color }) => <Ionicons name="wallet" color={color} size={iconSize} />,
+          tabBarIcon: ({ focused }) => <Ionicons name="wallet" color={focused ? theme.colors.action : theme.colors.textMuted} size={iconSize} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Conta',
-          tabBarIcon: ({ color }) => <Ionicons name="person" color={color} size={iconSize} />,
+          tabBarIcon: ({ focused }) => <Ionicons name="person" color={focused ? theme.colors.action : theme.colors.textMuted} size={iconSize} />,
         }}
       />
     </Tabs>
